@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: recharge-proxy
+    env: node
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: RECHARGE_API_KEY
+        sync: false   # set manually in Render dashboard
