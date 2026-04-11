@@ -158,6 +158,63 @@ app.post('/recharge/subscriptions/:id/skip', async (req, res) => {
   }
 });
 
+/* ═══════════════════════════
+   POST /klaviyo/test-event
+   body: { email, eventName, properties }
+═══════════════════════════ */
+app.post('/klaviyo/test-event', async (req, res) => {
+  try {
+    const { email, eventName, properties } = req.body;
+    if (!email || !eventName) {
+      return res.status(400).json({ error: 'email and eventName are required' });
+    }
+
+    const response = await fetch('https://a.klaviyo.com/api/events/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Klaviyo-API-Key pk_8adb059279aa6cc149c08cf14acdaa6cc9',
+        'revision': '2024-10-15'
+      },
+      body: JSON.stringify({
+        data: {
+          type: 'event',
+          attributes: {
+            metric: {
+              data: {
+                type: 'metric',
+                attributes: { name: eventName }
+              }
+            },
+            profile: {
+              data: {
+                type: 'profile',
+                attributes: {
+                  email: email,
+                  first_name: 'Nobel',
+                  last_name: 'Doe'
+                }
+              }
+            },
+            properties: properties || {}
+          }
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      console.error('Klaviyo error:', error);
+      return res.status(response.status).json({ error });
+    }
+
+    res.json({ success: true, status: response.status });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
 
 const PORT = process.env.PORT || 3000;
