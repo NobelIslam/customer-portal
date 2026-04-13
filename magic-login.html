@@ -26,8 +26,8 @@
 </div>
 
 <script>
-  var PROXY_URL  = 'https://customer-portal-vl02.onrender.com';
-  var PORTAL_URL = 'https://try.thegreatproject.com/memberarea';
+  var PROXY_URL = 'https://customer-portal-vl02.onrender.com';
+  var LOGIN_URL = 'https://try.thegreatproject.com/login';
 
   function showError(msg) {
     document.getElementById('spinner').style.display = 'none';
@@ -38,37 +38,14 @@
     e.style.display = 'block';
   }
 
-  function setSession(ccData) {
-    /* ccData is the full CC API response object */
-    var ss = sessionStorage;
-    var ls = localStorage;
-
-    /* Set each key CC needs */
-    if (ccData.membership)        ss.setItem('membership',          JSON.stringify(ccData.membership));
-    if (ccData.clubMemberships)   ss.setItem('clubMemberships',     JSON.stringify(ccData.clubMemberships));
-    if (ccData.sessionId)         ss.setItem('sessionId',           JSON.stringify(ccData.sessionId));
-    if (ccData.ccExternalSessionId || (ccData.sessionId && ccData.sessionId.message)) {
-      ss.setItem('ccExternalSessionId', ccData.ccExternalSessionId || ccData.sessionId.message.sessionId);
-    }
-    if (ccData.customerOrders)    ss.setItem('customerOrders',    JSON.stringify(ccData.customerOrders));
-    if (ccData.customerPurchases) ss.setItem('customerPurchases', JSON.stringify(ccData.customerPurchases));
-    if (ccData.funnelData)        ss.setItem('funnelData',        JSON.stringify(ccData.funnelData));
-
-    ss.setItem('loginPageUrl',        'https://try.thegreatproject.com/login?alertMessage=Access%20Denied');
-    ss.setItem('sessionStartDateTime', new Date().toISOString());
-
-    ls.setItem('isMembershipLogin', 'true');
-    ls.setItem('loginUrl', 'https://try.thegreatproject.com/login');
-  }
-
   async function run() {
     var params = new URLSearchParams(window.location.search);
     var token  = params.get('token');
     if (!token) { showError('No token found in URL.'); return; }
 
     try {
-      /* Call our Render server — it calls CC API server-side and returns session data */
-      var res = await fetch(PROXY_URL + '/magic-login/verify?token=' + encodeURIComponent(token));
+      /* 1. Verify token on Render server */
+      var res  = await fetch(PROXY_URL + '/magic-login/verify?token=' + encodeURIComponent(token));
       var data = await res.json();
 
       if (!res.ok || !data.success) {
@@ -76,17 +53,22 @@
         return;
       }
 
-      console.log('CC session data:', data.session);
+      if (data.status !== 'ACTIVE') {
+        showError('Your membership is ' + data.status + '. Please contact support.');
+        return;
+      }
 
-      /* Set CC session in browser storage */
-      setSession(data.session);
+      /* 2. Store credentials temporarily in sessionStorage */
+      sessionStorage.setItem('ml_email',    data.email);
+      sessionStorage.setItem('ml_password', data.password);
 
-      /* Redirect to dashboard */
-      document.getElementById('title').textContent = 'Logged in!';
-      document.getElementById('msg').textContent = 'Redirecting to your dashboard...';
+      document.getElementById('title').textContent = 'Verified!';
+      document.getElementById('msg').textContent = 'Logging you in...';
+
+      /* 3. Redirect to CC login page — cc-login-autofill.js will auto-submit the form */
       setTimeout(function() {
-        window.location.href = PORTAL_URL;
-      }, 800);
+        window.location.href = LOGIN_URL + '?ml=1';
+      }, 500);
 
     } catch(err) {
       showError('Error: ' + err.message);
