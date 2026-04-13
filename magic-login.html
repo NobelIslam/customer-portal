@@ -26,8 +26,9 @@
 </div>
 
 <script>
-  var PROXY_URL = 'https://customer-portal-vl02.onrender.com';
-  var LOGIN_URL = 'https://try.thegreatproject.com/login';
+  var PROXY_URL  = 'https://customer-portal-vl02.onrender.com';
+  var PORTAL_URL = 'https://try.thegreatproject.com/memberarea';
+  var LOGIN_URL  = 'https://try.thegreatproject.com/login';
 
   function showError(msg) {
     document.getElementById('spinner').style.display = 'none';
@@ -38,15 +39,49 @@
     e.style.display = 'block';
   }
 
+  function buildSession(data) {
+    var ss = sessionStorage;
+    var ls = localStorage;
+
+    /* Build membership object matching CC's format */
+    var m = data.membership || {};
+    m.clubUsername = data.email;
+    m.clubId       = 12;
+    m.status       = data.status;
+
+    ss.setItem('membership',      JSON.stringify(m));
+    ss.setItem('clubMemberships', JSON.stringify([m]));
+
+    /* Session ID (fake but matches CC format) */
+    var sessionId = {
+      result: 'SUCCESS',
+      message: { sessionId: data.memberId + '_' + Date.now() }
+    };
+    ss.setItem('sessionId',           JSON.stringify(sessionId));
+    ss.setItem('ccExternalSessionId', sessionId.message.sessionId);
+
+    /* Orders */
+    if (data.orders && data.orders.message) {
+      ss.setItem('customerOrders', JSON.stringify(data.orders.message));
+    }
+
+    ss.setItem('loginPageUrl',         LOGIN_URL + '?alertMessage=Access%20Denied');
+    ss.setItem('sessionStartDateTime', new Date().toISOString());
+
+    ls.setItem('isMembershipLogin', 'true');
+    ls.setItem('loginUrl', LOGIN_URL);
+  }
+
   async function run() {
     var params = new URLSearchParams(window.location.search);
     var token  = params.get('token');
     if (!token) { showError('No token found in URL.'); return; }
 
     try {
-      /* 1. Verify token on Render server */
       var res  = await fetch(PROXY_URL + '/magic-login/verify?token=' + encodeURIComponent(token));
       var data = await res.json();
+
+      console.log('Verify response:', data);
 
       if (!res.ok || !data.success) {
         showError(data.error || 'Login failed.');
@@ -58,17 +93,15 @@
         return;
       }
 
-      document.getElementById('title').textContent = 'Verified!';
-      document.getElementById('msg').textContent = 'Logging you in...';
+      /* Build CC session in browser */
+      buildSession(data);
 
-      /* 2. Pass credentials via URL params to CC login page
-            Base64 encode to avoid special character issues    */
-      var e = btoa(data.email);
-      var p = btoa(data.password);
+      document.getElementById('title').textContent = 'Logged in!';
+      document.getElementById('msg').textContent = 'Redirecting to your dashboard...';
 
       setTimeout(function() {
-        window.location.href = LOGIN_URL + '?ml=1&e=' + encodeURIComponent(e) + '&p=' + encodeURIComponent(p);
-      }, 500);
+        window.location.href = PORTAL_URL;
+      }, 800);
 
     } catch(err) {
       showError('Error: ' + err.message);
