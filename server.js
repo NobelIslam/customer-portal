@@ -157,7 +157,7 @@ app.post('/webhooks/checkoutchamp', async (req, res) => {
     console.log('CheckoutChamp webhook received:', { email, eventName });
     const result = await sendKlaviyoEvent(email, eventName, properties);
     if (!result.ok) return res.status(502).json({ error: 'Klaviyo push failed', details: result.body });
-    console.log('Klaviyo event pushed successfully:', eventName, 'for', email);
+    console.log('Klaviyo event pushed:', eventName, 'for', email);
     res.json({ success: true, event: eventName, email });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -167,7 +167,6 @@ app.post('/webhooks/checkoutchamp', async (req, res) => {
 ════════════════════════════════════════════════════ */
 const tokenStore = {};
 
-/* Clean expired tokens every 10 min */
 setInterval(function() {
   var now = Date.now();
   Object.keys(tokenStore).forEach(function(t) {
@@ -180,8 +179,8 @@ app.get('/magic-login', function(req, res) {
   res.sendFile(path.join(__dirname, 'magic-login.html'));
 });
 
-/* ── TEST: generate magic link (no email service needed) ──
-   GET /magic-login/test?email=xxx&password=xxx            */
+/* ── TEST: generate magic link ──
+   GET /magic-login/test?email=xxx&password=xxx */
 app.get('/magic-login/test', function(req, res) {
   var email    = (req.query.email    || '').trim().toLowerCase();
   var password = (req.query.password || '').trim();
@@ -189,24 +188,54 @@ app.get('/magic-login/test', function(req, res) {
   var token = crypto.randomBytes(32).toString('hex');
   tokenStore[token] = { email, password, expires: Date.now() + 15 * 60 * 1000 };
   res.json({
-    magicLink:  'https://customer-portal-vl02.onrender.com/magic-login?token=' + token,
-    expiresIn:  '15 minutes'
+    magicLink: 'https://customer-portal-vl02.onrender.com/magic-login?token=' + token,
+    expiresIn: '15 minutes'
   });
 });
 
-/* ── CREDENTIALS: called by magic-login.html to get creds for token ──
-   GET /magic-login/credentials?token=xxx                              */
-app.get('/magic-login/credentials', function(req, res) {
-  var token = req.query.token;
-  if (!token || !tokenStore[token]) return res.status(401).json({ error: 'Invalid or expired token' });
-  var data = tokenStore[token];
-  if (data.expires < Date.now()) {
+/* ── LOGIN: validate token + call CC API server-side + return session data ──
+   GET /magic-login/verify?token=xxx
+   Called by magic-login.html — returns CC session data as JSON            */
+app.get('/magic-login/verify', async function(req, res) {
+  try {
+    var token = req.query.token;
+    if (!token || !tokenStore[token]) {
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+    var data = tokenStore[token];
+    if (data.expires < Date.now()) {
+      delete tokenStore[token];
+      return res.status(401).json({ error: 'Token expired' });
+    }
+
+    /* Call CC frontend API from server — no auth issues server-side */
+    var ccRes = await fetch('https://pages-live-api.checkoutchamp.com/providersApi/V1/ClubMembership/Login/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clubUsername: data.email,
+        clubPassword: data.password,
+        clubId:       12
+      })
+    });
+
+    var ccData = await ccRes.json();
+    console.log('CC login for', data.email, '- status:', ccRes.status, '- result:', ccData.result);
+
+    if (!ccRes.ok || ccData.result === 'Error' || ccData.result === 'ERROR') {
+      return res.status(401).json({ error: 'CC login failed: ' + (ccData.message || JSON.stringify(ccData)) });
+    }
+
+    /* One-time use — delete token */
     delete tokenStore[token];
-    return res.status(401).json({ error: 'Token expired' });
+
+    /* Return full CC session data to browser */
+    res.json({ success: true, session: ccData });
+
+  } catch (err) {
+    console.error('Magic login error:', err);
+    res.status(500).json({ error: err.message });
   }
-  /* One-time use — delete immediately */
-  delete tokenStore[token];
-  res.json({ email: data.email, password: data.password });
 });
 
 /* ════════════════════════════════════════════════════ */
