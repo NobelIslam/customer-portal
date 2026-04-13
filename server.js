@@ -1,17 +1,16 @@
 const express = require('express');
 const cors    = require('cors');
 const fetch   = require('node-fetch');
+const crypto  = require('crypto');
+const path    = require('path');
 
 const app = express();
 app.use(express.json());
+app.use(cors({ origin: '*' }));
 
-app.use(cors({
-  origin: '*' // restrict to your CC domain in production
-}));
-
-const RECHARGE_API_KEY  = process.env.RECHARGE_API_KEY;
-const RECHARGE_BASE     = 'https://api.rechargeapps.com';
-const KLAVIYO_API_KEY   = process.env.KLAVIYO_API_KEY;
+const RECHARGE_API_KEY = process.env.RECHARGE_API_KEY;
+const RECHARGE_BASE    = 'https://api.rechargeapps.com';
+const KLAVIYO_API_KEY  = process.env.KLAVIYO_API_KEY;
 
 function rcHeaders() {
   return {
@@ -28,39 +27,29 @@ app.get('/recharge/subscriptions', async (req, res) => {
     const email = req.query.email;
     if (!email) return res.status(400).json({ error: 'email required' });
 
-    /* Find customer */
-    const custRes = await fetch(
-      RECHARGE_BASE + '/customers?email=' + encodeURIComponent(email),
-      { headers: rcHeaders() }
-    );
+    const custRes  = await fetch(RECHARGE_BASE + '/customers?email=' + encodeURIComponent(email), { headers: rcHeaders() });
     const custData = await custRes.json();
-    if (!custData.customers || !custData.customers.length) {
-      return res.json({ subscriptions: [] });
-    }
-    const customerId = custData.customers[0].id;
+    if (!custData.customers || !custData.customers.length) return res.json({ subscriptions: [] });
 
-    /* Get subscriptions */
-    const subRes  = await fetch(
-      RECHARGE_BASE + '/subscriptions?customer_id=' + customerId + '&limit=50',
-      { headers: rcHeaders() }
-    );
-    const subData = await subRes.json();
+    const customerId = custData.customers[0].id;
+    const subRes     = await fetch(RECHARGE_BASE + '/subscriptions?customer_id=' + customerId + '&limit=50', { headers: rcHeaders() });
+    const subData    = await subRes.json();
 
     res.json({
       subscriptions: (subData.subscriptions || []).map(function(s) {
         return {
-          id:               s.id,
-          status:           s.status,
-          productTitle:     s.product_title,
-          variantTitle:     s.variant_title,
-          price:            s.price,
-          quantity:         s.quantity,
-          nextChargeDate:   s.next_charge_scheduled_at,
+          id:                s.id,
+          status:            s.status,
+          productTitle:      s.product_title,
+          variantTitle:      s.variant_title,
+          price:             s.price,
+          quantity:          s.quantity,
+          nextChargeDate:    s.next_charge_scheduled_at,
           intervalFrequency: s.order_interval_frequency,
-          intervalUnit:     s.order_interval_unit,
-          isSkippable:      s.is_skippable,
-          cancelledAt:      s.cancelled_at,
-          createdAt:        s.created_at
+          intervalUnit:      s.order_interval_unit,
+          isSkippable:       s.is_skippable,
+          cancelledAt:       s.cancelled_at,
+          createdAt:         s.created_at
         };
       })
     });
@@ -72,54 +61,34 @@ app.get('/recharge/subscriptions', async (req, res) => {
 
 /* ═══════════════════════════
    POST /recharge/subscriptions/:id/cancel
-   body: { reason }
 ═══════════════════════════ */
 app.post('/recharge/subscriptions/:id/cancel', async (req, res) => {
   try {
-    const r = await fetch(
-      RECHARGE_BASE + '/subscriptions/' + req.params.id + '/cancel',
-      {
-        method: 'POST',
-        headers: rcHeaders(),
-        body: JSON.stringify({
-          cancellation_reason: req.body.reason || 'Customer requested'
-        })
-      }
-    );
+    const r    = await fetch(RECHARGE_BASE + '/subscriptions/' + req.params.id + '/cancel', {
+      method: 'POST', headers: rcHeaders(),
+      body: JSON.stringify({ cancellation_reason: req.body.reason || 'Customer requested' })
+    });
     const data = await r.json();
     if (!r.ok) return res.status(r.status).json(data);
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 /* ═══════════════════════════
    POST /recharge/subscriptions/:id/pause
-   Recharge Classic pause = set next_charge_scheduled_at to far future
-   body: { months } — how many months to pause (default 3)
 ═══════════════════════════ */
 app.post('/recharge/subscriptions/:id/pause', async (req, res) => {
   try {
     const months = parseInt(req.body.months || 3);
-    var d = new Date();
-    d.setMonth(d.getMonth() + months);
-    var dateStr = d.toISOString().split('T')[0]; // YYYY-MM-DD
-
-    const r = await fetch(
-      RECHARGE_BASE + '/subscriptions/' + req.params.id + '/set_next_charge_date',
-      {
-        method: 'POST',
-        headers: rcHeaders(),
-        body: JSON.stringify({ date: dateStr })
-      }
-    );
+    var d = new Date(); d.setMonth(d.getMonth() + months);
+    var dateStr = d.toISOString().split('T')[0];
+    const r    = await fetch(RECHARGE_BASE + '/subscriptions/' + req.params.id + '/set_next_charge_date', {
+      method: 'POST', headers: rcHeaders(), body: JSON.stringify({ date: dateStr })
+    });
     const data = await r.json();
     if (!r.ok) return res.status(r.status).json(data);
     res.json({ success: true, nextChargeDate: dateStr });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 /* ═══════════════════════════
@@ -127,163 +96,75 @@ app.post('/recharge/subscriptions/:id/pause', async (req, res) => {
 ═══════════════════════════ */
 app.post('/recharge/subscriptions/:id/activate', async (req, res) => {
   try {
-    const r = await fetch(
-      RECHARGE_BASE + '/subscriptions/' + req.params.id + '/activate',
-      { method: 'POST', headers: rcHeaders(), body: JSON.stringify({}) }
-    );
+    const r    = await fetch(RECHARGE_BASE + '/subscriptions/' + req.params.id + '/activate', {
+      method: 'POST', headers: rcHeaders(), body: JSON.stringify({})
+    });
     const data = await r.json();
     if (!r.ok) return res.status(r.status).json(data);
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 /* ═══════════════════════════
    POST /recharge/subscriptions/:id/skip
-   Skip next charge (only if is_skippable = true)
 ═══════════════════════════ */
 app.post('/recharge/subscriptions/:id/skip', async (req, res) => {
   try {
     const chargeId = req.body.chargeId;
     if (!chargeId) return res.status(400).json({ error: 'chargeId required' });
-    const r = await fetch(
-      RECHARGE_BASE + '/charges/' + chargeId + '/skip',
-      { method: 'POST', headers: rcHeaders(), body: JSON.stringify({ subscription_id: req.params.id }) }
-    );
+    const r    = await fetch(RECHARGE_BASE + '/charges/' + chargeId + '/skip', {
+      method: 'POST', headers: rcHeaders(), body: JSON.stringify({ subscription_id: req.params.id })
+    });
     const data = await r.json();
     if (!r.ok) return res.status(r.status).json(data);
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 /* ═══════════════════════════════════════════════
-   Klaviyo helper — sends a single event to Klaviyo
-   Returns { ok, status, body }
+   Klaviyo helper
 ═══════════════════════════════════════════════ */
 async function sendKlaviyoEvent(email, eventName, properties) {
   const response = await fetch('https://a.klaviyo.com/api/events/', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Klaviyo-API-Key ' + KLAVIYO_API_KEY,
-      'revision': '2024-10-15'
-    },
-    body: JSON.stringify({
-      data: {
-        type: 'event',
-        attributes: {
-          metric: {
-            data: {
-              type: 'metric',
-              attributes: { name: eventName }
-            }
-          },
-          profile: {
-            data: {
-              type: 'profile',
-              attributes: { email: email }
-            }
-          },
-          properties: properties || {}
-        }
-      }
-    })
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Klaviyo-API-Key ' + KLAVIYO_API_KEY, 'revision': '2024-10-15' },
+    body: JSON.stringify({ data: { type: 'event', attributes: { metric: { data: { type: 'metric', attributes: { name: eventName } } }, profile: { data: { type: 'profile', attributes: { email } } }, properties: properties || {} } } })
   });
-
   const body = response.status !== 204 ? await response.json().catch(() => null) : null;
   return { ok: response.ok, status: response.status, body };
 }
 
 /* ═══════════════════════════
    POST /klaviyo/test-event
-   body: { email, eventName, properties }
 ═══════════════════════════ */
 app.post('/klaviyo/test-event', async (req, res) => {
   try {
     const { email, eventName, properties } = req.body;
-    if (!email || !eventName) {
-      return res.status(400).json({ error: 'email and eventName are required' });
-    }
-
+    if (!email || !eventName) return res.status(400).json({ error: 'email and eventName are required' });
     const result = await sendKlaviyoEvent(email, eventName, properties);
-    if (!result.ok) {
-      console.error('Klaviyo error:', result.body);
-      return res.status(result.status).json({ error: result.body });
-    }
-
+    if (!result.ok) return res.status(result.status).json({ error: result.body });
     res.json({ success: true, status: result.status });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-/* ═══════════════════════════════════════════════════════
+/* ═══════════════════════════
    POST /webhooks/checkoutchamp
-   Receives CheckoutChamp webhook events and forwards them
-   to Klaviyo as profile events.
-
-   Expected payload:
-   {
-     "email": "customer@example.com",
-     "eventName": "Active_Membership",
-     "properties": {
-       "PurchaseID": "...",
-       "OrderId": "...",
-       "temp_password": "...",
-       "login_url": "...",
-       "manage_subscription_url": "..."
-     }
-   }
-═══════════════════════════════════════════════════════ */
+═══════════════════════════ */
 app.post('/webhooks/checkoutchamp', async (req, res) => {
   try {
     const { email, eventName, properties } = req.body;
-
-    if (!email || !eventName) {
-      return res.status(400).json({ error: 'email and eventName are required' });
-    }
-
+    if (!email || !eventName) return res.status(400).json({ error: 'email and eventName are required' });
     console.log('CheckoutChamp webhook received:', { email, eventName });
-
     const result = await sendKlaviyoEvent(email, eventName, properties);
-
-    if (!result.ok) {
-      console.error('Klaviyo push failed:', result.status, result.body);
-      return res.status(502).json({ error: 'Klaviyo push failed', details: result.body });
-    }
-
+    if (!result.ok) return res.status(502).json({ error: 'Klaviyo push failed', details: result.body });
     console.log('Klaviyo event pushed successfully:', eventName, 'for', email);
     res.json({ success: true, event: eventName, email });
-  } catch (err) {
-    console.error('CheckoutChamp webhook error:', err);
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, function() {
-  console.log('Recharge proxy running on port ' + PORT);
-});
-
-/* ═══════════════════════════════════════════════════
-   MAGIC LOGIN — add these to your existing server.js
-   Requires: const crypto = require('crypto');  at top
-═══════════════════════════════════════════════════ */
-
-const crypto = require('crypto');
-
-const CC_LOGIN_ID = process.env.CC_LOGIN_ID;
-const CC_API_PASS = process.env.CC_API_PASSWORD;
-const CC_CLUB_ID  = process.env.CC_CLUB_ID || '12';
-const PORTAL_URL  = process.env.PORTAL_URL || 'https://try.thegreatproject.com/memberarea';
-
-/* In-memory token store — replace with Redis for production */
+/* ════════════════════════════════════════════════════
+   MAGIC LOGIN
+════════════════════════════════════════════════════ */
 const tokenStore = {};
 
 /* Clean expired tokens every 10 min */
@@ -294,77 +175,44 @@ setInterval(function() {
   });
 }, 10 * 60 * 1000);
 
-/* ═══════════════════════════════════════════════════
-   TEST ENDPOINT (no email needed)
-   GET /magic-login/test?email=xxx&password=xxx
-   Returns magic link — open it in browser to test
-═══════════════════════════════════════════════════ */
+/* ── Serve magic-login.html ── */
+app.get('/magic-login', function(req, res) {
+  res.sendFile(path.join(__dirname, 'magic-login.html'));
+});
+
+/* ── TEST: generate magic link (no email service needed) ──
+   GET /magic-login/test?email=xxx&password=xxx            */
 app.get('/magic-login/test', function(req, res) {
   var email    = (req.query.email    || '').trim().toLowerCase();
   var password = (req.query.password || '').trim();
-  if (!email || !password) {
-    return res.status(400).json({ error: 'email and password required' });
-  }
+  if (!email || !password) return res.status(400).json({ error: 'email and password required' });
   var token = crypto.randomBytes(32).toString('hex');
   tokenStore[token] = { email, password, expires: Date.now() + 15 * 60 * 1000 };
-  var magicLink = 'https://customer-portal-vl02.onrender.com/magic-login/verify?token=' + token;
-  res.json({ magicLink, expiresIn: '15 minutes' });
+  res.json({
+    magicLink:  'https://customer-portal-vl02.onrender.com/magic-login?token=' + token,
+    expiresIn:  '15 minutes'
+  });
 });
 
-/* ═══════════════════════════════════════════════════
-   VERIFY ENDPOINT
-   GET /magic-login/verify?token=xxx
-   Validates token → calls CC login → redirects to portal
-═══════════════════════════════════════════════════ */
-app.get('/magic-login/verify', async function(req, res) {
-  try {
-    var token = req.query.token;
-
-    /* 1. Validate token exists and not expired */
-    if (!token || !tokenStore[token]) {
-      return res.status(400).send('<h2 style="font-family:sans-serif;padding:40px">Invalid or expired magic link.</h2>');
-    }
-    var data = tokenStore[token];
-    if (data.expires < Date.now()) {
-      delete tokenStore[token];
-      return res.status(400).send('<h2 style="font-family:sans-serif;padding:40px">Magic link expired. Please request a new one.</h2>');
-    }
-
-    /* 2. Call CC /members/login/ from server (bypasses CORS) */
-    var params = new URLSearchParams({
-      clubId:       CC_CLUB_ID,
-      clubUsername: data.email,
-      clubPassword: data.password,
-      loginId:      CC_LOGIN_ID,
-      password:     CC_API_PASS
-    });
-
-    var ccRes  = await fetch('https://api.checkoutchamp.com/members/login/?' + params.toString(), { method: 'POST' });
-    var ccData = await ccRes.json();
-    console.log('CC login response for', data.email, ':', JSON.stringify(ccData));
-
-    /* 3. Handle CC response */
-    if (ccData.result !== 'SUCCESS') {
-      return res.status(401).send('<h2 style="font-family:sans-serif;padding:40px">Login failed: ' + (ccData.message || 'Invalid credentials') + '</h2>');
-    }
-
-    var memberId = ccData.message.memberId;
-    var status   = ccData.message.status;
-
-    if (status !== 'ACTIVE') {
-      return res.status(403).send('<h2 style="font-family:sans-serif;padding:40px">Membership is ' + status + '. Please contact support.</h2>');
-    }
-
-    /* 4. One-time use — delete token */
+/* ── CREDENTIALS: called by magic-login.html to get creds for token ──
+   GET /magic-login/credentials?token=xxx                              */
+app.get('/magic-login/credentials', function(req, res) {
+  var token = req.query.token;
+  if (!token || !tokenStore[token]) return res.status(401).json({ error: 'Invalid or expired token' });
+  var data = tokenStore[token];
+  if (data.expires < Date.now()) {
     delete tokenStore[token];
-
-    /* 5. Redirect to CC portal with memberId and email in URL
-       Our portal JS will read these and establish the session */
-    var redirectUrl = PORTAL_URL + '?memberId=' + encodeURIComponent(memberId) + '&email=' + encodeURIComponent(data.email);
-    return res.redirect(redirectUrl);
-
-  } catch (err) {
-    console.error('Magic login error:', err);
-    res.status(500).send('<h2 style="font-family:sans-serif;padding:40px">Server error. Please try again.</h2>');
+    return res.status(401).json({ error: 'Token expired' });
   }
+  /* One-time use — delete immediately */
+  delete tokenStore[token];
+  res.json({ email: data.email, password: data.password });
+});
+
+/* ════════════════════════════════════════════════════ */
+app.get('/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, function() {
+  console.log('Server running on port ' + PORT);
 });
