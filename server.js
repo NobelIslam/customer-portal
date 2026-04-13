@@ -243,29 +243,15 @@ app.get('/magic-login/verify', async function(req, res) {
       return res.status(403).json({ error: 'Membership is ' + status });
     }
 
-    /* 2. Fetch member details */
-    var memberRes  = await fetch(CC_BASE + '/members/?memberId=' + memberId + '&loginId=' + CC_LOGIN_ID + '&password=' + CC_API_PASS, { method: 'GET' });
-    var memberData = await memberRes.json();
-    var membership = (memberData.message && memberData.message[0]) ? memberData.message[0] : null;
-
-    /* 3. Fetch customer orders */
-    var ordersData = null;
-    if (membership && membership.customerId) {
-      var ordersRes = await fetch(CC_BASE + '/customer/orders/?customerId=' + membership.customerId + '&loginId=' + CC_LOGIN_ID + '&password=' + CC_API_PASS);
-      ordersData = await ordersRes.json();
-    }
-
-    /* 4. One-time use */
+    /* 2. One-time use */
     delete tokenStore[token];
 
-    /* 5. Return everything browser needs to build CC session */
+    /* 3. Return memberId + email — browser builds session */
     res.json({
-      success:    true,
-      memberId:   memberId,
-      status:     status,
-      membership: membership,
-      orders:     ordersData,
-      email:      data.email
+      success:  true,
+      memberId: memberId,
+      status:   status,
+      email:    data.email
     });
 
   } catch (err) {
