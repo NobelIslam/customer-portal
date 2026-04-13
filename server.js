@@ -193,9 +193,8 @@ app.get('/magic-login/test', function(req, res) {
   });
 });
 
-/* ── LOGIN: validate token + call CC API server-side + return session data ──
-   GET /magic-login/verify?token=xxx
-   Called by magic-login.html — returns CC session data as JSON            */
+/* ── LOGIN: validate token + build full CC session + return to browser ──
+   GET /magic-login/verify?token=xxx                                      */
 app.get('/magic-login/verify', async function(req, res) {
   try {
     var token = req.query.token;
@@ -208,33 +207,65 @@ app.get('/magic-login/verify', async function(req, res) {
       return res.status(401).json({ error: 'Token expired' });
     }
 
-    /* Call CC backend API with API credentials */
-    var ccLoginUrl = 'https://api.checkoutchamp.com/members/login/?' + new URLSearchParams({
-      clubId:       process.env.CC_CLUB_ID || '12',
-      clubUsername: data.email,
-      clubPassword: data.password,
-      loginId:      process.env.CC_LOGIN_ID,
-      password:     process.env.CC_API_PASSWORD
-    }).toString();
+    var CC_LOGIN_ID  = process.env.CC_LOGIN_ID;
+    var CC_API_PASS  = process.env.CC_API_PASSWORD;
+    var CC_CLUB_ID   = process.env.CC_CLUB_ID || '12';
+    var CC_BASE      = 'https://api.checkoutchamp.com';
 
-    var ccRes  = await fetch(ccLoginUrl, { method: 'POST' });
-    var ccData = await ccRes.json();
-    console.log('CC login for', data.email, ':', JSON.stringify(ccData));
-
-    if (!ccRes.ok || ccData.result !== 'SUCCESS') {
-      return res.status(401).json({ error: 'CC login failed: ' + (ccData.message || JSON.stringify(ccData)) });
+    function ccHeaders() {
+      return {
+        'Content-Type': 'application/json',
+        'Authorization': 'Basic ' + Buffer.from(CC_LOGIN_ID + ':' + CC_API_PASS).toString('base64')
+      };
     }
 
-    /* One-time use — delete token */
+    /* 1. Login via CC API */
+    var loginUrl = CC_BASE + '/members/login/?' + new URLSearchParams({
+      clubId:       CC_CLUB_ID,
+      clubUsername: data.email,
+      clubPassword: data.password,
+      loginId:      CC_LOGIN_ID,
+      password:     CC_API_PASS
+    }).toString();
+
+    var loginRes  = await fetch(loginUrl, { method: 'POST' });
+    var loginData = await loginRes.json();
+    console.log('CC login for', data.email, ':', JSON.stringify(loginData));
+
+    if (!loginRes.ok || loginData.result !== 'SUCCESS') {
+      return res.status(401).json({ error: 'CC login failed: ' + (loginData.message || JSON.stringify(loginData)) });
+    }
+
+    var memberId = loginData.message.memberId;
+    var status   = loginData.message.status;
+
+    if (status !== 'ACTIVE') {
+      return res.status(403).json({ error: 'Membership is ' + status });
+    }
+
+    /* 2. Fetch member details */
+    var memberRes  = await fetch(CC_BASE + '/members/?memberId=' + memberId + '&loginId=' + CC_LOGIN_ID + '&password=' + CC_API_PASS, { method: 'GET' });
+    var memberData = await memberRes.json();
+    var membership = (memberData.message && memberData.message[0]) ? memberData.message[0] : null;
+
+    /* 3. Fetch customer orders */
+    var ordersData = null;
+    if (membership && membership.customerId) {
+      var ordersRes = await fetch(CC_BASE + '/customer/orders/?customerId=' + membership.customerId + '&loginId=' + CC_LOGIN_ID + '&password=' + CC_API_PASS);
+      ordersData = await ordersRes.json();
+    }
+
+    /* 4. One-time use */
     delete tokenStore[token];
 
-    /* Return memberId + email + password so browser can auto-submit CC login form */
+    /* 5. Return everything browser needs to build CC session */
     res.json({
-      success:  true,
-      memberId: ccData.message.memberId,
-      status:   ccData.message.status,
-      email:    data.email,
-      password: data.password
+      success:    true,
+      memberId:   memberId,
+      status:     status,
+      membership: membership,
+      orders:     ordersData,
+      email:      data.email
     });
 
   } catch (err) {
