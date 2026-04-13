@@ -208,29 +208,34 @@ app.get('/magic-login/verify', async function(req, res) {
       return res.status(401).json({ error: 'Token expired' });
     }
 
-    /* Call CC frontend API from server — no auth issues server-side */
-    var ccRes = await fetch('https://pages-live-api.checkoutchamp.com/providersApi/V1/ClubMembership/Login/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        clubUsername: data.email,
-        clubPassword: data.password,
-        clubId:       12
-      })
-    });
+    /* Call CC backend API with API credentials */
+    var ccLoginUrl = 'https://api.checkoutchamp.com/members/login/?' + new URLSearchParams({
+      clubId:       process.env.CC_CLUB_ID || '12',
+      clubUsername: data.email,
+      clubPassword: data.password,
+      loginId:      process.env.CC_LOGIN_ID,
+      password:     process.env.CC_API_PASSWORD
+    }).toString();
 
+    var ccRes  = await fetch(ccLoginUrl, { method: 'POST' });
     var ccData = await ccRes.json();
-    console.log('CC login for', data.email, '- status:', ccRes.status, '- result:', ccData.result);
+    console.log('CC login for', data.email, ':', JSON.stringify(ccData));
 
-    if (!ccRes.ok || ccData.result === 'Error' || ccData.result === 'ERROR') {
+    if (!ccRes.ok || ccData.result !== 'SUCCESS') {
       return res.status(401).json({ error: 'CC login failed: ' + (ccData.message || JSON.stringify(ccData)) });
     }
 
     /* One-time use — delete token */
     delete tokenStore[token];
 
-    /* Return full CC session data to browser */
-    res.json({ success: true, session: ccData });
+    /* Return memberId + email + password so browser can auto-submit CC login form */
+    res.json({
+      success:  true,
+      memberId: ccData.message.memberId,
+      status:   ccData.message.status,
+      email:    data.email,
+      password: data.password
+    });
 
   } catch (err) {
     console.error('Magic login error:', err);
