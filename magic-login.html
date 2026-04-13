@@ -26,9 +26,13 @@
 </div>
 
 <script>
-  var PROXY_URL  = 'https://customer-portal-vl02.onrender.com';
-  var PORTAL_URL = 'https://try.thegreatproject.com/memberarea';
-  var LOGIN_URL  = 'https://try.thegreatproject.com/login';
+  var PROXY_URL      = 'https://customer-portal-vl02.onrender.com';
+  var PORTAL_URL     = 'https://try.thegreatproject.com/memberarea';
+  var LOGIN_URL      = 'https://try.thegreatproject.com/login';
+  var CC_PAGES_API   = 'https://pages-live-api.checkoutchamp.com';
+  var COMPANY_TOKEN  = 'ef04a8c0-b281-11ef-82be-b17d7998efda';
+  var FUNNEL_REF     = 'b0267726-11c5-491f-bdd5-62cfd0a19248';
+  var PAGE_REF       = '0b5879a8-c6a0-4cf0-a9ea-c3784d277eec';
 
   function showError(msg) {
     document.getElementById('spinner').style.display = 'none';
@@ -39,38 +43,8 @@
     e.style.display = 'block';
   }
 
-  function buildSession(data) {
-    var ss  = sessionStorage;
-    var ls  = localStorage;
-    var lData = data.loginData || {};
-    var msg   = lData.message || {};
-
-    /* Set real sessionId from UseSession */
-    var sessionObj = {
-      result:  'SUCCESS',
-      message: { sessionId: data.sessionId, affVals: {} }
-    };
-    ss.setItem('sessionId',           JSON.stringify(sessionObj));
-    ss.setItem('ccExternalSessionId', data.sessionId);
-
-    /* Set membership data from login response */
-    if (msg.membership)        ss.setItem('membership',        JSON.stringify(msg.membership));
-    if (msg.clubMemberships)   ss.setItem('clubMemberships',   JSON.stringify(msg.clubMemberships));
-    if (msg.customerOrders)    ss.setItem('customerOrders',    JSON.stringify(msg.customerOrders));
-    if (msg.customerPurchases) ss.setItem('customerPurchases', JSON.stringify(msg.customerPurchases));
-    if (msg.funnelData)        ss.setItem('funnelData',        JSON.stringify(msg.funnelData));
-
-    /* Fallback membership if not in message */
-    if (!msg.membership) {
-      var m = { emailAddress: data.email, clubUsername: data.email, clubId: 12, status: 'ACTIVE' };
-      ss.setItem('membership',      JSON.stringify(m));
-      ss.setItem('clubMemberships', JSON.stringify([m]));
-    }
-
-    ss.setItem('loginPageUrl',         LOGIN_URL + '?alertMessage=Access%20Denied');
-    ss.setItem('sessionStartDateTime', new Date().toISOString());
-    ls.setItem('isMembershipLogin',    'true');
-    ls.setItem('loginUrl',             LOGIN_URL);
+  function setMsg(msg) {
+    document.getElementById('msg').textContent = msg;
   }
 
   async function run() {
@@ -79,21 +53,79 @@
     if (!token) { showError('No token found in URL.'); return; }
 
     try {
-      var res  = await fetch(PROXY_URL + '/magic-login/verify?token=' + encodeURIComponent(token));
-      var data = await res.json();
+      /* Step 1: Call UseSession from browser to get browser-linked sessionId */
+      setMsg('Initializing session...');
+      var sessionRes = await fetch(CC_PAGES_API + '/providersApi/V1/ImportClick/UseSession', {
+        method: 'POST',
+        headers: {
+          'Content-Type':      'application/json',
+          'Companytoken':      COMPANY_TOKEN,
+          'Funnelreferenceid': FUNNEL_REF
+        },
+        body: JSON.stringify({
+          pageType:          'presellPage',
+          sessionId:         '',
+          funnelName:        'Customer portal',
+          funnelReferenceId: FUNNEL_REF,
+          pageName:          'Login',
+          pageReferenceId:   PAGE_REF,
+          campaignId:        87,
+          requestUri:        'https://try.thegreatproject.com/login',
+          userAgent:         navigator.userAgent
+        })
+      });
+      var sessionData = await sessionRes.json();
+      console.log('UseSession:', sessionData);
 
-      console.log('Verify response:', JSON.stringify(data).substring(0, 300));
+      if (!sessionData.message || !sessionData.message.sessionId) {
+        showError('Session init failed: ' + JSON.stringify(sessionData));
+        return;
+      }
+      var realSessionId = sessionData.message.sessionId;
 
-      if (!res.ok || !data.success) { showError(data.error || 'Login failed.'); return; }
+      /* Store sessionId in CC's expected key */
+      var sessionObj = { result: 'SUCCESS', message: { sessionId: realSessionId, affVals: {} } };
+      sessionStorage.setItem('sessionId',           JSON.stringify(sessionObj));
+      sessionStorage.setItem('ccExternalSessionId', realSessionId);
 
-      buildSession(data);
+      /* Step 2: Send token + sessionId to our server for login */
+      setMsg('Verifying your link...');
+      var verifyRes  = await fetch(PROXY_URL + '/magic-login/verify', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ token: token, sessionId: realSessionId })
+      });
+      var data = await verifyRes.json();
+      console.log('Verify:', data);
+
+      if (!verifyRes.ok || !data.success) { showError(data.error || 'Login failed.'); return; }
+
+      /* Step 3: Set all session data CC needs */
+      var ss  = sessionStorage;
+      var ls  = localStorage;
+      var msg = data.loginData && data.loginData.message ? data.loginData.message : {};
+
+      if (msg.membership)        ss.setItem('membership',        JSON.stringify(msg.membership));
+      if (msg.clubMemberships)   ss.setItem('clubMemberships',   JSON.stringify(msg.clubMemberships));
+      if (msg.customerOrders)    ss.setItem('customerOrders',    JSON.stringify(msg.customerOrders));
+      if (msg.customerPurchases) ss.setItem('customerPurchases', JSON.stringify(msg.customerPurchases));
+      if (msg.funnelData)        ss.setItem('funnelData',        JSON.stringify(msg.funnelData));
+
+      if (!msg.membership) {
+        var m = { emailAddress: data.email, clubUsername: data.email, clubId: 12, status: 'ACTIVE' };
+        ss.setItem('membership',      JSON.stringify(m));
+        ss.setItem('clubMemberships', JSON.stringify([m]));
+      }
+
+      ss.setItem('loginPageUrl',         LOGIN_URL + '?alertMessage=Access%20Denied');
+      ss.setItem('sessionStartDateTime', new Date().toISOString());
+      ls.setItem('isMembershipLogin',    'true');
+      ls.setItem('loginUrl',             LOGIN_URL);
 
       document.getElementById('title').textContent = 'Logged in!';
-      document.getElementById('msg').textContent = 'Redirecting...';
+      setMsg('Redirecting to your dashboard...');
 
-      setTimeout(function() {
-        window.location.href = PORTAL_URL;
-      }, 500);
+      setTimeout(function() { window.location.href = PORTAL_URL; }, 600);
 
     } catch(err) { showError('Error: ' + err.message); }
   }
