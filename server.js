@@ -241,15 +241,75 @@ app.post('/magic-login/verify', async function(req, res) {
       return res.status(401).json({ error: 'Login failed: ' + JSON.stringify(loginData.message) });
     }
 
-    /* 3. One-time use */
+    /* 3. Parse login message to get memberId */
+    var loginMsg = {};
+    try {
+      loginMsg = typeof loginData.message === 'string'
+        ? JSON.parse(loginData.message)
+        : loginData.message;
+    } catch(e) {}
+
+    var memberId   = loginMsg.memberId || '';
+    var accessToken = loginMsg.access_token || '';
+
+    /* 4. Fetch customerOrders and customerPurchases from CC API */
+    var CC_LOGIN_ID = process.env.CC_LOGIN_ID;
+    var CC_API_PASS = process.env.CC_API_PASSWORD;
+    var CC_BASE     = 'https://api.checkoutchamp.com';
+
+    var customerOrders    = [];
+    var customerPurchases = {};
+
+    try {
+      /* Get member details to find customerId */
+      var memberUrl  = CC_BASE + '/members/?' + new URLSearchParams({
+        memberId: memberId, loginId: CC_LOGIN_ID, password: CC_API_PASS
+      });
+      var memberRes  = await fetch(memberUrl);
+      var memberText = await memberRes.text();
+      var memberData = JSON.parse(memberText);
+      console.log('Member data result:', memberData.result);
+
+      var member = memberData.message && memberData.message[0] ? memberData.message[0] : null;
+
+      if (member && member.customerId) {
+        /* Fetch orders */
+        var ordersUrl = CC_BASE + '/order/?' + new URLSearchParams({
+          customerId: member.customerId, loginId: CC_LOGIN_ID, password: CC_API_PASS
+        });
+        var ordersRes  = await fetch(ordersUrl);
+        var ordersData = await ordersRes.json();
+        if (ordersData.message) customerOrders = ordersData.message;
+
+        /* Fetch purchases/subscriptions */
+        var purchasesUrl = CC_BASE + '/membership/?' + new URLSearchParams({
+          customerId: member.customerId, clubId: CC_CLUB_ID, loginId: CC_LOGIN_ID, password: CC_API_PASS
+        });
+        var purchasesRes  = await fetch(purchasesUrl);
+        var purchasesData = await purchasesRes.json();
+        if (purchasesData.message) {
+          /* Convert array to object keyed by purchaseId */
+          var purchases = Array.isArray(purchasesData.message) ? purchasesData.message : [];
+          purchases.forEach(function(p) {
+            if (p.purchaseId) customerPurchases[p.purchaseId] = p;
+          });
+        }
+      }
+    } catch(e) {
+      console.error('Error fetching customer data:', e.message);
+    }
+
+    /* 5. One-time use */
     delete tokenStore[token];
 
-    /* 4. Return real sessionId + full login response to browser */
+    /* 6. Return everything browser needs */
     res.json({
-      success:   true,
-      sessionId: realSessionId,
-      loginData: loginData,
-      email:     data.email
+      success:          true,
+      sessionId:        realSessionId,
+      loginData:        loginData,
+      email:            data.email,
+      customerOrders:   customerOrders,
+      customerPurchases: customerPurchases
     });
 
   } catch (err) {
