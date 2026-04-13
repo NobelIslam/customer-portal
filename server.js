@@ -11,7 +11,7 @@ app.use(cors({
 
 const RECHARGE_API_KEY  = process.env.RECHARGE_API_KEY;
 const RECHARGE_BASE     = 'https://api.rechargeapps.com';
-const KLAVIYO_API_KEY   = process.env.KLAVIYO_API_KEY || 'pk_8adb059279aa6cc149c08cf14acdaa6cc9';
+const KLAVIYO_API_KEY   = process.env.KLAVIYO_API_KEY;
 
 function rcHeaders() {
   return {
