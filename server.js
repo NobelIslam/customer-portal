@@ -197,8 +197,7 @@ app.get('/magic-login/test', function(req, res) {
    GET /magic-login/verify?token=xxx                                   */
 app.post('/magic-login/verify', async function(req, res) {
   try {
-    var token     = req.body.token;
-    var sessionId = req.body.sessionId;
+    var token = req.body.token;
 
     if (!token || !tokenStore[token]) {
       return res.status(401).json({ error: 'Invalid or expired token' });
@@ -208,32 +207,19 @@ app.post('/magic-login/verify', async function(req, res) {
       delete tokenStore[token];
       return res.status(401).json({ error: 'Token expired' });
     }
-    if (!sessionId) {
-      return res.status(400).json({ error: 'sessionId required' });
-    }
-
-    var realSessionId = sessionId;
     var CC_CLUB_ID       = process.env.CC_CLUB_ID || '12';
     var CC_COMPANY_TOKEN = 'ef04a8c0-b281-11ef-82be-b17d7998efda';
     var CC_FUNNEL_REF    = 'b0267726-11c5-491f-bdd5-62cfd0a19248';
     var CC_PAGES_API     = 'https://pages-live-api.checkoutchamp.com';
 
-    /* Login with browser-generated sessionId */
-    var loginRes  = await fetch(CC_PAGES_API + '/providersApi/V1/ClubMembership/Login/', {
-      method: 'POST',
-      headers: {
-        'Content-Type':      'application/json',
-        'Companytoken':      CC_COMPANY_TOKEN,
-        'Funnelreferenceid': CC_FUNNEL_REF,
-        'Origin':            'https://try.thegreatproject.com'
-      },
-      body: JSON.stringify({
-        clubUsername: data.email,
-        clubPassword: data.password,
-        clubId:       parseInt(CC_CLUB_ID),
-        sessionId:    realSessionId
-      })
-    });
+    /* Validate credentials via CC API */
+    var loginRes  = await fetch('https://api.checkoutchamp.com/members/login/?' + new URLSearchParams({
+      clubId:       CC_CLUB_ID,
+      clubUsername: data.email,
+      clubPassword: data.password,
+      loginId:      process.env.CC_LOGIN_ID,
+      password:     process.env.CC_API_PASSWORD
+    }).toString(), { method: 'POST' });
     var loginData = await loginRes.json();
     console.log('CC login for', data.email, ':', JSON.stringify(loginData).substring(0, 200));
 
@@ -302,14 +288,12 @@ app.post('/magic-login/verify', async function(req, res) {
     /* 5. One-time use */
     delete tokenStore[token];
 
-    /* 6. Return everything browser needs */
+    /* 6. Return credentials + status to browser */
     res.json({
-      success:          true,
-      sessionId:        realSessionId,
-      loginData:        loginData,
-      email:            data.email,
-      customerOrders:   customerOrders,
-      customerPurchases: customerPurchases
+      success:  true,
+      email:    data.email,
+      password: data.password,
+      status:   loginMsg.status || 'ACTIVE'
     });
 
   } catch (err) {
