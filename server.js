@@ -188,7 +188,7 @@ app.get('/magic-login/test', function(req, res) {
   var token = crypto.randomBytes(32).toString('hex');
   tokenStore[token] = { email, password, expires: Date.now() + 15 * 60 * 1000 };
   res.json({
-    magicLink: 'https://customer-portal-vl02.onrender.com/magic-login?token=' + token,
+    magicLink: 'https://try.thegreatproject.com/magic-login?token=' + token,
     expiresIn: '15 minutes'
   });
 });
