@@ -228,6 +228,8 @@ app.get('/magic-login/verify', async function(req, res) {
         funnelReferenceId: CC_FUNNEL_REF,
         pageName:          'Login',
         pageReferenceId:   '0b5879a8-c6a0-4cf0-a9ea-c3784d277eec',
+        campaignId:        87,
+        requestUri:        'https://try.thegreatproject.com/login',
         userAgent:         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       })
     });
