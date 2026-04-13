@@ -7,3 +7,5 @@ services:
     envVars:
       - key: RECHARGE_API_KEY
         sync: false   # set manually in Render dashboard
+      - key: KLAVIYO_API_KEY
+        sync: false   # set manually in Render dashboard

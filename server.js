@@ -9,8 +9,9 @@ app.use(cors({
   origin: '*' // restrict to your CC domain in production
 }));
 
-const RECHARGE_API_KEY = process.env.RECHARGE_API_KEY;
-const RECHARGE_BASE    = 'https://api.rechargeapps.com';
+const RECHARGE_API_KEY  = process.env.RECHARGE_API_KEY;
+const RECHARGE_BASE     = 'https://api.rechargeapps.com';
+const KLAVIYO_API_KEY   = process.env.KLAVIYO_API_KEY || 'pk_8adb059279aa6cc149c08cf14acdaa6cc9';
 
 function rcHeaders() {
   return {
@@ -158,6 +159,44 @@ app.post('/recharge/subscriptions/:id/skip', async (req, res) => {
   }
 });
 
+/* ═══════════════════════════════════════════════
+   Klaviyo helper — sends a single event to Klaviyo
+   Returns { ok, status, body }
+═══════════════════════════════════════════════ */
+async function sendKlaviyoEvent(email, eventName, properties) {
+  const response = await fetch('https://a.klaviyo.com/api/events/', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Klaviyo-API-Key ' + KLAVIYO_API_KEY,
+      'revision': '2024-10-15'
+    },
+    body: JSON.stringify({
+      data: {
+        type: 'event',
+        attributes: {
+          metric: {
+            data: {
+              type: 'metric',
+              attributes: { name: eventName }
+            }
+          },
+          profile: {
+            data: {
+              type: 'profile',
+              attributes: { email: email }
+            }
+          },
+          properties: properties || {}
+        }
+      }
+    })
+  });
+
+  const body = response.status !== 204 ? await response.json().catch(() => null) : null;
+  return { ok: response.ok, status: response.status, body };
+}
+
 /* ═══════════════════════════
    POST /klaviyo/test-event
    body: { email, eventName, properties }
@@ -169,48 +208,58 @@ app.post('/klaviyo/test-event', async (req, res) => {
       return res.status(400).json({ error: 'email and eventName are required' });
     }
 
-    const response = await fetch('https://a.klaviyo.com/api/events/', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Klaviyo-API-Key pk_8adb059279aa6cc149c08cf14acdaa6cc9',
-        'revision': '2024-10-15'
-      },
-      body: JSON.stringify({
-        data: {
-          type: 'event',
-          attributes: {
-            metric: {
-              data: {
-                type: 'metric',
-                attributes: { name: eventName }
-              }
-            },
-            profile: {
-              data: {
-                type: 'profile',
-                attributes: {
-                  email: email,
-                  first_name: 'Nobel',
-                  last_name: 'Doe'
-                }
-              }
-            },
-            properties: properties || {}
-          }
-        }
-      })
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      console.error('Klaviyo error:', error);
-      return res.status(response.status).json({ error });
+    const result = await sendKlaviyoEvent(email, eventName, properties);
+    if (!result.ok) {
+      console.error('Klaviyo error:', result.body);
+      return res.status(result.status).json({ error: result.body });
     }
 
-    res.json({ success: true, status: response.status });
+    res.json({ success: true, status: result.status });
   } catch (err) {
     console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ═══════════════════════════════════════════════════════
+   POST /webhooks/checkoutchamp
+   Receives CheckoutChamp webhook events and forwards them
+   to Klaviyo as profile events.
+
+   Expected payload:
+   {
+     "email": "customer@example.com",
+     "eventName": "Active_Membership",
+     "properties": {
+       "PurchaseID": "...",
+       "OrderId": "...",
+       "temp_password": "...",
+       "login_url": "...",
+       "manage_subscription_url": "..."
+     }
+   }
+═══════════════════════════════════════════════════════ */
+app.post('/webhooks/checkoutchamp', async (req, res) => {
+  try {
+    const { email, eventName, properties } = req.body;
+
+    if (!email || !eventName) {
+      return res.status(400).json({ error: 'email and eventName are required' });
+    }
+
+    console.log('CheckoutChamp webhook received:', { email, eventName });
+
+    const result = await sendKlaviyoEvent(email, eventName, properties);
+
+    if (!result.ok) {
+      console.error('Klaviyo push failed:', result.status, result.body);
+      return res.status(502).json({ error: 'Klaviyo push failed', details: result.body });
+    }
+
+    console.log('Klaviyo event pushed successfully:', eventName, 'for', email);
+    res.json({ success: true, event: eventName, email });
+  } catch (err) {
+    console.error('CheckoutChamp webhook error:', err);
     res.status(500).json({ error: err.message });
   }
 });
