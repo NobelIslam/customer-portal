@@ -84,15 +84,27 @@
           clubId:       CLUB_ID
         })
       });
-      var ccData = await ccRes.json();
+
+      var rawText = await ccRes.text();
+      console.log('CC API raw response:', rawText);
+
+      var ccData;
+      try { ccData = JSON.parse(rawText); } catch(e) {
+        showError('CC API returned non-JSON: ' + rawText.substring(0, 200));
+        return;
+      }
+
+      console.log('CC API parsed response:', JSON.stringify(ccData));
 
       if (!ccData || ccData.result === 'ERROR') {
-        showError('Login failed: ' + (ccData.message || 'Invalid credentials'));
+        showError('Login failed: ' + JSON.stringify(ccData.message || ccData));
         return;
       }
 
       /* 4. Set CC session in browser storage */
-      setSession(ccData.message || ccData);
+      var sessionData = ccData.message || ccData;
+      console.log('Setting session with:', JSON.stringify(sessionData));
+      setSession(sessionData);
 
       /* 5. Redirect to dashboard */
       document.getElementById('title').textContent = 'Logged in!';
