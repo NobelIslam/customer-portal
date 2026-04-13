@@ -195,9 +195,11 @@ app.get('/magic-login/test', function(req, res) {
 
 /* ── LOGIN: validate token + get real CC session + return to browser ──
    GET /magic-login/verify?token=xxx                                   */
-app.get('/magic-login/verify', async function(req, res) {
+app.post('/magic-login/verify', async function(req, res) {
   try {
-    var token = req.query.token;
+    var token     = req.body.token;
+    var sessionId = req.body.sessionId;
+
     if (!token || !tokenStore[token]) {
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
@@ -206,42 +208,17 @@ app.get('/magic-login/verify', async function(req, res) {
       delete tokenStore[token];
       return res.status(401).json({ error: 'Token expired' });
     }
+    if (!sessionId) {
+      return res.status(400).json({ error: 'sessionId required' });
+    }
 
+    var realSessionId = sessionId;
     var CC_CLUB_ID       = process.env.CC_CLUB_ID || '12';
     var CC_COMPANY_TOKEN = 'ef04a8c0-b281-11ef-82be-b17d7998efda';
     var CC_FUNNEL_REF    = 'b0267726-11c5-491f-bdd5-62cfd0a19248';
     var CC_PAGES_API     = 'https://pages-live-api.checkoutchamp.com';
 
-    /* 1. Get real sessionId from CC UseSession */
-    var sessionRes  = await fetch(CC_PAGES_API + '/providersApi/V1/ImportClick/UseSession', {
-      method: 'POST',
-      headers: {
-        'Content-Type':      'application/json',
-        'Companytoken':      CC_COMPANY_TOKEN,
-        'Funnelreferenceid': CC_FUNNEL_REF,
-        'Origin':            'https://try.thegreatproject.com'
-      },
-      body: JSON.stringify({
-        pageType:          'presellPage',
-        sessionId:         '',
-        funnelName:        'Customer portal',
-        funnelReferenceId: CC_FUNNEL_REF,
-        pageName:          'Login',
-        pageReferenceId:   '0b5879a8-c6a0-4cf0-a9ea-c3784d277eec',
-        campaignId:        87,
-        requestUri:        'https://try.thegreatproject.com/login',
-        userAgent:         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      })
-    });
-    var sessionData = await sessionRes.json();
-    console.log('UseSession:', JSON.stringify(sessionData));
-
-    if (!sessionData.message || !sessionData.message.sessionId) {
-      return res.status(500).json({ error: 'UseSession failed: ' + JSON.stringify(sessionData) });
-    }
-    var realSessionId = sessionData.message.sessionId;
-
-    /* 2. Login with real sessionId */
+    /* Login with browser-generated sessionId */
     var loginRes  = await fetch(CC_PAGES_API + '/providersApi/V1/ClubMembership/Login/', {
       method: 'POST',
       headers: {
