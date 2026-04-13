@@ -193,8 +193,8 @@ app.get('/magic-login/test', function(req, res) {
   });
 });
 
-/* ── LOGIN: validate token + build full CC session + return to browser ──
-   GET /magic-login/verify?token=xxx                                      */
+/* ── LOGIN: validate token + get real CC session + return to browser ──
+   GET /magic-login/verify?token=xxx                                   */
 app.get('/magic-login/verify', async function(req, res) {
   try {
     var token = req.query.token;
@@ -207,51 +207,70 @@ app.get('/magic-login/verify', async function(req, res) {
       return res.status(401).json({ error: 'Token expired' });
     }
 
-    var CC_LOGIN_ID  = process.env.CC_LOGIN_ID;
-    var CC_API_PASS  = process.env.CC_API_PASSWORD;
-    var CC_CLUB_ID   = process.env.CC_CLUB_ID || '12';
-    var CC_BASE      = 'https://api.checkoutchamp.com';
+    var CC_CLUB_ID       = process.env.CC_CLUB_ID || '12';
+    var CC_COMPANY_TOKEN = 'ef04a8c0-b281-11ef-82be-b17d7998efda';
+    var CC_FUNNEL_REF    = 'b0267726-11c5-491f-bdd5-62cfd0a19248';
+    var CC_PAGES_API     = 'https://pages-live-api.checkoutchamp.com';
 
-    function ccHeaders() {
-      return {
-        'Content-Type': 'application/json',
-        'Authorization': 'Basic ' + Buffer.from(CC_LOGIN_ID + ':' + CC_API_PASS).toString('base64')
-      };
+    /* 1. Get real sessionId from CC UseSession */
+    var sessionRes  = await fetch(CC_PAGES_API + '/providersApi/V1/ImportClick/UseSession', {
+      method: 'POST',
+      headers: {
+        'Content-Type':      'application/json',
+        'Companytoken':      CC_COMPANY_TOKEN,
+        'Funnelreferenceid': CC_FUNNEL_REF,
+        'Origin':            'https://try.thegreatproject.com'
+      },
+      body: JSON.stringify({
+        pageType:          'presellPage',
+        sessionId:         '',
+        funnelName:        'Customer portal',
+        funnelReferenceId: CC_FUNNEL_REF,
+        pageName:          'Login',
+        pageReferenceId:   '0b5879a8-c6a0-4cf0-a9ea-c3784d277eec',
+        userAgent:         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      })
+    });
+    var sessionData = await sessionRes.json();
+    console.log('UseSession:', JSON.stringify(sessionData));
+
+    if (!sessionData.message || !sessionData.message.sessionId) {
+      return res.status(500).json({ error: 'UseSession failed: ' + JSON.stringify(sessionData) });
     }
+    var realSessionId = sessionData.message.sessionId;
 
-    /* 1. Login via CC API */
-    var loginUrl = CC_BASE + '/members/login/?' + new URLSearchParams({
-      clubId:       CC_CLUB_ID,
-      clubUsername: data.email,
-      clubPassword: data.password,
-      loginId:      CC_LOGIN_ID,
-      password:     CC_API_PASS
-    }).toString();
-
-    var loginRes  = await fetch(loginUrl, { method: 'POST' });
+    /* 2. Login with real sessionId */
+    var loginRes  = await fetch(CC_PAGES_API + '/providersApi/V1/ClubMembership/Login/', {
+      method: 'POST',
+      headers: {
+        'Content-Type':      'application/json',
+        'Companytoken':      CC_COMPANY_TOKEN,
+        'Funnelreferenceid': CC_FUNNEL_REF,
+        'Origin':            'https://try.thegreatproject.com'
+      },
+      body: JSON.stringify({
+        clubUsername: data.email,
+        clubPassword: data.password,
+        clubId:       parseInt(CC_CLUB_ID),
+        sessionId:    realSessionId
+      })
+    });
     var loginData = await loginRes.json();
-    console.log('CC login for', data.email, ':', JSON.stringify(loginData));
+    console.log('CC login for', data.email, ':', JSON.stringify(loginData).substring(0, 200));
 
-    if (!loginRes.ok || loginData.result !== 'SUCCESS') {
-      return res.status(401).json({ error: 'CC login failed: ' + (loginData.message || JSON.stringify(loginData)) });
+    if (loginData.result === 'Error' || loginData.result === 'ERROR') {
+      return res.status(401).json({ error: 'Login failed: ' + JSON.stringify(loginData.message) });
     }
 
-    var memberId = loginData.message.memberId;
-    var status   = loginData.message.status;
-
-    if (status !== 'ACTIVE') {
-      return res.status(403).json({ error: 'Membership is ' + status });
-    }
-
-    /* 2. One-time use */
+    /* 3. One-time use */
     delete tokenStore[token];
 
-    /* 3. Return memberId + email — browser builds session */
+    /* 4. Return real sessionId + full login response to browser */
     res.json({
-      success:  true,
-      memberId: memberId,
-      status:   status,
-      email:    data.email
+      success:   true,
+      sessionId: realSessionId,
+      loginData: loginData,
+      email:     data.email
     });
 
   } catch (err) {
