@@ -58,16 +58,16 @@
         return;
       }
 
-      /* 2. Store credentials temporarily in sessionStorage */
-      sessionStorage.setItem('ml_email',    data.email);
-      sessionStorage.setItem('ml_password', data.password);
-
       document.getElementById('title').textContent = 'Verified!';
       document.getElementById('msg').textContent = 'Logging you in...';
 
-      /* 3. Redirect to CC login page — cc-login-autofill.js will auto-submit the form */
+      /* 2. Pass credentials via URL params to CC login page
+            Base64 encode to avoid special character issues    */
+      var e = btoa(data.email);
+      var p = btoa(data.password);
+
       setTimeout(function() {
-        window.location.href = LOGIN_URL + '?ml=1';
+        window.location.href = LOGIN_URL + '?ml=1&e=' + encodeURIComponent(e) + '&p=' + encodeURIComponent(p);
       }, 500);
 
     } catch(err) {
