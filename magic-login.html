@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Signing you in... — The Great Project</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#0D0D0D;font-family:'Inter',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh}
+    .box{background:#141414;border:1px solid #272727;border-radius:12px;padding:40px;text-align:center;max-width:420px;width:90%}
+    .logo{width:140px;filter:invert(1);margin-bottom:28px}
+    .spinner{width:40px;height:40px;border:3px solid #333;border-top-color:#F04E00;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 20px}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    h2{color:#EEE;font-size:18px;font-weight:600;margin-bottom:8px}
+    p{color:#AAA;font-size:14px}
+    .error{color:#F87171;font-size:14px;margin-top:12px;display:none}
+  </style>
+</head>
+<body>
+<div class="box">
+  <img class="logo" src="https://assets.checkoutchamp.com/2d8e50c5-da34-457b-b2d0-7493b7f0290f/1774897149752_1765912829614_Logo_horizontal_black.png" alt="TGP"/>
+  <div class="spinner" id="spinner"></div>
+  <h2 id="title">Signing you in...</h2>
+  <p id="msg">Please wait while we verify your link.</p>
+  <p class="error" id="err"></p>
+</div>
+
+<script>
+  var PROXY_URL  = 'https://customer-portal-vl02.onrender.com';
+  var PORTAL_URL = 'https://try.thegreatproject.com/memberarea';
+  var CC_API     = 'https://pages-live-api.checkoutchamp.com/providersApi/V1/ClubMembership/Login/';
+  var CLUB_ID    = 12;
+
+  function showError(msg) {
+    document.getElementById('spinner').style.display = 'none';
+    document.getElementById('title').textContent = 'Link Invalid';
+    document.getElementById('msg').textContent = 'Please request a new login link.';
+    var e = document.getElementById('err');
+    e.textContent = msg;
+    e.style.display = 'block';
+  }
+
+  function setSession(data) {
+    var m   = data.membership;
+    var ss  = sessionStorage;
+    var ls  = localStorage;
+
+    /* ── Set all required CC sessionStorage keys ── */
+    ss.setItem('membership',          JSON.stringify(m));
+    ss.setItem('clubMemberships',     JSON.stringify([m]));
+    ss.setItem('sessionId',           JSON.stringify(data.sessionId));
+    ss.setItem('ccExternalSessionId', data.sessionId.message.sessionId);
+    ss.setItem('customerOrders',      JSON.stringify(data.customerOrders  || []));
+    ss.setItem('customerPurchases',   JSON.stringify(data.customerPurchases || {}));
+    ss.setItem('loginPageUrl',        'https://try.thegreatproject.com/login?alertMessage=Access%20Denied');
+    ss.setItem('sessionStartDateTime', new Date().toISOString());
+    ss.setItem('funnelData',          JSON.stringify(data.funnelData || {}));
+
+    /* ── Set localStorage flags ── */
+    ls.setItem('isMembershipLogin', 'true');
+    ls.setItem('loginUrl', 'https://try.thegreatproject.com/login');
+  }
+
+  async function run() {
+    /* 1. Get token from URL */
+    var params = new URLSearchParams(window.location.search);
+    var token  = params.get('token');
+    if (!token) { showError('No token found in URL.'); return; }
+
+    try {
+      /* 2. Verify token on Render server — get email + password back */
+      var verifyRes = await fetch(PROXY_URL + '/magic-login/credentials?token=' + encodeURIComponent(token));
+      if (!verifyRes.ok) { showError('Invalid or expired magic link.'); return; }
+      var creds = await verifyRes.json();
+      if (!creds.email || !creds.password) { showError('Invalid token data.'); return; }
+
+      /* 3. Call CC frontend API directly from browser (CORS allows *) */
+      var ccRes = await fetch(CC_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clubUsername: creds.email,
+          clubPassword: creds.password,
+          clubId:       CLUB_ID
+        })
+      });
+      var ccData = await ccRes.json();
+
+      if (!ccData || ccData.result === 'ERROR') {
+        showError('Login failed: ' + (ccData.message || 'Invalid credentials'));
+        return;
+      }
+
+      /* 4. Set CC session in browser storage */
+      setSession(ccData.message || ccData);
+
+      /* 5. Redirect to dashboard */
+      document.getElementById('title').textContent = 'Logged in!';
+      document.getElementById('msg').textContent = 'Redirecting to your dashboard...';
+      setTimeout(function() {
+        window.location.href = PORTAL_URL;
+      }, 800);
+
+    } catch(err) {
+      showError('Error: ' + err.message);
+    }
+  }
+
+  run();
+</script>
+</body>
+</html>
