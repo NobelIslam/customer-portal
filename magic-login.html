@@ -13,7 +13,7 @@
     @keyframes spin{to{transform:rotate(360deg)}}
     h2{color:#EEE;font-size:18px;font-weight:600;margin-bottom:8px}
     p{color:#AAA;font-size:14px}
-    .error{color:#F87171;font-size:14px;margin-top:12px;display:none}
+    .error{color:#F87171;font-size:13px;margin-top:12px;display:none}
   </style>
 </head>
 <body>
@@ -28,8 +28,6 @@
 <script>
   var PROXY_URL  = 'https://customer-portal-vl02.onrender.com';
   var PORTAL_URL = 'https://try.thegreatproject.com/memberarea';
-  var CC_API     = 'https://pages-live-api.checkoutchamp.com/providersApi/V1/ClubMembership/Login/';
-  var CLUB_ID    = 12;
 
   function showError(msg) {
     document.getElementById('spinner').style.display = 'none';
@@ -40,73 +38,50 @@
     e.style.display = 'block';
   }
 
-  function setSession(data) {
-    var m   = data.membership;
-    var ss  = sessionStorage;
-    var ls  = localStorage;
+  function setSession(ccData) {
+    /* ccData is the full CC API response object */
+    var ss = sessionStorage;
+    var ls = localStorage;
 
-    /* ── Set all required CC sessionStorage keys ── */
-    ss.setItem('membership',          JSON.stringify(m));
-    ss.setItem('clubMemberships',     JSON.stringify([m]));
-    ss.setItem('sessionId',           JSON.stringify(data.sessionId));
-    ss.setItem('ccExternalSessionId', data.sessionId.message.sessionId);
-    ss.setItem('customerOrders',      JSON.stringify(data.customerOrders  || []));
-    ss.setItem('customerPurchases',   JSON.stringify(data.customerPurchases || {}));
+    /* Set each key CC needs */
+    if (ccData.membership)        ss.setItem('membership',          JSON.stringify(ccData.membership));
+    if (ccData.clubMemberships)   ss.setItem('clubMemberships',     JSON.stringify(ccData.clubMemberships));
+    if (ccData.sessionId)         ss.setItem('sessionId',           JSON.stringify(ccData.sessionId));
+    if (ccData.ccExternalSessionId || (ccData.sessionId && ccData.sessionId.message)) {
+      ss.setItem('ccExternalSessionId', ccData.ccExternalSessionId || ccData.sessionId.message.sessionId);
+    }
+    if (ccData.customerOrders)    ss.setItem('customerOrders',    JSON.stringify(ccData.customerOrders));
+    if (ccData.customerPurchases) ss.setItem('customerPurchases', JSON.stringify(ccData.customerPurchases));
+    if (ccData.funnelData)        ss.setItem('funnelData',        JSON.stringify(ccData.funnelData));
+
     ss.setItem('loginPageUrl',        'https://try.thegreatproject.com/login?alertMessage=Access%20Denied');
     ss.setItem('sessionStartDateTime', new Date().toISOString());
-    ss.setItem('funnelData',          JSON.stringify(data.funnelData || {}));
 
-    /* ── Set localStorage flags ── */
     ls.setItem('isMembershipLogin', 'true');
     ls.setItem('loginUrl', 'https://try.thegreatproject.com/login');
   }
 
   async function run() {
-    /* 1. Get token from URL */
     var params = new URLSearchParams(window.location.search);
     var token  = params.get('token');
     if (!token) { showError('No token found in URL.'); return; }
 
     try {
-      /* 2. Verify token on Render server — get email + password back */
-      var verifyRes = await fetch(PROXY_URL + '/magic-login/credentials?token=' + encodeURIComponent(token));
-      if (!verifyRes.ok) { showError('Invalid or expired magic link.'); return; }
-      var creds = await verifyRes.json();
-      if (!creds.email || !creds.password) { showError('Invalid token data.'); return; }
+      /* Call our Render server — it calls CC API server-side and returns session data */
+      var res = await fetch(PROXY_URL + '/magic-login/verify?token=' + encodeURIComponent(token));
+      var data = await res.json();
 
-      /* 3. Call CC frontend API directly from browser (CORS allows *) */
-      var ccRes = await fetch(CC_API, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          clubUsername: creds.email,
-          clubPassword: creds.password,
-          clubId:       CLUB_ID
-        })
-      });
-
-      var rawText = await ccRes.text();
-      console.log('CC API raw response:', rawText);
-
-      var ccData;
-      try { ccData = JSON.parse(rawText); } catch(e) {
-        showError('CC API returned non-JSON: ' + rawText.substring(0, 200));
+      if (!res.ok || !data.success) {
+        showError(data.error || 'Login failed.');
         return;
       }
 
-      console.log('CC API parsed response:', JSON.stringify(ccData));
+      console.log('CC session data:', data.session);
 
-      if (!ccData || ccData.result === 'ERROR') {
-        showError('Login failed: ' + JSON.stringify(ccData.message || ccData));
-        return;
-      }
+      /* Set CC session in browser storage */
+      setSession(data.session);
 
-      /* 4. Set CC session in browser storage */
-      var sessionData = ccData.message || ccData;
-      console.log('Setting session with:', JSON.stringify(sessionData));
-      setSession(sessionData);
-
-      /* 5. Redirect to dashboard */
+      /* Redirect to dashboard */
       document.getElementById('title').textContent = 'Logged in!';
       document.getElementById('msg').textContent = 'Redirecting to your dashboard...';
       setTimeout(function() {
