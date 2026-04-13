@@ -43,33 +43,28 @@
     var ss = sessionStorage;
     var ls = localStorage;
 
-    /* Build membership object matching CC's format */
-    var m = data.membership || {};
-    m.clubUsername = data.email;
-    m.clubId       = 12;
-    m.status       = data.status;
+    /* Minimal membership object CC needs */
+    var m = {
+      memberId:      data.memberId,
+      emailAddress:  data.email,
+      clubUsername:  data.email,
+      clubId:        12,
+      status:        'ACTIVE'
+    };
 
-    ss.setItem('membership',      JSON.stringify(m));
-    ss.setItem('clubMemberships', JSON.stringify([m]));
-
-    /* Session ID (fake but matches CC format) */
-    var sessionId = {
-      result: 'SUCCESS',
+    var sessionObj = {
+      result:  'SUCCESS',
       message: { sessionId: data.memberId + '_' + Date.now() }
     };
-    ss.setItem('sessionId',           JSON.stringify(sessionId));
-    ss.setItem('ccExternalSessionId', sessionId.message.sessionId);
 
-    /* Orders */
-    if (data.orders && data.orders.message) {
-      ss.setItem('customerOrders', JSON.stringify(data.orders.message));
-    }
-
+    ss.setItem('membership',           JSON.stringify(m));
+    ss.setItem('clubMemberships',      JSON.stringify([m]));
+    ss.setItem('sessionId',            JSON.stringify(sessionObj));
+    ss.setItem('ccExternalSessionId',  sessionObj.message.sessionId);
     ss.setItem('loginPageUrl',         LOGIN_URL + '?alertMessage=Access%20Denied');
     ss.setItem('sessionStartDateTime', new Date().toISOString());
-
-    ls.setItem('isMembershipLogin', 'true');
-    ls.setItem('loginUrl', LOGIN_URL);
+    ls.setItem('isMembershipLogin',    'true');
+    ls.setItem('loginUrl',             LOGIN_URL);
   }
 
   async function run() {
@@ -81,8 +76,6 @@
       var res  = await fetch(PROXY_URL + '/magic-login/verify?token=' + encodeURIComponent(token));
       var data = await res.json();
 
-      console.log('Verify response:', data);
-
       if (!res.ok || !data.success) {
         showError(data.error || 'Login failed.');
         return;
@@ -93,15 +86,14 @@
         return;
       }
 
-      /* Build CC session in browser */
       buildSession(data);
 
       document.getElementById('title').textContent = 'Logged in!';
-      document.getElementById('msg').textContent = 'Redirecting to your dashboard...';
+      document.getElementById('msg').textContent = 'Redirecting...';
 
       setTimeout(function() {
         window.location.href = PORTAL_URL;
-      }, 800);
+      }, 500);
 
     } catch(err) {
       showError('Error: ' + err.message);
