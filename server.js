@@ -270,3 +270,101 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, function() {
   console.log('Recharge proxy running on port ' + PORT);
 });
+
+/* ═══════════════════════════════════════════════════
+   MAGIC LOGIN — add these to your existing server.js
+   Requires: const crypto = require('crypto');  at top
+═══════════════════════════════════════════════════ */
+
+const crypto = require('crypto');
+
+const CC_LOGIN_ID = process.env.CC_LOGIN_ID;
+const CC_API_PASS = process.env.CC_API_PASSWORD;
+const CC_CLUB_ID  = process.env.CC_CLUB_ID || '12';
+const PORTAL_URL  = process.env.PORTAL_URL || 'https://try.thegreatproject.com/memberarea';
+
+/* In-memory token store — replace with Redis for production */
+const tokenStore = {};
+
+/* Clean expired tokens every 10 min */
+setInterval(function() {
+  var now = Date.now();
+  Object.keys(tokenStore).forEach(function(t) {
+    if (tokenStore[t].expires < now) delete tokenStore[t];
+  });
+}, 10 * 60 * 1000);
+
+/* ═══════════════════════════════════════════════════
+   TEST ENDPOINT (no email needed)
+   GET /magic-login/test?email=xxx&password=xxx
+   Returns magic link — open it in browser to test
+═══════════════════════════════════════════════════ */
+app.get('/magic-login/test', function(req, res) {
+  var email    = (req.query.email    || '').trim().toLowerCase();
+  var password = (req.query.password || '').trim();
+  if (!email || !password) {
+    return res.status(400).json({ error: 'email and password required' });
+  }
+  var token = crypto.randomBytes(32).toString('hex');
+  tokenStore[token] = { email, password, expires: Date.now() + 15 * 60 * 1000 };
+  var magicLink = 'https://customer-portal-vl02.onrender.com/magic-login/verify?token=' + token;
+  res.json({ magicLink, expiresIn: '15 minutes' });
+});
+
+/* ═══════════════════════════════════════════════════
+   VERIFY ENDPOINT
+   GET /magic-login/verify?token=xxx
+   Validates token → calls CC login → redirects to portal
+═══════════════════════════════════════════════════ */
+app.get('/magic-login/verify', async function(req, res) {
+  try {
+    var token = req.query.token;
+
+    /* 1. Validate token exists and not expired */
+    if (!token || !tokenStore[token]) {
+      return res.status(400).send('<h2 style="font-family:sans-serif;padding:40px">Invalid or expired magic link.</h2>');
+    }
+    var data = tokenStore[token];
+    if (data.expires < Date.now()) {
+      delete tokenStore[token];
+      return res.status(400).send('<h2 style="font-family:sans-serif;padding:40px">Magic link expired. Please request a new one.</h2>');
+    }
+
+    /* 2. Call CC /members/login/ from server (bypasses CORS) */
+    var params = new URLSearchParams({
+      clubId:       CC_CLUB_ID,
+      clubUsername: data.email,
+      clubPassword: data.password,
+      loginId:      CC_LOGIN_ID,
+      password:     CC_API_PASS
+    });
+
+    var ccRes  = await fetch('https://api.checkoutchamp.com/members/login/?' + params.toString(), { method: 'POST' });
+    var ccData = await ccRes.json();
+    console.log('CC login response for', data.email, ':', JSON.stringify(ccData));
+
+    /* 3. Handle CC response */
+    if (ccData.result !== 'SUCCESS') {
+      return res.status(401).send('<h2 style="font-family:sans-serif;padding:40px">Login failed: ' + (ccData.message || 'Invalid credentials') + '</h2>');
+    }
+
+    var memberId = ccData.message.memberId;
+    var status   = ccData.message.status;
+
+    if (status !== 'ACTIVE') {
+      return res.status(403).send('<h2 style="font-family:sans-serif;padding:40px">Membership is ' + status + '. Please contact support.</h2>');
+    }
+
+    /* 4. One-time use — delete token */
+    delete tokenStore[token];
+
+    /* 5. Redirect to CC portal with memberId and email in URL
+       Our portal JS will read these and establish the session */
+    var redirectUrl = PORTAL_URL + '?memberId=' + encodeURIComponent(memberId) + '&email=' + encodeURIComponent(data.email);
+    return res.redirect(redirectUrl);
+
+  } catch (err) {
+    console.error('Magic login error:', err);
+    res.status(500).send('<h2 style="font-family:sans-serif;padding:40px">Server error. Please try again.</h2>');
+  }
+});
