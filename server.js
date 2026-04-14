@@ -280,42 +280,48 @@ app.post('/magic-login/request', async function(req, res) {
           var customerId = ccCustomer.customerId;
           ccEcomLogin    = ccCustomer.eCommerceLogin || email;
 
-          /* 3b. Get most recent CC orderId for this customer */
-          var orderParams = new URLSearchParams({
-            loginId:        CC_LOGIN_ID,
-            password:       CC_API_PASS,
-            customerId:     customerId,
-            startDate:      '01/01/2016',
-            endDate:        endDate,
-            resultsPerPage: 1,
-            sortDir:        -1
-          });
-          var orderRes  = await fetch(CC_BASE + '/order/query/?' + orderParams.toString(), { method: 'POST' });
-          var orderData = await orderRes.json();
-
-          var orderId = orderData.result === 'SUCCESS' && orderData.message && orderData.message.data && orderData.message.data.length > 0
-            ? orderData.message.data[0].orderId
-            : null;
-
-          if (orderId) {
-            /* 3c. Update eCommercePassword to orderId */
-            var updateParams = new URLSearchParams({
-              loginId:           CC_LOGIN_ID,
-              password:          CC_API_PASS,
-              customerId:        customerId,
-              eCommercePassword: orderId
-            });
-            var updateRes = await fetch(CC_BASE + '/customer/update/?' + updateParams.toString(), { method: 'POST' });
-            var updateData = await updateRes.json();
-
-            if (updateData.result === 'SUCCESS') {
-              ccEcomPassword = orderId;
-              console.log('CC eCommercePassword updated for', email, '— orderId:', orderId);
-            } else {
-              console.error('CC customer/update failed:', JSON.stringify(updateData));
-            }
+          /* 3b. Use existing eCommercePassword if already set, otherwise set it to latest orderId */
+          if (ccCustomer.eCommercePassword) {
+            ccEcomPassword = ccCustomer.eCommercePassword;
+            console.log('CC eCommercePassword already set for', email, '— reusing existing');
           } else {
-            console.error('No CC orderId found for customerId:', customerId);
+            /* Get most recent CC orderId for this customer */
+            var orderParams = new URLSearchParams({
+              loginId:        CC_LOGIN_ID,
+              password:       CC_API_PASS,
+              customerId:     customerId,
+              startDate:      '01/01/2016',
+              endDate:        endDate,
+              resultsPerPage: 1,
+              sortDir:        -1
+            });
+            var orderRes  = await fetch(CC_BASE + '/order/query/?' + orderParams.toString(), { method: 'POST' });
+            var orderData = await orderRes.json();
+
+            var orderId = orderData.result === 'SUCCESS' && orderData.message && orderData.message.data && orderData.message.data.length > 0
+              ? orderData.message.data[0].orderId
+              : null;
+
+            if (orderId) {
+              /* Update eCommercePassword to orderId */
+              var updateParams = new URLSearchParams({
+                loginId:           CC_LOGIN_ID,
+                password:          CC_API_PASS,
+                customerId:        customerId,
+                eCommercePassword: orderId
+              });
+              var updateRes  = await fetch(CC_BASE + '/customer/update/?' + updateParams.toString(), { method: 'POST' });
+              var updateData = await updateRes.json();
+
+              if (updateData.result === 'SUCCESS') {
+                ccEcomPassword = orderId;
+                console.log('CC eCommercePassword set for', email, '— orderId:', orderId);
+              } else {
+                console.error('CC customer/update failed:', JSON.stringify(updateData));
+              }
+            } else {
+              console.error('No CC orderId found for customerId:', customerId);
+            }
           }
         } else {
           console.log('CC customer not found for Recharge-only customer:', email);
