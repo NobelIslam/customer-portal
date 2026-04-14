@@ -325,6 +325,11 @@ app.post('/magic-login/request', async function(req, res) {
           }
         } else {
           console.log('CC customer not found for Recharge-only customer:', email);
+          return res.json({
+            found: false,
+            contactSupport: true,
+            error: 'We found your subscription but could not locate your account. Please contact support.'
+          });
         }
       } catch (e) {
         console.error('CC eCommerce update error:', e.message);

@@ -295,7 +295,11 @@
       var data = await res.json();
 
       if (!res.ok || !data.found) {
-        showError(data.error || 'No subscription found for this email address.');
+        if (data.contactSupport) {
+          showError('We found your subscription but could not locate your portal account. Please contact us at <a href="mailto:support@thegreatproject.com" style="color:#B91C1C;font-weight:600;">support@thegreatproject.com</a> and we\'ll get you access.');
+        } else {
+          showError(data.error || 'No subscription found for this email address.');
+        }
       } else {
         showSuccess(data);
         emailInput.value = '';
