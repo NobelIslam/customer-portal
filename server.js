@@ -399,7 +399,19 @@ app.post('/magic-login/verify', async function(req, res) {
       return res.json({ success: true, email: data.email });
     }
 
-    /* ── Password token (from /magic-login/test) — full CC login ── */
+    /* ── Recharge-only / eCommerce token — skip members/login, return credentials directly ── */
+    if (data.loginType === 'ecommerce') {
+      delete tokenStore[token];
+      console.log('eCommerce magic login for:', data.clubUsername);
+      return res.json({
+        success:  true,
+        email:    data.clubUsername,
+        password: data.password,
+        status:   'ACTIVE'
+      });
+    }
+
+    /* ── Club member token (from /magic-login/test or CC member) — full CC login ── */
     var loginRes  = await fetch('https://api.checkoutchamp.com/members/login/?' + new URLSearchParams({
       clubId:       CC_CLUB_ID,
       clubUsername: data.email,
@@ -429,7 +441,6 @@ app.post('/magic-login/verify', async function(req, res) {
     var CC_API_PASS = process.env.CC_API_PASSWORD;
     var CC_BASE     = 'https://api.checkoutchamp.com';
 
-    var customerOrders    = [];
     var customerPurchases = {};
 
     try {
@@ -443,12 +454,6 @@ app.post('/magic-login/verify', async function(req, res) {
       var member = memberData.message && memberData.message[0] ? memberData.message[0] : null;
 
       if (member && member.customerId) {
-        var ordersRes  = await fetch(CC_BASE + '/order/?' + new URLSearchParams({
-          customerId: member.customerId, loginId: CC_LOGIN_ID, password: CC_API_PASS
-        }));
-        var ordersData = await ordersRes.json();
-        if (ordersData.message) customerOrders = ordersData.message;
-
         var purchasesRes  = await fetch(CC_BASE + '/membership/?' + new URLSearchParams({
           customerId: member.customerId, clubId: CC_CLUB_ID, loginId: CC_LOGIN_ID, password: CC_API_PASS
         }));
