@@ -223,7 +223,7 @@ app.post('/magic-login/request', async function(req, res) {
         loginId:        CC_LOGIN_ID,
         password:       CC_API_PASS,
         emailAddress:   email,
-        startDate:      '01/01/2020',
+        startDate:      '01/01/2016',
         endDate:        endDate,
         resultsPerPage: 1
       });
