@@ -253,9 +253,11 @@ app.post('/magic-login/request', async function(req, res) {
     var token    = crypto.randomBytes(32).toString('hex');
     var BASE_URL = process.env.BASE_URL || 'http://localhost:' + (process.env.PORT || 3000);
     tokenStore[token] = {
-      email:    email,
-      password: ccMember ? (ccMember.clubPassword || null) : null,
-      expires:  Date.now() + 15 * 60 * 1000
+      email:         email,
+      memberId:      ccMember ? (ccMember.memberId      || null) : null,
+      clubUsername:  ccMember ? (ccMember.clubUsername  || null) : null,
+      password:      ccMember ? (ccMember.clubPassword  || null) : null,
+      expires:       Date.now() + 15 * 60 * 1000
     };
 
     var magicLink = BASE_URL + '/magic-login?token=' + token;
