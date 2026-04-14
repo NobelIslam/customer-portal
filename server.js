@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors    = require('cors');
 const fetch   = require('node-fetch');
@@ -174,6 +175,125 @@ setInterval(function() {
   });
 }, 10 * 60 * 1000);
 
+/* ── Serve portal-access.html ── */
+app.get('/portal-access', function(req, res) {
+  res.sendFile(path.join(__dirname, 'portal-access.html'));
+});
+
+/* ══════════════════════════════════════════════════════════════
+   POST /magic-login/request
+   body: { email }
+
+   1. Checks Recharge for a matching customer
+   2. Checks CheckoutChamp for a matching customer
+   3. If found in either → generates a magic-link token
+   4. Returns the magic link directly (email sending skipped for now)
+══════════════════════════════════════════════════════════════ */
+app.post('/magic-login/request', async function(req, res) {
+  try {
+    var email = (req.body.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ error: 'email is required' });
+
+    var foundIn = [];
+
+    /* ── 1. Check Recharge ── */
+    try {
+      var rcRes  = await fetch(RECHARGE_BASE + '/customers?email=' + encodeURIComponent(email), { headers: rcHeaders() });
+      var rcData = await rcRes.json();
+      if (rcData.customers && rcData.customers.length > 0) {
+        foundIn.push('recharge');
+      }
+    } catch (e) {
+      console.error('Recharge lookup error:', e.message);
+    }
+
+    /* ── 2. Check CheckoutChamp via members/query ── */
+    var ccMember = null;
+    try {
+      var CC_LOGIN_ID = process.env.CC_LOGIN_ID;
+      var CC_API_PASS = process.env.CC_API_PASSWORD;
+      var CC_CLUB_ID  = process.env.CC_CLUB_ID || '12';
+      var CC_BASE     = 'https://api.checkoutchamp.com';
+
+      var today     = new Date();
+      var endDate   = (today.getMonth()+1).toString().padStart(2,'0') + '/' + today.getDate().toString().padStart(2,'0') + '/' + today.getFullYear();
+      var startDate = '01/01/2020';
+      var page      = 1;
+      var found     = false;
+
+      while (!found) {
+        var params = new URLSearchParams({
+          clubId:         CC_CLUB_ID,
+          loginId:        CC_LOGIN_ID,
+          password:       CC_API_PASS,
+          startDate:      startDate,
+          endDate:        endDate,
+          resultsPerPage: 200,
+          page:           page
+        });
+
+        var qRes  = await fetch(CC_BASE + '/members/query/?' + params.toString(), { method: 'POST' });
+        var qData = await qRes.json();
+
+        if (qData.result !== 'SUCCESS' || !qData.message || !qData.message.data) break;
+
+        var records    = qData.message.data;
+        var totalPages = Math.ceil(qData.message.totalResults / 200);
+
+        /* Search this page for a matching email (case-insensitive) */
+        var match = records.find(function(r) {
+          return r.emailAddress && r.emailAddress.toLowerCase() === email;
+        });
+
+        if (match) {
+          ccMember = match;
+          foundIn.push('checkoutchamp');
+          found = true;
+          console.log('CC member found for', email, '— status:', match.status, 'page:', page);
+        } else if (page >= totalPages) {
+          console.log('CC member not found for', email, '— searched', totalPages, 'page(s)');
+          break;
+        } else {
+          page++;
+        }
+      }
+    } catch (e) {
+      console.error('CheckoutChamp lookup error:', e.message);
+    }
+
+    if (foundIn.length === 0) {
+      return res.json({
+        found: false,
+        error: 'No subscription found for this email address. Please check you used the same email as your purchase.'
+      });
+    }
+
+    /* ── 3. Generate magic token ── */
+    var token    = crypto.randomBytes(32).toString('hex');
+    var BASE_URL = process.env.BASE_URL || 'http://localhost:' + (process.env.PORT || 3000);
+    tokenStore[token] = {
+      email:    email,
+      password: ccMember ? (ccMember.clubPassword || null) : null,
+      expires:  Date.now() + 15 * 60 * 1000
+    };
+
+    var magicLink = BASE_URL + '/magic-login?token=' + token;
+    console.log('Magic link generated for', email, '— found in:', foundIn.join(', '));
+
+    /* ── 4. Return link (email sending skipped for now) ── */
+    res.json({
+      found:     true,
+      foundIn:   foundIn,
+      magicLink: magicLink,
+      expiresIn: '15 minutes'
+    });
+
+  } catch (err) {
+    console.error('magic-login/request error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* ── Serve magic-login.html ── */
 app.get('/magic-login', function(req, res) {
   res.sendFile(path.join(__dirname, 'magic-login.html'));
@@ -212,7 +332,14 @@ app.post('/magic-login/verify', async function(req, res) {
     var CC_FUNNEL_REF    = 'b0267726-11c5-491f-bdd5-62cfd0a19248';
     var CC_PAGES_API     = 'https://pages-live-api.checkoutchamp.com';
 
-    /* Validate credentials via CC API */
+    /* ── Email-only token (from /magic-login/request — no password) ── */
+    if (!data.password) {
+      delete tokenStore[token];
+      console.log('Email-only magic login for:', data.email);
+      return res.json({ success: true, email: data.email });
+    }
+
+    /* ── Password token (from /magic-login/test) — full CC login ── */
     var loginRes  = await fetch('https://api.checkoutchamp.com/members/login/?' + new URLSearchParams({
       clubId:       CC_CLUB_ID,
       clubUsername: data.email,
@@ -227,7 +354,7 @@ app.post('/magic-login/verify', async function(req, res) {
       return res.status(401).json({ error: 'Login failed: ' + JSON.stringify(loginData.message) });
     }
 
-    /* 3. Parse login message to get memberId */
+    /* Parse login message to get memberId */
     var loginMsg = {};
     try {
       loginMsg = typeof loginData.message === 'string'
@@ -235,10 +362,9 @@ app.post('/magic-login/verify', async function(req, res) {
         : loginData.message;
     } catch(e) {}
 
-    var memberId   = loginMsg.memberId || '';
-    var accessToken = loginMsg.access_token || '';
+    var memberId = loginMsg.memberId || '';
 
-    /* 4. Fetch customerOrders and customerPurchases from CC API */
+    /* Fetch customerOrders and customerPurchases from CC API */
     var CC_LOGIN_ID = process.env.CC_LOGIN_ID;
     var CC_API_PASS = process.env.CC_API_PASSWORD;
     var CC_BASE     = 'https://api.checkoutchamp.com';
@@ -247,34 +373,27 @@ app.post('/magic-login/verify', async function(req, res) {
     var customerPurchases = {};
 
     try {
-      /* Get member details to find customerId */
       var memberUrl  = CC_BASE + '/members/?' + new URLSearchParams({
         memberId: memberId, loginId: CC_LOGIN_ID, password: CC_API_PASS
       });
       var memberRes  = await fetch(memberUrl);
-      var memberText = await memberRes.text();
-      var memberData = JSON.parse(memberText);
+      var memberData = JSON.parse(await memberRes.text());
       console.log('Member data result:', memberData.result);
 
       var member = memberData.message && memberData.message[0] ? memberData.message[0] : null;
 
       if (member && member.customerId) {
-        /* Fetch orders */
-        var ordersUrl = CC_BASE + '/order/?' + new URLSearchParams({
+        var ordersRes  = await fetch(CC_BASE + '/order/?' + new URLSearchParams({
           customerId: member.customerId, loginId: CC_LOGIN_ID, password: CC_API_PASS
-        });
-        var ordersRes  = await fetch(ordersUrl);
+        }));
         var ordersData = await ordersRes.json();
         if (ordersData.message) customerOrders = ordersData.message;
 
-        /* Fetch purchases/subscriptions */
-        var purchasesUrl = CC_BASE + '/membership/?' + new URLSearchParams({
+        var purchasesRes  = await fetch(CC_BASE + '/membership/?' + new URLSearchParams({
           customerId: member.customerId, clubId: CC_CLUB_ID, loginId: CC_LOGIN_ID, password: CC_API_PASS
-        });
-        var purchasesRes  = await fetch(purchasesUrl);
+        }));
         var purchasesData = await purchasesRes.json();
         if (purchasesData.message) {
-          /* Convert array to object keyed by purchaseId */
           var purchases = Array.isArray(purchasesData.message) ? purchasesData.message : [];
           purchases.forEach(function(p) {
             if (p.purchaseId) customerPurchases[p.purchaseId] = p;
@@ -285,10 +404,8 @@ app.post('/magic-login/verify', async function(req, res) {
       console.error('Error fetching customer data:', e.message);
     }
 
-    /* 5. One-time use */
     delete tokenStore[token];
 
-    /* 6. Return credentials + status to browser */
     res.json({
       success:  true,
       email:    data.email,

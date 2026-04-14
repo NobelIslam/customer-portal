@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Subscription Portal Access — The Great Project</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #F5F5F5;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: #1A1A1A;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Top bar ── */
+    .topbar {
+      background: #fff;
+      border-bottom: 1px solid #E5E5E5;
+      padding: 14px 24px;
+      text-align: center;
+      font-size: 13px;
+      color: #555;
+    }
+
+    /* ── Main card ── */
+    .wrap {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 16px;
+    }
+
+    .card {
+      background: #fff;
+      border: 1px solid #E5E5E5;
+      border-radius: 8px;
+      padding: 48px 40px;
+      max-width: 560px;
+      width: 100%;
+      text-align: center;
+    }
+
+    .card h1 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 20px;
+      color: #111;
+    }
+
+    .card p {
+      font-size: 14px;
+      line-height: 1.7;
+      color: #555;
+      margin-bottom: 16px;
+    }
+
+    .card p a {
+      color: #1A1A1A;
+      font-weight: 600;
+      text-decoration: underline;
+    }
+
+    .divider {
+      border: none;
+      border-top: 1px solid #E8E8E8;
+      margin: 24px 0;
+    }
+
+    /* ── Form ── */
+    .form-group {
+      margin-bottom: 14px;
+    }
+
+    input[type="email"] {
+      width: 100%;
+      padding: 13px 16px;
+      border: 1px solid #D5D5D5;
+      border-radius: 6px;
+      font-size: 14px;
+      color: #1A1A1A;
+      outline: none;
+      transition: border-color .15s;
+    }
+
+    input[type="email"]::placeholder { color: #AAA; }
+    input[type="email"]:focus { border-color: #1A1A1A; }
+
+    .btn {
+      width: 100%;
+      padding: 14px;
+      background: #1F3A3A;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s, opacity .15s;
+      letter-spacing: .01em;
+    }
+
+    .btn:hover  { background: #162e2e; }
+    .btn:disabled { opacity: .6; cursor: not-allowed; }
+
+    /* ── States ── */
+    .status {
+      margin-top: 20px;
+      font-size: 13px;
+      display: none;
+    }
+
+    .status.error {
+      background: #FEF2F2;
+      border: 1px solid #FECACA;
+      border-radius: 6px;
+      padding: 12px 16px;
+      color: #B91C1C;
+    }
+
+    .status.success {
+      background: #F0FDF4;
+      border: 1px solid #BBF7D0;
+      border-radius: 6px;
+      padding: 16px;
+      color: #166534;
+      text-align: left;
+    }
+
+    .status.success .label {
+      font-weight: 600;
+      margin-bottom: 8px;
+      display: block;
+    }
+
+    .magic-link-box {
+      background: #fff;
+      border: 1px solid #D1FAE5;
+      border-radius: 5px;
+      padding: 10px 12px;
+      word-break: break-all;
+      font-size: 12px;
+      color: #065F46;
+      margin-bottom: 10px;
+      font-family: monospace;
+    }
+
+    .copy-btn {
+      background: #166534;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      padding: 7px 16px;
+      font-size: 12px;
+      cursor: pointer;
+      font-weight: 600;
+      margin-top: 6px;
+    }
+
+    .copy-btn:hover { background: #14532D; }
+
+    .note {
+      margin-top: 10px;
+      font-size: 11px;
+      color: #6B7280;
+      font-style: italic;
+    }
+
+    /* ── Spinner ── */
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,.4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<div class="topbar">The Great Project — Member Portal</div>
+
+<div class="wrap">
+  <div class="card">
+    <h1>Subscription Portal Access</h1>
+
+    <p>
+      Enter the email you used when you purchased your membership.
+      We'll send a Magic Sign-In Link to your inbox — no password needed.
+    </p>
+
+    <p>
+      If we can't locate your subscription, it's possible your order is
+      managed through our older subscription portal.
+    </p>
+
+    <p>
+      If you're receiving an error, please try the link below:<br/>
+      <a href="https://try.thegreatproject.com/account" target="_blank">
+        Open Older Version of Subscription Portal
+      </a>
+    </p>
+
+    <hr class="divider"/>
+
+    <form id="requestForm">
+      <div class="form-group">
+        <input type="email" id="emailInput" placeholder="Your email address" required autocomplete="email"/>
+      </div>
+      <button type="submit" class="btn" id="submitBtn">
+        Send Subscription Login Link
+      </button>
+    </form>
+
+    <div class="status" id="statusBox"></div>
+  </div>
+</div>
+
+<script>
+  var PROXY_URL = window.location.origin; // same server
+
+  var form      = document.getElementById('requestForm');
+  var emailInput = document.getElementById('emailInput');
+  var submitBtn  = document.getElementById('submitBtn');
+  var statusBox  = document.getElementById('statusBox');
+
+  function showError(msg) {
+    statusBox.className = 'status error';
+    statusBox.innerHTML = msg;
+    statusBox.style.display = 'block';
+  }
+
+  function showSuccess(data) {
+    statusBox.className = 'status success';
+
+    var html = '<span class="label">Subscription found!</span>';
+
+    // TODO: replace this block with "Check your email" message once email sending is wired up
+    html += '<p style="margin-bottom:10px;font-size:13px">Your magic login link is ready. Click it to access your portal.</p>';
+    html += '<div class="magic-link-box" id="mlBox">' + escHtml(data.magicLink) + '</div>';
+    html += '<button class="copy-btn" onclick="copyLink()">Copy Link</button>';
+    html += '<button class="copy-btn" style="background:#0e7490;margin-left:8px" onclick="openLink()">Open Link</button>';
+    html += '<p class="note">Link expires in ' + (data.expiresIn || '15 minutes') + '. Do not share this link.</p>';
+    if (data.foundIn && data.foundIn.length) {
+      html += '<p class="note" style="margin-top:4px">Found in: ' + data.foundIn.join(', ') + '</p>';
+    }
+
+    statusBox.innerHTML  = html;
+    statusBox.style.display = 'block';
+  }
+
+  function escHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function copyLink() {
+    var box = document.getElementById('mlBox');
+    navigator.clipboard.writeText(box.textContent.trim()).then(function() {
+      var btn = statusBox.querySelector('.copy-btn');
+      btn.textContent = 'Copied!';
+      setTimeout(function() { btn.textContent = 'Copy Link'; }, 2000);
+    });
+  }
+
+  function openLink() {
+    var box = document.getElementById('mlBox');
+    window.open(box.textContent.trim(), '_blank');
+  }
+
+  form.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    statusBox.style.display = 'none';
+
+    var email = emailInput.value.trim();
+    if (!email) return;
+
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner"></span>Checking...';
+
+    try {
+      var res  = await fetch(PROXY_URL + '/magic-login/request', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ email: email })
+      });
+      var data = await res.json();
+
+      if (!res.ok || !data.found) {
+        showError(data.error || 'No subscription found for this email address.');
+      } else {
+        showSuccess(data);
+        emailInput.value = '';
+      }
+    } catch (err) {
+      showError('Something went wrong. Please try again.');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Send Subscription Login Link';
+    }
+  });
+</script>
+</body>
+</html>
