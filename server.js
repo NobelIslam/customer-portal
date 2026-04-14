@@ -336,27 +336,41 @@ app.post('/magic-login/request', async function(req, res) {
       }
     }
 
-    /* ── 4. Generate magic token ── */
-    var token    = crypto.randomBytes(32).toString('hex');
-    var BASE_URL = process.env.BASE_URL || 'https://try.thegreatproject.com';
+    /* ── 4. Generate magic token (24 hour expiry) ── */
+    var token       = crypto.randomBytes(32).toString('hex');
+    var BASE_URL    = process.env.BASE_URL || 'https://try.thegreatproject.com';
+    var tempPassword = ccEcomPassword || (ccMember ? (ccMember.clubPassword || null) : null);
+
     tokenStore[token] = {
-      email:         email,
-      loginType:     ccEcomLogin ? 'ecommerce' : 'club',
-      memberId:      ccMember    ? (ccMember.memberId     || null) : null,
-      clubUsername:  ccEcomLogin || (ccMember ? (ccMember.clubUsername || null) : null),
-      password:      ccEcomPassword || (ccMember ? (ccMember.clubPassword || null) : null),
-      expires:       Date.now() + 15 * 60 * 1000
+      email:        email,
+      loginType:    ccEcomLogin ? 'ecommerce' : 'club',
+      memberId:     ccMember   ? (ccMember.memberId    || null) : null,
+      clubUsername: ccEcomLogin || (ccMember ? (ccMember.clubUsername || null) : null),
+      password:     tempPassword,
+      expires:      Date.now() + 24 * 60 * 60 * 1000
     };
 
     var magicLink = BASE_URL + '/magic-login?token=' + token;
     console.log('Magic link generated for', email, '— found in:', foundIn.join(', '));
 
-    /* ── 4. Return link (email sending skipped for now) ── */
+    /* ── 5. Fire Klaviyo Magic_Link_Access event ── */
+    try {
+      await sendKlaviyoEvent(email, 'Magic_Link_Access', {
+        magic_link:    magicLink,
+        link_expiry:   '24 hours',
+        login_url:     'https://try.thegreatproject.com/login',
+        temp_password: tempPassword
+      });
+      console.log('Klaviyo Magic_Link_Access event sent for', email);
+    } catch (e) {
+      console.error('Klaviyo event error:', e.message);
+    }
+
+    /* ── 6. Return success — link sent via Klaviyo email ── */
     res.json({
       found:     true,
       foundIn:   foundIn,
-      magicLink: magicLink,
-      expiresIn: '15 minutes'
+      expiresIn: '24 hours'
     });
 
   } catch (err) {

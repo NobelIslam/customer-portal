@@ -242,38 +242,12 @@
   function showSuccess(data) {
     statusBox.className = 'status success';
 
-    var html = '<span class="label">Subscription found!</span>';
-
-    // TODO: replace this block with "Check your email" message once email sending is wired up
-    html += '<p style="margin-bottom:10px;font-size:13px">Your magic login link is ready. Click it to access your portal.</p>';
-    html += '<div class="magic-link-box" id="mlBox">' + escHtml(data.magicLink) + '</div>';
-    html += '<button class="copy-btn" onclick="copyLink()">Copy Link</button>';
-    html += '<button class="copy-btn" style="background:#0e7490;margin-left:8px" onclick="openLink()">Open Link</button>';
-    html += '<p class="note">Link expires in ' + (data.expiresIn || '15 minutes') + '. Do not share this link.</p>';
-    if (data.foundIn && data.foundIn.length) {
-      html += '<p class="note" style="margin-top:4px">Found in: ' + data.foundIn.join(', ') + '</p>';
-    }
+    var html = '<span class="label">&#10003; Check Your Email</span>';
+    html += '<p style="margin-bottom:6px;font-size:13px">We\'ve sent a secure login link to your email address.</p>';
+    html += '<p style="font-size:12px;color:#4b7a5e;">The link will expire in ' + (data.expiresIn || '24 hours') + '. Do not share it with anyone.</p>';
 
     statusBox.innerHTML  = html;
     statusBox.style.display = 'block';
-  }
-
-  function escHtml(str) {
-    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  }
-
-  function copyLink() {
-    var box = document.getElementById('mlBox');
-    navigator.clipboard.writeText(box.textContent.trim()).then(function() {
-      var btn = statusBox.querySelector('.copy-btn');
-      btn.textContent = 'Copied!';
-      setTimeout(function() { btn.textContent = 'Copy Link'; }, 2000);
-    });
-  }
-
-  function openLink() {
-    var box = document.getElementById('mlBox');
-    window.open(box.textContent.trim(), '_blank');
   }
 
   form.addEventListener('submit', async function(e) {
@@ -308,7 +282,7 @@
       showError('Something went wrong. Please try again.');
     } finally {
       submitBtn.disabled = false;
-      submitBtn.textContent = 'Send Subscription Login Link';
+      submitBtn.textContent = 'Send Login Link';
     }
   });
 </script>
