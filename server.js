@@ -225,17 +225,21 @@ app.post('/magic-login/request', async function(req, res) {
         emailAddress:   email,
         startDate:      '01/01/2016',
         endDate:        endDate,
-        resultsPerPage: 1,
-        sortDir:        -1
+        resultsPerPage: 200
       });
 
       var qRes  = await fetch(CC_BASE + '/members/query/?' + params.toString(), { method: 'POST' });
       var qData = await qRes.json();
 
       if (qData.result === 'SUCCESS' && qData.message && qData.message.data && qData.message.data.length > 0) {
-        ccMember = qData.message.data[0];
+        /* sortDir:-1 is ignored by the API — sort manually to get latest record */
+        var records = qData.message.data;
+        records.sort(function(a, b) {
+          return new Date(b.dateCreated) - new Date(a.dateCreated);
+        });
+        ccMember = records[0];
         foundIn.push('checkoutchamp');
-        console.log('CC member found for', email, '— status:', ccMember.status);
+        console.log('CC member found for', email, '— latest memberId:', ccMember.memberId, '| dateCreated:', ccMember.dateCreated);
       } else {
         console.log('CC member not found for', email);
       }
