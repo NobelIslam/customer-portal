@@ -225,7 +225,8 @@ app.post('/magic-login/request', async function(req, res) {
         emailAddress:   email,
         startDate:      '01/01/2016',
         endDate:        endDate,
-        resultsPerPage: 1
+        resultsPerPage: 1,
+        sortDir:        -1
       });
 
       var qRes  = await fetch(CC_BASE + '/members/query/?' + params.toString(), { method: 'POST' });
