@@ -252,7 +252,7 @@ app.post('/magic-login/request', async function(req, res) {
 
     /* ── 3. Generate magic token ── */
     var token    = crypto.randomBytes(32).toString('hex');
-    var BASE_URL = process.env.BASE_URL || 'http://localhost:' + (process.env.PORT || 3000);
+    var BASE_URL = process.env.BASE_URL || 'https://try.thegreatproject.com';
     tokenStore[token] = {
       email:         email,
       memberId:      ccMember ? (ccMember.memberId      || null) : null,
