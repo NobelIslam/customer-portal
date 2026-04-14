@@ -250,14 +250,90 @@ app.post('/magic-login/request', async function(req, res) {
       });
     }
 
-    /* ── 3. Generate magic token ── */
+    /* ── 3. Recharge-only: find CC customer, set eCommercePassword to orderId ── */
+    var ccEcomLogin    = null;
+    var ccEcomPassword = null;
+
+    if (foundIn.includes('recharge') && !foundIn.includes('checkoutchamp')) {
+      try {
+        var CC_LOGIN_ID = process.env.CC_LOGIN_ID;
+        var CC_API_PASS = process.env.CC_API_PASSWORD;
+        var CC_BASE     = 'https://api.checkoutchamp.com';
+        var today       = new Date();
+        var endDate     = (today.getMonth()+1).toString().padStart(2,'0') + '/' + today.getDate().toString().padStart(2,'0') + '/' + today.getFullYear();
+
+        /* 3a. Find customer in CC by email */
+        var custParams = new URLSearchParams({
+          loginId:        CC_LOGIN_ID,
+          password:       CC_API_PASS,
+          emailAddress:   email,
+          startDate:      '01/01/2016',
+          endDate:        endDate,
+          resultsPerPage: 1,
+          sortDir:        -1
+        });
+        var custRes  = await fetch(CC_BASE + '/customer/query/?' + custParams.toString(), { method: 'POST' });
+        var custData = await custRes.json();
+
+        if (custData.result === 'SUCCESS' && custData.message && custData.message.data && custData.message.data.length > 0) {
+          var ccCustomer = custData.message.data[0];
+          var customerId = ccCustomer.customerId;
+          ccEcomLogin    = ccCustomer.eCommerceLogin || email;
+
+          /* 3b. Get most recent CC orderId for this customer */
+          var orderParams = new URLSearchParams({
+            loginId:        CC_LOGIN_ID,
+            password:       CC_API_PASS,
+            customerId:     customerId,
+            startDate:      '01/01/2016',
+            endDate:        endDate,
+            resultsPerPage: 1,
+            sortDir:        -1
+          });
+          var orderRes  = await fetch(CC_BASE + '/order/query/?' + orderParams.toString(), { method: 'POST' });
+          var orderData = await orderRes.json();
+
+          var orderId = orderData.result === 'SUCCESS' && orderData.message && orderData.message.data && orderData.message.data.length > 0
+            ? orderData.message.data[0].orderId
+            : null;
+
+          if (orderId) {
+            /* 3c. Update eCommercePassword to orderId */
+            var updateParams = new URLSearchParams({
+              loginId:           CC_LOGIN_ID,
+              password:          CC_API_PASS,
+              customerId:        customerId,
+              eCommercePassword: orderId
+            });
+            var updateRes = await fetch(CC_BASE + '/customer/update/?' + updateParams.toString(), { method: 'POST' });
+            var updateData = await updateRes.json();
+
+            if (updateData.result === 'SUCCESS') {
+              ccEcomPassword = orderId;
+              console.log('CC eCommercePassword updated for', email, '— orderId:', orderId);
+            } else {
+              console.error('CC customer/update failed:', JSON.stringify(updateData));
+            }
+          } else {
+            console.error('No CC orderId found for customerId:', customerId);
+          }
+        } else {
+          console.log('CC customer not found for Recharge-only customer:', email);
+        }
+      } catch (e) {
+        console.error('CC eCommerce update error:', e.message);
+      }
+    }
+
+    /* ── 4. Generate magic token ── */
     var token    = crypto.randomBytes(32).toString('hex');
     var BASE_URL = process.env.BASE_URL || 'https://try.thegreatproject.com';
     tokenStore[token] = {
       email:         email,
-      memberId:      ccMember ? (ccMember.memberId      || null) : null,
-      clubUsername:  ccMember ? (ccMember.clubUsername  || null) : null,
-      password:      ccMember ? (ccMember.clubPassword  || null) : null,
+      loginType:     ccEcomLogin ? 'ecommerce' : 'club',
+      memberId:      ccMember    ? (ccMember.memberId     || null) : null,
+      clubUsername:  ccEcomLogin || (ccMember ? (ccMember.clubUsername || null) : null),
+      password:      ccEcomPassword || (ccMember ? (ccMember.clubPassword || null) : null),
       expires:       Date.now() + 15 * 60 * 1000
     };
 
