@@ -207,7 +207,7 @@ app.post('/magic-login/request', async function(req, res) {
       console.error('Recharge lookup error:', e.message);
     }
 
-    /* ── 2. Check CheckoutChamp via members/query ── */
+    /* ── 2. Check CheckoutChamp via members/query (direct email filter) ── */
     var ccMember = null;
     try {
       var CC_LOGIN_ID = process.env.CC_LOGIN_ID;
@@ -217,45 +217,26 @@ app.post('/magic-login/request', async function(req, res) {
 
       var today     = new Date();
       var endDate   = (today.getMonth()+1).toString().padStart(2,'0') + '/' + today.getDate().toString().padStart(2,'0') + '/' + today.getFullYear();
-      var startDate = '01/01/2020';
-      var page      = 1;
-      var found     = false;
 
-      while (!found) {
-        var params = new URLSearchParams({
-          clubId:         CC_CLUB_ID,
-          loginId:        CC_LOGIN_ID,
-          password:       CC_API_PASS,
-          startDate:      startDate,
-          endDate:        endDate,
-          resultsPerPage: 200,
-          page:           page
-        });
+      var params = new URLSearchParams({
+        clubId:         CC_CLUB_ID,
+        loginId:        CC_LOGIN_ID,
+        password:       CC_API_PASS,
+        emailAddress:   email,
+        startDate:      '01/01/2020',
+        endDate:        endDate,
+        resultsPerPage: 1
+      });
 
-        var qRes  = await fetch(CC_BASE + '/members/query/?' + params.toString(), { method: 'POST' });
-        var qData = await qRes.json();
+      var qRes  = await fetch(CC_BASE + '/members/query/?' + params.toString(), { method: 'POST' });
+      var qData = await qRes.json();
 
-        if (qData.result !== 'SUCCESS' || !qData.message || !qData.message.data) break;
-
-        var records    = qData.message.data;
-        var totalPages = Math.ceil(qData.message.totalResults / 200);
-
-        /* Search this page for a matching email (case-insensitive) */
-        var match = records.find(function(r) {
-          return r.emailAddress && r.emailAddress.toLowerCase() === email;
-        });
-
-        if (match) {
-          ccMember = match;
-          foundIn.push('checkoutchamp');
-          found = true;
-          console.log('CC member found for', email, '— status:', match.status, 'page:', page);
-        } else if (page >= totalPages) {
-          console.log('CC member not found for', email, '— searched', totalPages, 'page(s)');
-          break;
-        } else {
-          page++;
-        }
+      if (qData.result === 'SUCCESS' && qData.message && qData.message.data && qData.message.data.length > 0) {
+        ccMember = qData.message.data[0];
+        foundIn.push('checkoutchamp');
+        console.log('CC member found for', email, '— status:', ccMember.status);
+      } else {
+        console.log('CC member not found for', email);
       }
     } catch (e) {
       console.error('CheckoutChamp lookup error:', e.message);
