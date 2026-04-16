@@ -153,13 +153,25 @@ app.post('/klaviyo/test-event', async (req, res) => {
 ═══════════════════════════ */
 app.post('/webhooks/checkoutchamp', async (req, res) => {
   try {
-    const { email, eventName, properties } = req.body;
-    if (!email || !eventName) return res.status(400).json({ error: 'email and eventName are required' });
-    console.log('CheckoutChamp webhook received:', { email, eventName });
-    const result = await sendKlaviyoEvent(email, eventName, properties);
+    console.log('CheckoutChamp webhook received:', JSON.stringify(req.body));
+
+    /* CC field names can vary — handle both camelCase and PascalCase */
+    var body       = req.body;
+    var email      = body.emailAddress || body.email || body.Email || '';
+    var purchaseId = body.purchaseId   || body.PurchaseID || body.purchase_id || '';
+    var orderId    = body.orderId      || body.OrderId    || body.order_id    || '';
+
+    if (!email) return res.status(400).json({ error: 'email not found in webhook payload' });
+
+    var result = await sendKlaviyoEvent(email, 'Active_Membership', {
+      PurchaseID: purchaseId,
+      OrderId:    orderId
+    });
+
     if (!result.ok) return res.status(502).json({ error: 'Klaviyo push failed', details: result.body });
-    console.log('Klaviyo event pushed:', eventName, 'for', email);
-    res.json({ success: true, event: eventName, email });
+
+    console.log('Klaviyo Active_Membership event sent for', email, '— PurchaseID:', purchaseId, 'OrderId:', orderId);
+    res.json({ success: true, event: 'Active_Membership', email, purchaseId, orderId });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
