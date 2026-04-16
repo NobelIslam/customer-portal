@@ -157,21 +157,29 @@ async function handleCCWebhook(req, res) {
     var payload = Object.keys(req.query).length > 0 ? req.query : req.body;
     console.log('CheckoutChamp webhook received:', JSON.stringify(payload));
 
-    var email      = payload.emailAddress || payload.email      || payload.Email      || '';
-    var purchaseId = payload.purchaseId   || payload.PurchaseID || payload.purchase_id || '';
-    var orderId    = payload.orderId      || payload.OrderId    || payload.order_id    || '';
+    var email   = payload.emailAddress || payload.email || payload.Email || '';
+    var orderId = payload.orderId      || payload.OrderId || payload.order_id || '';
+
+    /* Collect product1_id through product5_id into a comma-separated string */
+    var productIds = [
+      payload.product1_id,
+      payload.product2_id,
+      payload.product3_id,
+      payload.product4_id,
+      payload.product5_id
+    ].filter(Boolean).join(',');
 
     if (!email) return res.status(400).json({ error: 'email not found in webhook payload' });
 
     var result = await sendKlaviyoEvent(email, 'Active_Membership', {
-      PurchaseID: purchaseId,
+      ProductIDs: productIds,
       OrderId:    orderId
     });
 
     if (!result.ok) return res.status(502).json({ error: 'Klaviyo push failed', details: result.body });
 
-    console.log('Klaviyo Active_Membership event sent for', email, '— PurchaseID:', purchaseId, 'OrderId:', orderId);
-    res.json({ success: true, event: 'Active_Membership', email, purchaseId, orderId });
+    console.log('Klaviyo Active_Membership event sent for', email, '— ProductIDs:', productIds, 'OrderId:', orderId);
+    res.json({ success: true, event: 'Active_Membership', email, productIds, orderId });
   } catch (err) { res.status(500).json({ error: err.message }); }
 }
 
