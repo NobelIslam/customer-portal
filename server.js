@@ -148,18 +148,18 @@ app.post('/klaviyo/test-event', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-/* ═══════════════════════════
-   POST /webhooks/checkoutchamp
-═══════════════════════════ */
-app.post('/webhooks/checkoutchamp', async (req, res) => {
+/* ═══════════════════════════════════════════════════════
+   GET + POST /webhooks/checkoutchamp
+   CC sends GET with query params — handle both methods
+═══════════════════════════════════════════════════════ */
+async function handleCCWebhook(req, res) {
   try {
-    console.log('CheckoutChamp webhook received:', JSON.stringify(req.body));
+    var payload = Object.keys(req.query).length > 0 ? req.query : req.body;
+    console.log('CheckoutChamp webhook received:', JSON.stringify(payload));
 
-    /* CC field names can vary — handle both camelCase and PascalCase */
-    var body       = req.body;
-    var email      = body.emailAddress || body.email || body.Email || '';
-    var purchaseId = body.purchaseId   || body.PurchaseID || body.purchase_id || '';
-    var orderId    = body.orderId      || body.OrderId    || body.order_id    || '';
+    var email      = payload.emailAddress || payload.email      || payload.Email      || '';
+    var purchaseId = payload.purchaseId   || payload.PurchaseID || payload.purchase_id || '';
+    var orderId    = payload.orderId      || payload.OrderId    || payload.order_id    || '';
 
     if (!email) return res.status(400).json({ error: 'email not found in webhook payload' });
 
@@ -173,7 +173,10 @@ app.post('/webhooks/checkoutchamp', async (req, res) => {
     console.log('Klaviyo Active_Membership event sent for', email, '— PurchaseID:', purchaseId, 'OrderId:', orderId);
     res.json({ success: true, event: 'Active_Membership', email, purchaseId, orderId });
   } catch (err) { res.status(500).json({ error: err.message }); }
-});
+}
+
+app.get('/webhooks/checkoutchamp',  handleCCWebhook);
+app.post('/webhooks/checkoutchamp', handleCCWebhook);
 
 /* ════════════════════════════════════════════════════
    MAGIC LOGIN
