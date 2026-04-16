@@ -160,20 +160,53 @@ async function handleCCWebhook(req, res) {
     var email   = payload.emailAddress || payload.email || payload.Email || '';
     var orderId = payload.orderId      || payload.OrderId || payload.order_id || '';
 
-    /* Collect product1_id through product5_id into a comma-separated string */
+    /* Collect product1_id through product5_id as an array of numbers */
     var productIds = [
       payload.product1_id,
       payload.product2_id,
       payload.product3_id,
       payload.product4_id,
       payload.product5_id
-    ].filter(Boolean).join(',');
+    ].filter(Boolean).map(Number);
 
     if (!email) return res.status(400).json({ error: 'email not found in webhook payload' });
 
+    /* Look up CC member to get temp_password (clubPassword) */
+    var tempPassword = '';
+    try {
+      var CC_LOGIN_ID = process.env.CC_LOGIN_ID;
+      var CC_API_PASS = process.env.CC_API_PASSWORD;
+      var CC_CLUB_ID  = process.env.CC_CLUB_ID || '12';
+      var today       = new Date();
+      var endDate     = (today.getMonth()+1).toString().padStart(2,'0') + '/' + today.getDate().toString().padStart(2,'0') + '/' + today.getFullYear();
+
+      var memberParams = new URLSearchParams({
+        clubId:         CC_CLUB_ID,
+        loginId:        CC_LOGIN_ID,
+        password:       CC_API_PASS,
+        emailAddress:   email,
+        startDate:      '01/01/2016',
+        endDate:        endDate,
+        resultsPerPage: 200
+      });
+      var memberRes  = await fetch('https://api.checkoutchamp.com/members/query/?' + memberParams.toString(), { method: 'POST' });
+      var memberData = await memberRes.json();
+
+      if (memberData.result === 'SUCCESS' && memberData.message && memberData.message.data && memberData.message.data.length > 0) {
+        var records = memberData.message.data;
+        records.sort(function(a, b) { return new Date(b.dateCreated) - new Date(a.dateCreated); });
+        tempPassword = records[0].clubPassword || '';
+      }
+    } catch (e) {
+      console.error('CC member lookup error in webhook:', e.message);
+    }
+
     var result = await sendKlaviyoEvent(email, 'Active_Membership', {
-      ProductIDs: productIds,
-      OrderId:    orderId
+      ProductIDs:              productIds,
+      OrderId:                 orderId,
+      login_url:               'https://try.thegreatproject.com/login',
+      temp_password:           tempPassword,
+      manage_subscription_url: 'https://try.thegreatproject.com/account'
     });
 
     if (!result.ok) return res.status(502).json({ error: 'Klaviyo push failed', details: result.body });
