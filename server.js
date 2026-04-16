@@ -169,10 +169,20 @@ async function handleCCWebhook(req, res) {
       payload.product5_id
     ].filter(Boolean).map(Number);
 
+    /* Extract next_bill_date from webhook payload (CC uses multiple field names) */
+    var nextBillDateRaw = payload.nextBillDate
+      || payload.next_bill_date
+      || payload.nextRebillDate
+      || payload.next_rebill_date
+      || payload.rebillDate
+      || '';
+
     if (!email) return res.status(400).json({ error: 'email not found in webhook payload' });
 
-    /* Look up CC member to get temp_password (clubPassword) */
-    var tempPassword = '';
+    /* Look up CC member to get temp_password (clubPassword) and next_bill_date fallback */
+    var tempPassword  = '';
+    var nextBillDate  = '';
+
     try {
       var CC_LOGIN_ID = process.env.CC_LOGIN_ID;
       var CC_API_PASS = process.env.CC_API_PASSWORD;
@@ -195,7 +205,27 @@ async function handleCCWebhook(req, res) {
       if (memberData.result === 'SUCCESS' && memberData.message && memberData.message.data && memberData.message.data.length > 0) {
         var records = memberData.message.data;
         records.sort(function(a, b) { return new Date(b.dateCreated) - new Date(a.dateCreated); });
-        tempPassword = records[0].clubPassword || '';
+        var latest    = records[0];
+        tempPassword  = latest.clubPassword  || '';
+
+        /* Use next_bill_date from webhook payload if present, otherwise fall back to member record */
+        var rawDate = nextBillDateRaw
+          || latest.nextBillDate
+          || latest.next_bill_date
+          || latest.nextRebillDate
+          || '';
+
+        /* Normalise to MM/DD/YYYY for consistency */
+        if (rawDate) {
+          var d = new Date(rawDate);
+          if (!isNaN(d.getTime())) {
+            nextBillDate = (d.getMonth()+1).toString().padStart(2,'0') + '/'
+              + d.getDate().toString().padStart(2,'0') + '/'
+              + d.getFullYear();
+          } else {
+            nextBillDate = rawDate; // keep as-is if unparseable
+          }
+        }
       }
     } catch (e) {
       console.error('CC member lookup error in webhook:', e.message);
@@ -206,13 +236,14 @@ async function handleCCWebhook(req, res) {
       OrderId:                 orderId,
       login_url:               'https://try.thegreatproject.com/login',
       temp_password:           tempPassword,
+      next_bill_date:          nextBillDate,
       manage_subscription_url: 'https://try.thegreatproject.com/account'
     });
 
     if (!result.ok) return res.status(502).json({ error: 'Klaviyo push failed', details: result.body });
 
-    console.log('Klaviyo Active_Membership event sent for', email, '— ProductIDs:', productIds, 'OrderId:', orderId);
-    res.json({ success: true, event: 'Active_Membership', email, productIds, orderId });
+    console.log('Klaviyo Active_Membership event sent for', email, '— OrderId:', orderId, '| next_bill_date:', nextBillDate || 'N/A');
+    res.json({ success: true, event: 'Active_Membership', email, productIds, orderId, nextBillDate });
   } catch (err) { res.status(500).json({ error: err.message }); }
 }
 
