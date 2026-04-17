@@ -287,7 +287,7 @@ app.post('/magic-login/request', async function(req, res) {
     }
 
     var token    = crypto.randomBytes(32).toString('hex');
-    var BASE_URL = process.env.BASE_URL || 'https://try.thegreatproject.com';
+    var BASE_URL = process.env.BASE_URL || 'https://help.thegreatproject.com';
     var magicLink;
 
     /* ── RECHARGE-ONLY customer → recharge-portal ── */
@@ -347,7 +347,7 @@ app.get('/magic-login/test', function(req, res) {
   var token = crypto.randomBytes(32).toString('hex');
   tokenStore[token] = { email, password, type: 'checkoutchamp', expires: Date.now() + 15 * 60 * 1000 };
   res.json({
-    magicLink: 'https://try.thegreatproject.com/magic-login?token=' + token,
+    magicLink: 'https://help.thegreatproject.com/magic-login?token=' + token,
     expiresIn: '15 minutes'
   });
 });
@@ -404,7 +404,7 @@ app.get('/recharge-portal/test', function(req, res) {
   var token = crypto.randomBytes(32).toString('hex');
   tokenStore[token] = { email, type: 'recharge', expires: Date.now() + 24 * 60 * 60 * 1000 };
   res.json({
-    magicLink: 'https://try.thegreatproject.com/recharge-portal?token=' + token,
+    magicLink: 'https://help.thegreatproject.com/recharge-portal?token=' + token,
     expiresIn: '24 hours'
   });
 });
