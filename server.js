@@ -398,9 +398,21 @@ app.post('/magic-login/verify', async function(req, res) {
 ════════════════════════════════════════════════════ */
 
 /* ── TEST: generate Recharge portal magic link ── */
-app.get('/recharge-portal/test', function(req, res) {
+app.get('/recharge-portal/test', async function(req, res) {
   var email = (req.query.email || '').trim().toLowerCase();
   if (!email) return res.status(400).json({ error: 'email required' });
+
+  /* Check email exists in Recharge before generating link */
+  try {
+    var rcRes  = await fetch(RECHARGE_BASE + '/customers?email=' + encodeURIComponent(email), { headers: rcHeaders() });
+    var rcData = await rcRes.json();
+    if (!rcData.customers || rcData.customers.length === 0) {
+      return res.status(404).json({ error: 'No Recharge subscription found for this email.' });
+    }
+  } catch (e) {
+    return res.status(500).json({ error: 'Could not verify Recharge subscription: ' + e.message });
+  }
+
   var token = crypto.randomBytes(32).toString('hex');
   tokenStore[token] = { email, type: 'recharge', expires: Date.now() + 24 * 60 * 60 * 1000 };
   res.json({
@@ -410,13 +422,27 @@ app.get('/recharge-portal/test', function(req, res) {
 });
 
 /* ── POST /recharge-portal/verify ── */
-app.post('/recharge-portal/verify', function(req, res) {
+app.post('/recharge-portal/verify', async function(req, res) {
   var token = req.body.token;
   if (!token || !tokenStore[token]) return res.status(401).json({ error: 'Invalid or expired token' });
   var data = tokenStore[token];
   if (data.expires < Date.now()) { delete tokenStore[token]; return res.status(401).json({ error: 'Token expired' }); }
-  /* Keep token alive — don't delete, Recharge portal uses session */
-  console.log('Recharge portal verify for:', data.email);
+
+  /* Verify email actually exists in Recharge */
+  try {
+    var rcRes  = await fetch(RECHARGE_BASE + '/customers?email=' + encodeURIComponent(data.email), { headers: rcHeaders() });
+    var rcData = await rcRes.json();
+    if (!rcData.customers || rcData.customers.length === 0) {
+      delete tokenStore[token];
+      console.log('Recharge portal verify failed — no Recharge customer for:', data.email);
+      return res.status(403).json({ error: 'No Recharge subscription found for this email.' });
+    }
+  } catch (e) {
+    console.error('Recharge verify check error:', e.message);
+    return res.status(500).json({ error: 'Could not verify subscription. Please try again.' });
+  }
+
+  console.log('Recharge portal verify OK for:', data.email);
   res.json({ success: true, email: data.email });
 });
 
