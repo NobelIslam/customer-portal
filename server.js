@@ -150,7 +150,6 @@ app.post('/klaviyo/test-event', async (req, res) => {
 
 /* ═══════════════════════════════════════════════════════
    GET + POST /webhooks/checkoutchamp
-   CC sends GET with query params — handle both methods
 ═══════════════════════════════════════════════════════ */
 async function handleCCWebhook(req, res) {
   try {
@@ -160,28 +159,18 @@ async function handleCCWebhook(req, res) {
     var email   = payload.emailAddress || payload.email || payload.Email || '';
     var orderId = payload.orderId      || payload.OrderId || payload.order_id || '';
 
-    /* Collect product1_id through product5_id as an array of numbers */
     var productIds = [
-      payload.product1_id,
-      payload.product2_id,
-      payload.product3_id,
-      payload.product4_id,
-      payload.product5_id
+      payload.product1_id, payload.product2_id, payload.product3_id,
+      payload.product4_id, payload.product5_id
     ].filter(Boolean).map(Number);
 
-    /* Extract next_bill_date from webhook payload (CC uses multiple field names) */
-    var nextBillDateRaw = payload.nextBillDate
-      || payload.next_bill_date
-      || payload.nextRebillDate
-      || payload.next_rebill_date
-      || payload.rebillDate
-      || '';
+    var nextBillDateRaw = payload.nextBillDate || payload.next_bill_date
+      || payload.nextRebillDate || payload.next_rebill_date || payload.rebillDate || '';
 
     if (!email) return res.status(400).json({ error: 'email not found in webhook payload' });
 
-    /* Look up CC member to get temp_password (clubPassword) and next_bill_date fallback */
-    var tempPassword  = '';
-    var nextBillDate  = '';
+    var tempPassword = '';
+    var nextBillDate = '';
 
     try {
       var CC_LOGIN_ID = process.env.CC_LOGIN_ID;
@@ -191,13 +180,8 @@ async function handleCCWebhook(req, res) {
       var endDate     = (today.getMonth()+1).toString().padStart(2,'0') + '/' + today.getDate().toString().padStart(2,'0') + '/' + today.getFullYear();
 
       var memberParams = new URLSearchParams({
-        clubId:         CC_CLUB_ID,
-        loginId:        CC_LOGIN_ID,
-        password:       CC_API_PASS,
-        emailAddress:   email,
-        startDate:      '01/01/2016',
-        endDate:        endDate,
-        resultsPerPage: 200
+        clubId: CC_CLUB_ID, loginId: CC_LOGIN_ID, password: CC_API_PASS,
+        emailAddress: email, startDate: '01/01/2016', endDate: endDate, resultsPerPage: 200
       });
       var memberRes  = await fetch('https://api.checkoutchamp.com/members/query/?' + memberParams.toString(), { method: 'POST' });
       var memberData = await memberRes.json();
@@ -205,44 +189,27 @@ async function handleCCWebhook(req, res) {
       if (memberData.result === 'SUCCESS' && memberData.message && memberData.message.data && memberData.message.data.length > 0) {
         var records = memberData.message.data;
         records.sort(function(a, b) { return new Date(b.dateCreated) - new Date(a.dateCreated); });
-        var latest    = records[0];
-        tempPassword  = latest.clubPassword  || '';
-
-        /* Use next_bill_date from webhook payload if present, otherwise fall back to member record */
-        var rawDate = nextBillDateRaw
-          || latest.nextBillDate
-          || latest.next_bill_date
-          || latest.nextRebillDate
-          || '';
-
-        /* Normalise to MM/DD/YYYY for consistency */
+        var latest   = records[0];
+        tempPassword = latest.clubPassword || '';
+        var rawDate  = nextBillDateRaw || latest.nextBillDate || latest.next_bill_date || latest.nextRebillDate || '';
         if (rawDate) {
           var d = new Date(rawDate);
           if (!isNaN(d.getTime())) {
-            nextBillDate = (d.getMonth()+1).toString().padStart(2,'0') + '/'
-              + d.getDate().toString().padStart(2,'0') + '/'
-              + d.getFullYear();
-          } else {
-            nextBillDate = rawDate; // keep as-is if unparseable
-          }
+            nextBillDate = (d.getMonth()+1).toString().padStart(2,'0') + '/' + d.getDate().toString().padStart(2,'0') + '/' + d.getFullYear();
+          } else { nextBillDate = rawDate; }
         }
       }
-    } catch (e) {
-      console.error('CC member lookup error in webhook:', e.message);
-    }
+    } catch (e) { console.error('CC member lookup error in webhook:', e.message); }
 
     var result = await sendKlaviyoEvent(email, 'Active_Membership', {
-      ProductIDs:              productIds,
-      OrderId:                 orderId,
-      login_url:               'https://try.thegreatproject.com/login',
-      temp_password:           tempPassword,
-      next_bill_date:          nextBillDate,
+      ProductIDs: productIds, OrderId: orderId,
+      login_url: 'https://try.thegreatproject.com/login',
+      temp_password: tempPassword, next_bill_date: nextBillDate,
       manage_subscription_url: 'https://try.thegreatproject.com/account'
     });
 
     if (!result.ok) return res.status(502).json({ error: 'Klaviyo push failed', details: result.body });
-
-    console.log('Klaviyo Active_Membership event sent for', email, '— OrderId:', orderId, '| next_bill_date:', nextBillDate || 'N/A');
+    console.log('Klaviyo Active_Membership event sent for', email);
     res.json({ success: true, event: 'Active_Membership', email, productIds, orderId, nextBillDate });
   } catch (err) { res.status(500).json({ error: err.message }); }
 }
@@ -251,7 +218,7 @@ app.get('/webhooks/checkoutchamp',  handleCCWebhook);
 app.post('/webhooks/checkoutchamp', handleCCWebhook);
 
 /* ════════════════════════════════════════════════════
-   MAGIC LOGIN
+   TOKEN STORE — shared by magic-login + recharge-portal
 ════════════════════════════════════════════════════ */
 const tokenStore = {};
 
@@ -262,207 +229,104 @@ setInterval(function() {
   });
 }, 10 * 60 * 1000);
 
-/* ── Serve portal-access.html ── */
+/* ════════════════════════════════════════════════════
+   MAGIC LOGIN — CheckoutChamp customers
+════════════════════════════════════════════════════ */
+
 app.get('/portal-access', function(req, res) {
   res.sendFile(path.join(__dirname, 'portal-access.html'));
 });
 
-/* ══════════════════════════════════════════════════════════════
-   POST /magic-login/request
-   body: { email }
-
-   1. Checks Recharge for a matching customer
-   2. Checks CheckoutChamp for a matching customer
-   3. If found in either → generates a magic-link token
-   4. Returns the magic link directly (email sending skipped for now)
-══════════════════════════════════════════════════════════════ */
+/* POST /magic-login/request
+   Identifies customer → Recharge OR CC → sends correct magic link */
 app.post('/magic-login/request', async function(req, res) {
   try {
     var email = (req.body.email || '').trim().toLowerCase();
     if (!email) return res.status(400).json({ error: 'email is required' });
 
-    var foundIn = [];
+    var foundIn  = [];
+    var ccMember = null;
 
     /* ── 1. Check Recharge ── */
     try {
       var rcRes  = await fetch(RECHARGE_BASE + '/customers?email=' + encodeURIComponent(email), { headers: rcHeaders() });
       var rcData = await rcRes.json();
-      if (rcData.customers && rcData.customers.length > 0) {
-        foundIn.push('recharge');
-      }
-    } catch (e) {
-      console.error('Recharge lookup error:', e.message);
-    }
+      if (rcData.customers && rcData.customers.length > 0) foundIn.push('recharge');
+    } catch (e) { console.error('Recharge lookup error:', e.message); }
 
-    /* ── 2. Check CheckoutChamp via members/query (direct email filter) ── */
-    var ccMember = null;
+    /* ── 2. Check CheckoutChamp ── */
     try {
       var CC_LOGIN_ID = process.env.CC_LOGIN_ID;
       var CC_API_PASS = process.env.CC_API_PASSWORD;
       var CC_CLUB_ID  = process.env.CC_CLUB_ID || '12';
       var CC_BASE     = 'https://api.checkoutchamp.com';
-
-      var today     = new Date();
-      var endDate   = (today.getMonth()+1).toString().padStart(2,'0') + '/' + today.getDate().toString().padStart(2,'0') + '/' + today.getFullYear();
+      var today       = new Date();
+      var endDate     = (today.getMonth()+1).toString().padStart(2,'0') + '/' + today.getDate().toString().padStart(2,'0') + '/' + today.getFullYear();
 
       var params = new URLSearchParams({
-        clubId:         CC_CLUB_ID,
-        loginId:        CC_LOGIN_ID,
-        password:       CC_API_PASS,
-        emailAddress:   email,
-        startDate:      '01/01/2016',
-        endDate:        endDate,
-        resultsPerPage: 200
+        clubId: CC_CLUB_ID, loginId: CC_LOGIN_ID, password: CC_API_PASS,
+        emailAddress: email, startDate: '01/01/2016', endDate: endDate, resultsPerPage: 200
       });
-
       var qRes  = await fetch(CC_BASE + '/members/query/?' + params.toString(), { method: 'POST' });
       var qData = await qRes.json();
 
       if (qData.result === 'SUCCESS' && qData.message && qData.message.data && qData.message.data.length > 0) {
-        /* sortDir:-1 is ignored by the API — sort manually to get latest record */
         var records = qData.message.data;
-        records.sort(function(a, b) {
-          return new Date(b.dateCreated) - new Date(a.dateCreated);
-        });
+        records.sort(function(a, b) { return new Date(b.dateCreated) - new Date(a.dateCreated); });
         ccMember = records[0];
         foundIn.push('checkoutchamp');
-        console.log('CC member found for', email, '— latest memberId:', ccMember.memberId, '| dateCreated:', ccMember.dateCreated);
-      } else {
-        console.log('CC member not found for', email);
+        console.log('CC member found for', email, '— memberId:', ccMember.memberId);
       }
-    } catch (e) {
-      console.error('CheckoutChamp lookup error:', e.message);
-    }
+    } catch (e) { console.error('CheckoutChamp lookup error:', e.message); }
 
     if (foundIn.length === 0) {
       return res.json({
         found: false,
-        error: 'No subscription found for this email address. Please check you used the same email as your purchase.'
+        error: 'No subscription found for this email address.'
       });
     }
 
-    /* ── 3. Recharge-only: find CC customer, set eCommercePassword to orderId ── */
-    var ccEcomLogin    = null;
-    var ccEcomPassword = null;
+    var token    = crypto.randomBytes(32).toString('hex');
+    var BASE_URL = process.env.BASE_URL || 'https://try.thegreatproject.com';
+    var magicLink;
 
+    /* ── RECHARGE-ONLY customer → recharge-portal ── */
     if (foundIn.includes('recharge') && !foundIn.includes('checkoutchamp')) {
-      try {
-        var CC_LOGIN_ID = process.env.CC_LOGIN_ID;
-        var CC_API_PASS = process.env.CC_API_PASSWORD;
-        var CC_BASE     = 'https://api.checkoutchamp.com';
-        var today       = new Date();
-        var endDate     = (today.getMonth()+1).toString().padStart(2,'0') + '/' + today.getDate().toString().padStart(2,'0') + '/' + today.getFullYear();
+      tokenStore[token] = {
+        email:     email,
+        type:      'recharge',
+        expires:   Date.now() + 24 * 60 * 60 * 1000
+      };
+      magicLink = BASE_URL + '/recharge-portal?token=' + token;
+      console.log('Recharge-only magic link for', email);
 
-        /* 3a. Find customer in CC by email */
-        var custParams = new URLSearchParams({
-          loginId:        CC_LOGIN_ID,
-          password:       CC_API_PASS,
-          emailAddress:   email,
-          startDate:      '01/01/2016',
-          endDate:        endDate,
-          resultsPerPage: 1,
-          sortDir:        -1
-        });
-        var custRes  = await fetch(CC_BASE + '/customer/query/?' + custParams.toString(), { method: 'POST' });
-        var custData = await custRes.json();
-
-        if (custData.result === 'SUCCESS' && custData.message && custData.message.data && custData.message.data.length > 0) {
-          var ccCustomer = custData.message.data[0];
-          var customerId = ccCustomer.customerId;
-          ccEcomLogin    = ccCustomer.eCommerceLogin || email;
-
-          /* 3b. Use existing eCommercePassword if already set, otherwise set it to latest orderId */
-          if (ccCustomer.eCommercePassword) {
-            ccEcomPassword = ccCustomer.eCommercePassword;
-            console.log('CC eCommercePassword already set for', email, '— reusing existing');
-          } else {
-            /* Get most recent CC orderId for this customer */
-            var orderParams = new URLSearchParams({
-              loginId:        CC_LOGIN_ID,
-              password:       CC_API_PASS,
-              customerId:     customerId,
-              startDate:      '01/01/2016',
-              endDate:        endDate,
-              resultsPerPage: 1,
-              sortDir:        -1
-            });
-            var orderRes  = await fetch(CC_BASE + '/order/query/?' + orderParams.toString(), { method: 'POST' });
-            var orderData = await orderRes.json();
-
-            var orderId = orderData.result === 'SUCCESS' && orderData.message && orderData.message.data && orderData.message.data.length > 0
-              ? orderData.message.data[0].orderId
-              : null;
-
-            if (orderId) {
-              /* Update eCommercePassword to orderId */
-              var updateParams = new URLSearchParams({
-                loginId:           CC_LOGIN_ID,
-                password:          CC_API_PASS,
-                customerId:        customerId,
-                eCommercePassword: orderId
-              });
-              var updateRes  = await fetch(CC_BASE + '/customer/update/?' + updateParams.toString(), { method: 'POST' });
-              var updateData = await updateRes.json();
-
-              if (updateData.result === 'SUCCESS') {
-                ccEcomPassword = orderId;
-                console.log('CC eCommercePassword set for', email, '— orderId:', orderId);
-              } else {
-                console.error('CC customer/update failed:', JSON.stringify(updateData));
-              }
-            } else {
-              console.error('No CC orderId found for customerId:', customerId);
-            }
-          }
-        } else {
-          console.log('CC customer not found for Recharge-only customer:', email);
-          return res.json({
-            found: false,
-            contactSupport: true,
-            error: 'We found your subscription but could not locate your account. Please contact support.'
-          });
-        }
-      } catch (e) {
-        console.error('CC eCommerce update error:', e.message);
-      }
+    /* ── CC customer (with or without Recharge) → CC portal ── */
+    } else {
+      var tempPassword = ccMember ? (ccMember.clubPassword || null) : null;
+      tokenStore[token] = {
+        email:        email,
+        type:         'checkoutchamp',
+        loginType:    'club',
+        memberId:     ccMember ? (ccMember.memberId    || null) : null,
+        clubUsername: ccMember ? (ccMember.clubUsername || null) : null,
+        password:     tempPassword,
+        expires:      Date.now() + 24 * 60 * 60 * 1000
+      };
+      magicLink = BASE_URL + '/magic-login?token=' + token;
+      console.log('CC magic link for', email);
     }
 
-    /* ── 4. Generate magic token (24 hour expiry) ── */
-    var token       = crypto.randomBytes(32).toString('hex');
-    var BASE_URL    = process.env.BASE_URL || 'https://try.thegreatproject.com';
-    var tempPassword = ccEcomPassword || (ccMember ? (ccMember.clubPassword || null) : null);
-
-    tokenStore[token] = {
-      email:        email,
-      loginType:    ccEcomLogin ? 'ecommerce' : 'club',
-      memberId:     ccMember   ? (ccMember.memberId    || null) : null,
-      clubUsername: ccEcomLogin || (ccMember ? (ccMember.clubUsername || null) : null),
-      password:     tempPassword,
-      expires:      Date.now() + 24 * 60 * 60 * 1000
-    };
-
-    var magicLink = BASE_URL + '/magic-login?token=' + token;
-    console.log('Magic link generated for', email, '— found in:', foundIn.join(', '));
-
-    /* ── 5. Fire Klaviyo Magic_Link_Access event ── */
+    /* ── Fire Klaviyo Magic_Link_Access event ── */
     try {
       await sendKlaviyoEvent(email, 'Magic_Link_Access', {
-        magic_link:    magicLink,
-        link_expiry:   '24 hours',
-        login_url:     'https://try.thegreatproject.com/login',
-        temp_password: tempPassword
+        magic_link:  magicLink,
+        link_expiry: '24 hours',
+        login_url:   'https://try.thegreatproject.com/login',
+        portal_type: foundIn.includes('checkoutchamp') ? 'checkoutchamp' : 'recharge'
       });
-      console.log('Klaviyo Magic_Link_Access event sent for', email);
-    } catch (e) {
-      console.error('Klaviyo event error:', e.message);
-    }
+    } catch (e) { console.error('Klaviyo event error:', e.message); }
 
-    /* ── 6. Return success — link sent via Klaviyo email ── */
-    res.json({
-      found:     true,
-      foundIn:   foundIn,
-      expiresIn: '24 hours'
-    });
+    res.json({ found: true, foundIn, expiresIn: '24 hours' });
 
   } catch (err) {
     console.error('magic-login/request error:', err);
@@ -475,65 +339,40 @@ app.get('/magic-login', function(req, res) {
   res.sendFile(path.join(__dirname, 'magic-login.html'));
 });
 
-/* ── TEST: generate magic link ──
-   GET /magic-login/test?email=xxx&password=xxx */
+/* ── TEST: generate CC magic link ── */
 app.get('/magic-login/test', function(req, res) {
   var email    = (req.query.email    || '').trim().toLowerCase();
   var password = (req.query.password || '').trim();
   if (!email || !password) return res.status(400).json({ error: 'email and password required' });
   var token = crypto.randomBytes(32).toString('hex');
-  tokenStore[token] = { email, password, expires: Date.now() + 15 * 60 * 1000 };
+  tokenStore[token] = { email, password, type: 'checkoutchamp', expires: Date.now() + 15 * 60 * 1000 };
   res.json({
     magicLink: 'https://try.thegreatproject.com/magic-login?token=' + token,
     expiresIn: '15 minutes'
   });
 });
 
-/* ── LOGIN: validate token + get real CC session + return to browser ──
-   GET /magic-login/verify?token=xxx                                   */
+/* ── POST /magic-login/verify — CC portal login ── */
 app.post('/magic-login/verify', async function(req, res) {
   try {
     var token = req.body.token;
-
-    if (!token || !tokenStore[token]) {
-      return res.status(401).json({ error: 'Invalid or expired token' });
-    }
+    if (!token || !tokenStore[token]) return res.status(401).json({ error: 'Invalid or expired token' });
     var data = tokenStore[token];
-    if (data.expires < Date.now()) {
-      delete tokenStore[token];
-      return res.status(401).json({ error: 'Token expired' });
-    }
-    var CC_CLUB_ID       = process.env.CC_CLUB_ID || '12';
-    var CC_COMPANY_TOKEN = 'ef04a8c0-b281-11ef-82be-b17d7998efda';
-    var CC_FUNNEL_REF    = 'b0267726-11c5-491f-bdd5-62cfd0a19248';
-    var CC_PAGES_API     = 'https://pages-live-api.checkoutchamp.com';
+    if (data.expires < Date.now()) { delete tokenStore[token]; return res.status(401).json({ error: 'Token expired' }); }
 
-    /* ── Email-only token (from /magic-login/request — no password) ── */
     if (!data.password) {
       delete tokenStore[token];
-      console.log('Email-only magic login for:', data.email);
       return res.json({ success: true, email: data.email });
     }
 
-    /* ── Recharge-only / eCommerce token — skip members/login, return credentials directly ── */
-    if (data.loginType === 'ecommerce') {
-      delete tokenStore[token];
-      console.log('eCommerce magic login for:', data.clubUsername);
-      return res.json({
-        success:  true,
-        email:    data.clubUsername,
-        password: data.password,
-        status:   'ACTIVE'
-      });
-    }
+    var CC_CLUB_ID  = process.env.CC_CLUB_ID || '12';
+    var CC_LOGIN_ID = process.env.CC_LOGIN_ID;
+    var CC_API_PASS = process.env.CC_API_PASSWORD;
+    var CC_BASE     = 'https://api.checkoutchamp.com';
 
-    /* ── Club member token (from /magic-login/test or CC member) — full CC login ── */
-    var loginRes  = await fetch('https://api.checkoutchamp.com/members/login/?' + new URLSearchParams({
-      clubId:       CC_CLUB_ID,
-      clubUsername: data.email,
-      clubPassword: data.password,
-      loginId:      process.env.CC_LOGIN_ID,
-      password:     process.env.CC_API_PASSWORD
+    var loginRes  = await fetch(CC_BASE + '/members/login/?' + new URLSearchParams({
+      clubId: CC_CLUB_ID, clubUsername: data.email, clubPassword: data.password,
+      loginId: CC_LOGIN_ID, password: CC_API_PASS
     }).toString(), { method: 'POST' });
     var loginData = await loginRes.json();
     console.log('CC login for', data.email, ':', JSON.stringify(loginData).substring(0, 200));
@@ -542,62 +381,43 @@ app.post('/magic-login/verify', async function(req, res) {
       return res.status(401).json({ error: 'Login failed: ' + JSON.stringify(loginData.message) });
     }
 
-    /* Parse login message to get memberId */
     var loginMsg = {};
-    try {
-      loginMsg = typeof loginData.message === 'string'
-        ? JSON.parse(loginData.message)
-        : loginData.message;
-    } catch(e) {}
-
-    var memberId = loginMsg.memberId || '';
-
-    /* Fetch customerOrders and customerPurchases from CC API */
-    var CC_LOGIN_ID = process.env.CC_LOGIN_ID;
-    var CC_API_PASS = process.env.CC_API_PASSWORD;
-    var CC_BASE     = 'https://api.checkoutchamp.com';
-
-    var customerPurchases = {};
-
-    try {
-      var memberUrl  = CC_BASE + '/members/?' + new URLSearchParams({
-        memberId: memberId, loginId: CC_LOGIN_ID, password: CC_API_PASS
-      });
-      var memberRes  = await fetch(memberUrl);
-      var memberData = JSON.parse(await memberRes.text());
-      console.log('Member data result:', memberData.result);
-
-      var member = memberData.message && memberData.message[0] ? memberData.message[0] : null;
-
-      if (member && member.customerId) {
-        var purchasesRes  = await fetch(CC_BASE + '/membership/?' + new URLSearchParams({
-          customerId: member.customerId, clubId: CC_CLUB_ID, loginId: CC_LOGIN_ID, password: CC_API_PASS
-        }));
-        var purchasesData = await purchasesRes.json();
-        if (purchasesData.message) {
-          var purchases = Array.isArray(purchasesData.message) ? purchasesData.message : [];
-          purchases.forEach(function(p) {
-            if (p.purchaseId) customerPurchases[p.purchaseId] = p;
-          });
-        }
-      }
-    } catch(e) {
-      console.error('Error fetching customer data:', e.message);
-    }
+    try { loginMsg = typeof loginData.message === 'string' ? JSON.parse(loginData.message) : loginData.message; } catch(e) {}
 
     delete tokenStore[token];
-
-    res.json({
-      success:  true,
-      email:    data.email,
-      password: data.password,
-      status:   loginMsg.status || 'ACTIVE'
-    });
+    res.json({ success: true, email: data.email, password: data.password, status: loginMsg.status || 'ACTIVE' });
 
   } catch (err) {
     console.error('Magic login error:', err);
     res.status(500).json({ error: err.message });
   }
+});
+
+/* ════════════════════════════════════════════════════
+   RECHARGE PORTAL — Recharge-only customers
+════════════════════════════════════════════════════ */
+
+/* ── TEST: generate Recharge portal magic link ── */
+app.get('/recharge-portal/test', function(req, res) {
+  var email = (req.query.email || '').trim().toLowerCase();
+  if (!email) return res.status(400).json({ error: 'email required' });
+  var token = crypto.randomBytes(32).toString('hex');
+  tokenStore[token] = { email, type: 'recharge', expires: Date.now() + 24 * 60 * 60 * 1000 };
+  res.json({
+    magicLink: 'https://try.thegreatproject.com/recharge-portal?token=' + token,
+    expiresIn: '24 hours'
+  });
+});
+
+/* ── POST /recharge-portal/verify ── */
+app.post('/recharge-portal/verify', function(req, res) {
+  var token = req.body.token;
+  if (!token || !tokenStore[token]) return res.status(401).json({ error: 'Invalid or expired token' });
+  var data = tokenStore[token];
+  if (data.expires < Date.now()) { delete tokenStore[token]; return res.status(401).json({ error: 'Token expired' }); }
+  /* Keep token alive — don't delete, Recharge portal uses session */
+  console.log('Recharge portal verify for:', data.email);
+  res.json({ success: true, email: data.email });
 });
 
 /* ════════════════════════════════════════════════════ */
