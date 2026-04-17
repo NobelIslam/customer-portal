@@ -393,6 +393,104 @@ app.post('/magic-login/verify', async function(req, res) {
   }
 });
 
+
+/* ════════════════════════════════════════════════════
+   RECHARGE CUSTOMER PROFILE
+════════════════════════════════════════════════════ */
+
+/* GET /recharge/customer?email=xxx — fetch profile */
+app.get('/recharge/customer', async function(req, res) {
+  try {
+    var email = (req.query.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ error: 'email required' });
+
+    var rcRes  = await fetch(RECHARGE_BASE + '/customers?email=' + encodeURIComponent(email), { headers: rcHeaders() });
+    var rcData = await rcRes.json();
+
+    if (!rcData.customers || !rcData.customers.length) {
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+
+    var c = rcData.customers[0];
+    res.json({
+      id:              c.id,
+      email:           c.email,
+      firstName:       c.first_name || '',
+      lastName:        c.last_name  || '',
+      phone:           c.phone      || '',
+      billingAddress: {
+        address1:   c.billing_address1   || '',
+        address2:   c.billing_address2   || '',
+        city:       c.billing_city       || '',
+        province:   c.billing_province   || '',
+        country:    c.billing_country    || '',
+        zip:        c.billing_zip        || ''
+      },
+      shippingAddress: {
+        address1:   c.shipping_address && c.shipping_address.address1 || '',
+        address2:   c.shipping_address && c.shipping_address.address2 || '',
+        city:       c.shipping_address && c.shipping_address.city     || '',
+        province:   c.shipping_address && c.shipping_address.province || '',
+        country:    c.shipping_address && c.shipping_address.country  || '',
+        zip:        c.shipping_address && c.shipping_address.zip      || ''
+      }
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+/* POST /recharge/customer/update — update profile */
+app.post('/recharge/customer/update', async function(req, res) {
+  try {
+    var email = (req.body.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ error: 'email required' });
+
+    /* Find customer ID first */
+    var rcRes  = await fetch(RECHARGE_BASE + '/customers?email=' + encodeURIComponent(email), { headers: rcHeaders() });
+    var rcData = await rcRes.json();
+    if (!rcData.customers || !rcData.customers.length) {
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+    var customerId = rcData.customers[0].id;
+
+    /* Build update payload — never update email */
+    var payload = {};
+    if (req.body.firstName)  payload.first_name = req.body.firstName;
+    if (req.body.lastName)   payload.last_name  = req.body.lastName;
+    if (req.body.phone)      payload.phone       = req.body.phone;
+
+    if (req.body.billingAddress) {
+      var b = req.body.billingAddress;
+      if (b.address1) payload.billing_address1  = b.address1;
+      if (b.address2) payload.billing_address2  = b.address2;
+      if (b.city)     payload.billing_city      = b.city;
+      if (b.province) payload.billing_province  = b.province;
+      if (b.country)  payload.billing_country   = b.country;
+      if (b.zip)      payload.billing_zip       = b.zip;
+    }
+
+    if (req.body.shippingAddress) {
+      var s = req.body.shippingAddress;
+      payload.shipping_address = {};
+      if (s.address1) payload.shipping_address.address1 = s.address1;
+      if (s.address2) payload.shipping_address.address2 = s.address2;
+      if (s.city)     payload.shipping_address.city     = s.city;
+      if (s.province) payload.shipping_address.province = s.province;
+      if (s.country)  payload.shipping_address.country  = s.country;
+      if (s.zip)      payload.shipping_address.zip      = s.zip;
+    }
+
+    var updateRes  = await fetch(RECHARGE_BASE + '/customers/' + customerId, {
+      method:  'PUT',
+      headers: rcHeaders(),
+      body:    JSON.stringify(payload)
+    });
+    var updateData = await updateRes.json();
+
+    if (!updateRes.ok) return res.status(updateRes.status).json({ error: updateData.error || 'Update failed' });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 /* ════════════════════════════════════════════════════
    RECHARGE PORTAL — Recharge-only customers
 ════════════════════════════════════════════════════ */
