@@ -238,14 +238,28 @@ app.post('/webhooks/checkoutchamp', handleCCWebhook);
 /* ════════════════════════════════════════════════════
    TOKEN STORE — shared by magic-login + recharge-portal
 ════════════════════════════════════════════════════ */
-const tokenStore = {};
+/* ── Signed tokens — survives Render restarts, no in-memory store needed ── */
+const TOKEN_SECRET = process.env.TOKEN_SECRET || 'tgp-portal-secret-2026';
 
-setInterval(function() {
-  var now = Date.now();
-  Object.keys(tokenStore).forEach(function(t) {
-    if (tokenStore[t].expires < now) delete tokenStore[t];
-  });
-}, 10 * 60 * 1000);
+function createToken(payload) {
+  payload.expires = Date.now() + 24 * 60 * 60 * 1000;
+  var data = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  var sig  = crypto.createHmac('sha256', TOKEN_SECRET).update(data).digest('base64url');
+  return data + '.' + sig;
+}
+
+function verifyToken(token) {
+  if (!token) return null;
+  var parts = token.split('.');
+  if (parts.length !== 2) return null;
+  var expectedSig = crypto.createHmac('sha256', TOKEN_SECRET).update(parts[0]).digest('base64url');
+  if (expectedSig !== parts[1]) return null;
+  try {
+    var payload = JSON.parse(Buffer.from(parts[0], 'base64url').toString());
+    if (payload.expires < Date.now()) return null;
+    return payload;
+  } catch(e) { return null; }
+}
 
 /* ════════════════════════════════════════════════════
    MAGIC LOGIN — CheckoutChamp customers
@@ -304,17 +318,13 @@ app.post('/magic-login/request', async function(req, res) {
       });
     }
 
-    var token = crypto.randomBytes(32).toString('hex');
+    var token;
     var magicLink;
     var isRechargeOnly = foundIn.includes('recharge') && !foundIn.includes('checkoutchamp');
 
     if (isRechargeOnly) {
       /* ── RECHARGE-ONLY customer ── */
-      tokenStore[token] = {
-        email:   email,
-        type:    'recharge',
-        expires: Date.now() + 24 * 60 * 60 * 1000
-      };
+      token = createToken({ email: email, type: 'recharge' });
       /* In split mode → /recharge-portal, in unified mode → /dashboard */
       magicLink = PORTAL_MODE === 'unified'
         ? PORTAL_URLS.unified + '?token=' + token
@@ -324,15 +334,14 @@ app.post('/magic-login/request', async function(req, res) {
     } else {
       /* ── CC customer (with or without Recharge) ── */
       var tempPassword = ccMember ? (ccMember.clubPassword || null) : null;
-      tokenStore[token] = {
+      token = createToken({
         email:        email,
         type:         'checkoutchamp',
         loginType:    'club',
-        memberId:     ccMember ? (ccMember.memberId    || null) : null,
+        memberId:     ccMember ? (ccMember.memberId     || null) : null,
         clubUsername: ccMember ? (ccMember.clubUsername || null) : null,
-        password:     tempPassword,
-        expires:      Date.now() + 24 * 60 * 60 * 1000
-      };
+        password:     tempPassword
+      });
       /* In split mode → /magic-login (CC login page), in unified mode → /dashboard */
       magicLink = PORTAL_MODE === 'unified'
         ? PORTAL_URLS.unified + '?token=' + token
@@ -364,29 +373,57 @@ app.get('/magic-login', function(req, res) {
 });
 
 /* ── TEST: generate CC magic link ── */
-app.get('/magic-login/test', function(req, res) {
+app.get('/magic-login/test', async function(req, res) {
   var email    = (req.query.email    || '').trim().toLowerCase();
   var password = (req.query.password || '').trim();
-  if (!email || !password) return res.status(400).json({ error: 'email and password required' });
-  var token = crypto.randomBytes(32).toString('hex');
-  tokenStore[token] = { email, password, type: 'checkoutchamp', expires: Date.now() + 15 * 60 * 1000 };
+  if (!email) return res.status(400).json({ error: 'email required' });
+
+  var ccMember = null;
+  try {
+    var today   = new Date();
+    var endDate = (today.getMonth()+1).toString().padStart(2,'0')+'/'+today.getDate().toString().padStart(2,'0')+'/'+today.getFullYear();
+    var qRes  = await fetch(CC_BASE + '/members/query/?' + ccParams({
+      emailAddress: email, startDate: '01/01/2016', endDate, resultsPerPage: 200
+    }), { method: 'POST' });
+    var qData = await qRes.json();
+    if (qData.result === 'SUCCESS' && qData.message && qData.message.data && qData.message.data.length > 0) {
+      var records = qData.message.data;
+      records.sort(function(a,b){ return new Date(b.dateCreated)-new Date(a.dateCreated); });
+      ccMember = records[0];
+    }
+  } catch(e) { console.error('Test endpoint CC lookup error:', e.message); }
+
+  /* Use provided password or fall back to CC member password */
+  var resolvedPassword = password || (ccMember ? ccMember.clubPassword : null);
+  var token = createToken({
+    email:        email,
+    type:         'checkoutchamp',
+    loginType:    'club',
+    memberId:     ccMember ? (ccMember.memberId     || null) : null,
+    clubUsername: ccMember ? (ccMember.clubUsername || null) : null,
+    password:     resolvedPassword
+  });
   var link = PORTAL_MODE === 'unified'
     ? PORTAL_URLS.unified + '?token=' + token
     : BASE_URL + '/magic-login?token=' + token;
-  res.json({ magicLink: link, expiresIn: '15 minutes', mode: PORTAL_MODE });
+  res.json({
+    magicLink:   link,
+    expiresIn:   '24 hours',
+    mode:        PORTAL_MODE,
+    memberFound: !!ccMember,
+    memberId:    ccMember ? ccMember.memberId : null
+  });
 });
 
 /* ── POST /magic-login/verify — CC portal login ── */
 app.post('/magic-login/verify', async function(req, res) {
   try {
     var token = req.body.token;
-    if (!token || !tokenStore[token]) return res.status(401).json({ error: 'Invalid or expired token' });
-    var data = tokenStore[token];
-    if (data.expires < Date.now()) { delete tokenStore[token]; return res.status(401).json({ error: 'Token expired' }); }
+    var data   = verifyToken(token);
+    if (!data) return res.status(401).json({ error: 'Invalid or expired token' });
 
     if (!data.password) {
-      delete tokenStore[token];
-      return res.json({ success: true, email: data.email });
+      return res.json({ success: true, email: data.email, type: data.type || 'checkoutchamp' });
     }
 
     var CC_CLUB_ID  = process.env.CC_CLUB_ID || '12';
@@ -408,7 +445,6 @@ app.post('/magic-login/verify', async function(req, res) {
     var loginMsg = {};
     try { loginMsg = typeof loginData.message === 'string' ? JSON.parse(loginData.message) : loginData.message; } catch(e) {}
 
-    delete tokenStore[token];
     res.json({ success: true, email: data.email, password: data.password, status: loginMsg.status || 'ACTIVE', type: data.type || 'checkoutchamp' });
 
   } catch (err) {
@@ -822,8 +858,7 @@ app.get('/recharge-portal/test', async function(req, res) {
     return res.status(500).json({ error: 'Could not verify Recharge subscription: ' + e.message });
   }
 
-  var token = crypto.randomBytes(32).toString('hex');
-  tokenStore[token] = { email, type: 'recharge', expires: Date.now() + 24 * 60 * 60 * 1000 };
+  var token = createToken({ email, type: 'recharge' });
   var link = PORTAL_MODE === 'unified'
     ? PORTAL_URLS.unified + '?token=' + token
     : PORTAL_URLS.recharge + '?token=' + token;
@@ -833,16 +868,14 @@ app.get('/recharge-portal/test', async function(req, res) {
 /* ── POST /recharge-portal/verify ── */
 app.post('/recharge-portal/verify', async function(req, res) {
   var token = req.body.token;
-  if (!token || !tokenStore[token]) return res.status(401).json({ error: 'Invalid or expired token' });
-  var data = tokenStore[token];
-  if (data.expires < Date.now()) { delete tokenStore[token]; return res.status(401).json({ error: 'Token expired' }); }
+  var data   = verifyToken(token);
+  if (!data) return res.status(401).json({ error: 'Invalid or expired token' });
 
   /* Verify email actually exists in Recharge */
   try {
     var rcRes  = await fetch(RECHARGE_BASE + '/customers?email=' + encodeURIComponent(data.email), { headers: rcHeaders() });
     var rcData = await rcRes.json();
     if (!rcData.customers || rcData.customers.length === 0) {
-      delete tokenStore[token];
       console.log('Recharge portal verify failed — no Recharge customer for:', data.email);
       return res.status(403).json({ error: 'No Recharge subscription found for this email.' });
     }
