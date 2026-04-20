@@ -416,39 +416,22 @@ app.get('/magic-login/test', async function(req, res) {
 });
 
 /* ── POST /magic-login/verify — CC portal login ── */
-app.post('/magic-login/verify', async function(req, res) {
+app.post('/magic-login/verify', function(req, res) {
   try {
     var token = req.body.token;
-    var data   = verifyToken(token);
+    var data  = verifyToken(token);
     if (!data) return res.status(401).json({ error: 'Invalid or expired token' });
 
-    if (!data.password) {
-      return res.json({ success: true, email: data.email, type: data.type || 'checkoutchamp' });
-    }
-
-    var CC_CLUB_ID  = process.env.CC_CLUB_ID || '12';
-    var CC_LOGIN_ID = process.env.CC_LOGIN_ID;
-    var CC_API_PASS = process.env.CC_API_PASSWORD;
-    var CC_BASE     = 'https://api.checkoutchamp.com';
-
-    var loginRes  = await fetch(CC_BASE + '/members/login/?' + new URLSearchParams({
-      clubId: CC_CLUB_ID, clubUsername: data.email, clubPassword: data.password,
-      loginId: CC_LOGIN_ID, password: CC_API_PASS
-    }).toString(), { method: 'POST' });
-    var loginData = await loginRes.json();
-    console.log('CC login for', data.email, ':', JSON.stringify(loginData).substring(0, 200));
-
-    if (loginData.result === 'Error' || loginData.result === 'ERROR') {
-      return res.status(401).json({ error: 'Login failed: ' + JSON.stringify(loginData.message) });
-    }
-
-    var loginMsg = {};
-    try { loginMsg = typeof loginData.message === 'string' ? JSON.parse(loginData.message) : loginData.message; } catch(e) {}
-
-    res.json({ success: true, email: data.email, password: data.password, status: loginMsg.status || 'ACTIVE', type: data.type || 'checkoutchamp' });
+    /* Token signature already proves authenticity — no CC login needed */
+    console.log('Magic login verify OK for:', data.email, '| type:', data.type);
+    res.json({
+      success: true,
+      email:   data.email,
+      type:    data.type || 'checkoutchamp'
+    });
 
   } catch (err) {
-    console.error('Magic login error:', err);
+    console.error('Magic login verify error:', err);
     res.status(500).json({ error: err.message });
   }
 });
