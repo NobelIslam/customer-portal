@@ -499,41 +499,21 @@ app.get('/cc/subscriptions', async function(req, res) {
     if (!email) return res.status(400).json({ error: 'email required' });
 
     var CC_CLUB_ID = process.env.CC_CLUB_ID || '12';
-    var today      = new Date();
-    var endDate    = (today.getMonth()+1).toString().padStart(2,'0')+'/'+today.getDate().toString().padStart(2,'0')+'/'+today.getFullYear();
+    var today   = new Date();
+    var endDate = (today.getMonth()+1).toString().padStart(2,'0')+'/'+today.getDate().toString().padStart(2,'0')+'/'+today.getFullYear();
 
-    /* Get customerId first */
-    var cr = await fetch(CC_BASE + '/customer/query/?' + ccParams({
-      emailAddress: email, startDate: '01/01/2016', endDate, resultsPerPage: 1, sortDir: -1
-    }), { method: 'POST' });
-    var cd = await cr.json();
-    if (cd.result !== 'SUCCESS' || !cd.message || !cd.message.data || !cd.message.data.length) {
-      return res.json({ success: true, subscriptions: [] });
-    }
-    var customerId = cd.message.data[0].customerId;
-
-    /* Use membership/query to get subscriptions WITH frequency */
-    var today2   = new Date();
-    var endDate2 = (today2.getMonth()+1).toString().padStart(2,'0')+'/'+today2.getDate().toString().padStart(2,'0')+'/'+today2.getFullYear();
-    var r = await fetch(CC_BASE + '/membership/query/?' + ccParams({
-      customerId, clubId: CC_CLUB_ID,
-      startDate: '01/01/2016', endDate: endDate2, resultsPerPage: 200
+    /* Use members/query directly by email — same as magic login, avoids wrong customerId */
+    var r = await fetch(CC_BASE + '/members/query/?' + ccParams({
+      emailAddress: email, clubId: CC_CLUB_ID,
+      startDate: '01/01/2016', endDate, resultsPerPage: 200
     }), { method: 'POST' });
     var text = await r.text();
     var d;
     try { d = JSON.parse(text); } catch(e) {
       console.error('Subscriptions raw:', text.substring(0,200));
-      /* Fallback to members/query */
-      var r2    = await fetch(CC_BASE + '/members/query/?' + ccParams({
-        customerId, clubId: CC_CLUB_ID,
-        startDate: '01/01/2016', endDate: endDate2, resultsPerPage: 200
-      }), { method: 'POST' });
-      var text2 = await r2.text();
-      try { d = JSON.parse(text2); } catch(e2) {
-        return res.json({ success: true, subscriptions: [] });
-      }
+      return res.json({ success: true, subscriptions: [] });
     }
-    console.log('CC subscriptions result:', d.result, JSON.stringify(d).substring(0,200));
+    console.log('CC subscriptions result:', d.result, '| count:', d.message && d.message.data ? d.message.data.length : 0);
     var subs = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
 
     /* Enrich with product name by fetching related order */
