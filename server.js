@@ -385,7 +385,7 @@ app.post('/magic-login/verify', async function(req, res) {
     try { loginMsg = typeof loginData.message === 'string' ? JSON.parse(loginData.message) : loginData.message; } catch(e) {}
 
     delete tokenStore[token];
-    res.json({ success: true, email: data.email, password: data.password, status: loginMsg.status || 'ACTIVE' });
+    res.json({ success: true, email: data.email, password: data.password, status: loginMsg.status || 'ACTIVE', type: data.type || 'checkoutchamp' });
 
   } catch (err) {
     console.error('Magic login error:', err);
@@ -393,6 +393,181 @@ app.post('/magic-login/verify', async function(req, res) {
   }
 });
 
+
+
+/* ════════════════════════════════════════════════════
+   UNIFIED PORTAL — CC API ENDPOINTS
+════════════════════════════════════════════════════ */
+
+function ccParams(extra) {
+  var base = {
+    loginId:  process.env.CC_LOGIN_ID,
+    password: process.env.CC_API_PASSWORD
+  };
+  return new URLSearchParams(Object.assign(base, extra || {})).toString();
+}
+
+var CC_BASE = 'https://api.checkoutchamp.com';
+
+/* GET /cc/customer?email=xxx — get customerId + profile */
+app.get('/cc/customer', async function(req, res) {
+  try {
+    var email = (req.query.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ error: 'email required' });
+
+    var today   = new Date();
+    var endDate = (today.getMonth()+1).toString().padStart(2,'0')+'/'+today.getDate().toString().padStart(2,'0')+'/'+today.getFullYear();
+    var r = await fetch(CC_BASE + '/customer/query/?' + ccParams({
+      emailAddress: email, startDate: '01/01/2016', endDate, resultsPerPage: 1, sortDir: -1
+    }), { method: 'POST' });
+    var d = await r.json();
+    if (d.result !== 'SUCCESS' || !d.message || !d.message.data || !d.message.data.length) {
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+    var customer = d.message.data[0];
+    res.json({ success: true, customer });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+/* GET /cc/orders?email=xxx */
+app.get('/cc/orders', async function(req, res) {
+  try {
+    var email = (req.query.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ error: 'email required' });
+
+    var today   = new Date();
+    var endDate = (today.getMonth()+1).toString().padStart(2,'0')+'/'+today.getDate().toString().padStart(2,'0')+'/'+today.getFullYear();
+    var r = await fetch(CC_BASE + '/order/query/?' + ccParams({
+      emailAddress: email, startDate: '01/01/2016', endDate, resultsPerPage: 200, sortDir: -1
+    }), { method: 'POST' });
+    var d = await r.json();
+    var orders = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+    res.json({ success: true, orders });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+/* GET /cc/order?orderId=xxx — order details */
+app.get('/cc/order', async function(req, res) {
+  try {
+    var orderId = req.query.orderId;
+    if (!orderId) return res.status(400).json({ error: 'orderId required' });
+    var r = await fetch(CC_BASE + '/order/?' + ccParams({ orderId }), { method: 'GET' });
+    var d = await r.json();
+    if (d.result !== 'SUCCESS') return res.status(404).json({ error: 'Order not found' });
+    res.json({ success: true, order: d.message });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+/* GET /cc/subscriptions?email=xxx */
+app.get('/cc/subscriptions', async function(req, res) {
+  try {
+    var email = (req.query.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ error: 'email required' });
+
+    var CC_CLUB_ID = process.env.CC_CLUB_ID || '12';
+    var today      = new Date();
+    var endDate    = (today.getMonth()+1).toString().padStart(2,'0')+'/'+today.getDate().toString().padStart(2,'0')+'/'+today.getFullYear();
+
+    /* Get customerId first */
+    var cr = await fetch(CC_BASE + '/customer/query/?' + ccParams({
+      emailAddress: email, startDate: '01/01/2016', endDate, resultsPerPage: 1, sortDir: -1
+    }), { method: 'POST' });
+    var cd = await cr.json();
+    if (cd.result !== 'SUCCESS' || !cd.message || !cd.message.data || !cd.message.data.length) {
+      return res.json({ success: true, subscriptions: [] });
+    }
+    var customerId = cd.message.data[0].customerId;
+
+    var r = await fetch(CC_BASE + '/membership/?' + ccParams({ customerId, clubId: CC_CLUB_ID }), { method: 'GET' });
+    var d = await r.json();
+    var subs = (d.result === 'SUCCESS' && d.message) ? (Array.isArray(d.message) ? d.message : [d.message]) : [];
+    res.json({ success: true, subscriptions: subs });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+/* GET /cc/shipments?email=xxx */
+app.get('/cc/shipments', async function(req, res) {
+  try {
+    var email = (req.query.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ error: 'email required' });
+
+    var today   = new Date();
+    var endDate = (today.getMonth()+1).toString().padStart(2,'0')+'/'+today.getDate().toString().padStart(2,'0')+'/'+today.getFullYear();
+    var r = await fetch(CC_BASE + '/shipment/query/?' + ccParams({
+      emailAddress: email, startDate: '01/01/2016', endDate, resultsPerPage: 200, sortDir: -1
+    }), { method: 'POST' });
+    var d = await r.json();
+    var shipments = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+    res.json({ success: true, shipments });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+/* POST /cc/subscription/cancel  body: { purchaseId } */
+app.post('/cc/subscription/cancel', async function(req, res) {
+  try {
+    var purchaseId = req.body.purchaseId;
+    var reason     = req.body.reason || 'Customer requested';
+    if (!purchaseId) return res.status(400).json({ error: 'purchaseId required' });
+    var r = await fetch(CC_BASE + '/membership/cancel/?' + ccParams({ purchaseId, cancelReason: reason }), { method: 'POST' });
+    var d = await r.json();
+    if (d.result !== 'SUCCESS') return res.status(400).json({ error: d.message || 'Cancel failed' });
+    res.json({ success: true });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+/* POST /cc/subscription/pause  body: { purchaseId } */
+app.post('/cc/subscription/pause', async function(req, res) {
+  try {
+    var purchaseId = req.body.purchaseId;
+    if (!purchaseId) return res.status(400).json({ error: 'purchaseId required' });
+    var r = await fetch(CC_BASE + '/membership/pause/?' + ccParams({ purchaseId }), { method: 'POST' });
+    var d = await r.json();
+    if (d.result !== 'SUCCESS') return res.status(400).json({ error: d.message || 'Pause failed' });
+    res.json({ success: true });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+/* POST /cc/subscription/restart  body: { purchaseId } */
+app.post('/cc/subscription/restart', async function(req, res) {
+  try {
+    var purchaseId = req.body.purchaseId;
+    if (!purchaseId) return res.status(400).json({ error: 'purchaseId required' });
+    var r = await fetch(CC_BASE + '/membership/restart/?' + ccParams({ purchaseId }), { method: 'POST' });
+    var d = await r.json();
+    if (d.result !== 'SUCCESS') return res.status(400).json({ error: d.message || 'Restart failed' });
+    res.json({ success: true });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+/* POST /cc/profile/update  body: { customerId, firstName, lastName, phone, address... } */
+app.post('/cc/profile/update', async function(req, res) {
+  try {
+    var b = req.body;
+    if (!b.customerId) return res.status(400).json({ error: 'customerId required' });
+    var params = ccParams({
+      customerId:   b.customerId,
+      firstName:    b.firstName    || '',
+      lastName:     b.lastName     || '',
+      phoneNumber:  b.phone        || '',
+      address1:     b.address1     || '',
+      address2:     b.address2     || '',
+      city:         b.city         || '',
+      state:        b.state        || '',
+      country:      b.country      || '',
+      postalCode:   b.postalCode   || '',
+      shipAddress1: b.shipAddress1 || '',
+      shipAddress2: b.shipAddress2 || '',
+      shipCity:     b.shipCity     || '',
+      shipState:    b.shipState    || '',
+      shipCountry:  b.shipCountry  || '',
+      shipPostalCode: b.shipPostalCode || ''
+    });
+    var r = await fetch(CC_BASE + '/customer/update/?' + params, { method: 'POST' });
+    var d = await r.json();
+    if (d.result !== 'SUCCESS') return res.status(400).json({ error: d.message || 'Update failed' });
+    res.json({ success: true });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
 
 /* ════════════════════════════════════════════════════
    RECHARGE CUSTOMER PROFILE
