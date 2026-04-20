@@ -512,10 +512,10 @@ app.get('/cc/subscriptions', async function(req, res) {
     }
     var customerId = cd.message.data[0].customerId;
 
-    /* Use members/query to get club subscriptions */
-    var today2  = new Date();
+    /* Use membership/query to get subscriptions WITH frequency */
+    var today2   = new Date();
     var endDate2 = (today2.getMonth()+1).toString().padStart(2,'0')+'/'+today2.getDate().toString().padStart(2,'0')+'/'+today2.getFullYear();
-    var r = await fetch(CC_BASE + '/members/query/?' + ccParams({
+    var r = await fetch(CC_BASE + '/membership/query/?' + ccParams({
       customerId, clubId: CC_CLUB_ID,
       startDate: '01/01/2016', endDate: endDate2, resultsPerPage: 200
     }), { method: 'POST' });
@@ -523,7 +523,15 @@ app.get('/cc/subscriptions', async function(req, res) {
     var d;
     try { d = JSON.parse(text); } catch(e) {
       console.error('Subscriptions raw:', text.substring(0,200));
-      return res.json({ success: true, subscriptions: [] });
+      /* Fallback to members/query */
+      var r2    = await fetch(CC_BASE + '/members/query/?' + ccParams({
+        customerId, clubId: CC_CLUB_ID,
+        startDate: '01/01/2016', endDate: endDate2, resultsPerPage: 200
+      }), { method: 'POST' });
+      var text2 = await r2.text();
+      try { d = JSON.parse(text2); } catch(e2) {
+        return res.json({ success: true, subscriptions: [] });
+      }
     }
     console.log('CC subscriptions result:', d.result, JSON.stringify(d).substring(0,200));
     var subs = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
