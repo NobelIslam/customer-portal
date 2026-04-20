@@ -502,9 +502,21 @@ app.get('/cc/subscriptions', async function(req, res) {
     }
     var customerId = cd.message.data[0].customerId;
 
-    var r = await fetch(CC_BASE + '/membership/?' + ccParams({ customerId, clubId: CC_CLUB_ID }), { method: 'GET' });
-    var d = await r.json();
-    var subs = (d.result === 'SUCCESS' && d.message) ? (Array.isArray(d.message) ? d.message : [d.message]) : [];
+    /* Use members/query to get club subscriptions */
+    var today2  = new Date();
+    var endDate2 = (today2.getMonth()+1).toString().padStart(2,'0')+'/'+today2.getDate().toString().padStart(2,'0')+'/'+today2.getFullYear();
+    var r = await fetch(CC_BASE + '/members/query/?' + ccParams({
+      customerId, clubId: CC_CLUB_ID,
+      startDate: '01/01/2016', endDate: endDate2, resultsPerPage: 200
+    }), { method: 'POST' });
+    var text = await r.text();
+    var d;
+    try { d = JSON.parse(text); } catch(e) {
+      console.error('Subscriptions raw:', text.substring(0,200));
+      return res.json({ success: true, subscriptions: [] });
+    }
+    console.log('CC subscriptions result:', d.result, JSON.stringify(d).substring(0,200));
+    var subs = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
     res.json({ success: true, subscriptions: subs });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
@@ -517,11 +529,31 @@ app.get('/cc/shipments', async function(req, res) {
 
     var today   = new Date();
     var endDate = (today.getMonth()+1).toString().padStart(2,'0')+'/'+today.getDate().toString().padStart(2,'0')+'/'+today.getFullYear();
-    var r = await fetch(CC_BASE + '/shipment/query/?' + ccParams({
-      emailAddress: email, startDate: '01/01/2016', endDate, resultsPerPage: 200, sortDir: -1
+    /* CC shipments via order/query — filter orders with tracking numbers */
+    var r = await fetch(CC_BASE + '/order/query/?' + ccParams({
+      emailAddress: email, startDate: '01/01/2016', endDate, resultsPerPage: 200
     }), { method: 'POST' });
-    var d = await r.json();
-    var shipments = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+    var text = await r.text();
+    var d;
+    try { d = JSON.parse(text); } catch(e) {
+      console.error('Shipments raw:', text.substring(0,200));
+      return res.json({ success: true, shipments: [] });
+    }
+    var orders = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+    /* Extract shipment info from orders that have tracking */
+    var shipments = orders.map(function(o) {
+      return {
+        orderId:       o.orderId,
+        dateShipped:   o.dateUpdated || o.dateCreated,
+        trackingNumber: o.trackingNumber || '',
+        shipCarrier:   o.shipCarrier || '',
+        shipStatus:    o.orderStatus || '',
+        shipAddress1:  o.shipAddress1 || '',
+        shipCity:      o.shipCity || '',
+        shipCountry:   o.shipCountry || ''
+      };
+    }).filter(function(s) { return s.trackingNumber; });
+    console.log('Shipments found:', shipments.length, 'out of', orders.length, 'orders');
     res.json({ success: true, shipments });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
