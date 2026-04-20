@@ -15,14 +15,14 @@ const KLAVIYO_API_KEY  = process.env.KLAVIYO_API_KEY;
 
 /* ════════════════════════════════════════════════════
    PORTAL MODE CONFIG
-   'unified' → everyone goes to /unified-portal (magic link for all)
+   'unified' → everyone goes to /dashboard (magic link for all)
    'split'   → CC goes to /memberarea, Recharge goes to /recharge-portal
 ════════════════════════════════════════════════════ */
 const PORTAL_MODE = process.env.PORTAL_MODE || 'unified';
 const BASE_URL    = process.env.BASE_URL    || 'https://help.thegreatproject.com';
 
 var PORTAL_URLS = {
-  unified:  BASE_URL + '/unified-portal',
+  unified:  BASE_URL + '/dashboard',
   cc:       BASE_URL + '/memberarea',        /* split mode — CC customers */
   recharge: BASE_URL + '/recharge-portal',   /* split mode — Recharge-only */
   profile:  BASE_URL + '/unified-profile',
@@ -315,7 +315,7 @@ app.post('/magic-login/request', async function(req, res) {
         type:    'recharge',
         expires: Date.now() + 24 * 60 * 60 * 1000
       };
-      /* In split mode → /recharge-portal, in unified mode → /unified-portal */
+      /* In split mode → /recharge-portal, in unified mode → /dashboard */
       magicLink = PORTAL_MODE === 'unified'
         ? PORTAL_URLS.unified + '?token=' + token
         : PORTAL_URLS.recharge + '?token=' + token;
@@ -333,7 +333,7 @@ app.post('/magic-login/request', async function(req, res) {
         password:     tempPassword,
         expires:      Date.now() + 24 * 60 * 60 * 1000
       };
-      /* In split mode → /magic-login (CC login page), in unified mode → /unified-portal */
+      /* In split mode → /magic-login (CC login page), in unified mode → /dashboard */
       magicLink = PORTAL_MODE === 'unified'
         ? PORTAL_URLS.unified + '?token=' + token
         : PORTAL_URLS.login.replace('/login', '/magic-login') + '?token=' + token;
