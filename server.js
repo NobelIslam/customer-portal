@@ -502,19 +502,33 @@ app.get('/cc/subscriptions', async function(req, res) {
     var today   = new Date();
     var endDate = (today.getMonth()+1).toString().padStart(2,'0')+'/'+today.getDate().toString().padStart(2,'0')+'/'+today.getFullYear();
 
-    /* Use members/query by email only — no clubId filter, returns ALL subscriptions across all clubs */
-    var r = await fetch(CC_BASE + '/members/query/?' + ccParams({
-      emailAddress: email,
-      startDate: '01/01/2016', endDate, resultsPerPage: 200
-    }), { method: 'POST' });
-    var text = await r.text();
-    var d;
-    try { d = JSON.parse(text); } catch(e) {
-      console.error('Subscriptions raw:', text.substring(0,200));
-      return res.json({ success: true, subscriptions: [] });
+    /* Use members/query by email — paginate through ALL pages to get every subscription */
+    var subs = [];
+    var page  = 1;
+    var perPage = 200;
+    var keepGoing = true;
+
+    while (keepGoing) {
+      var r = await fetch(CC_BASE + '/members/query/?' + ccParams({
+        emailAddress: email,
+        startDate: '01/01/2016', endDate,
+        resultsPerPage: perPage,
+        page: page
+      }), { method: 'POST' });
+      var text = await r.text();
+      var d;
+      try { d = JSON.parse(text); } catch(e) {
+        console.error('Subscriptions page', page, 'raw:', text.substring(0,200));
+        break;
+      }
+      var pageData = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+      subs = subs.concat(pageData);
+      console.log('CC subscriptions page', page, '| got:', pageData.length, '| total so far:', subs.length);
+      /* Stop if this page returned fewer results than requested — means no more pages */
+      if (pageData.length < perPage) { keepGoing = false; } else { page++; }
+      /* Safety limit — max 10 pages */
+      if (page > 10) { keepGoing = false; }
     }
-    console.log('CC subscriptions result:', d.result, '| count:', d.message && d.message.data ? d.message.data.length : 0);
-    var subs = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
 
     /* Enrich with product name by fetching related order */
     if (subs.length > 0) {
