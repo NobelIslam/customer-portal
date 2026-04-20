@@ -13,6 +13,24 @@ const RECHARGE_API_KEY = process.env.RECHARGE_API_KEY;
 const RECHARGE_BASE    = 'https://api.rechargeapps.com';
 const KLAVIYO_API_KEY  = process.env.KLAVIYO_API_KEY;
 
+/* ════════════════════════════════════════════════════
+   PORTAL MODE CONFIG
+   'unified' → everyone goes to /unified-portal (magic link for all)
+   'split'   → CC goes to /memberarea, Recharge goes to /recharge-portal
+════════════════════════════════════════════════════ */
+const PORTAL_MODE = process.env.PORTAL_MODE || 'unified';
+const BASE_URL    = process.env.BASE_URL    || 'https://help.thegreatproject.com';
+
+var PORTAL_URLS = {
+  unified:  BASE_URL + '/unified-portal',
+  cc:       BASE_URL + '/memberarea',        /* split mode — CC customers */
+  recharge: BASE_URL + '/recharge-portal',   /* split mode — Recharge-only */
+  profile:  BASE_URL + '/unified-profile',
+  login:    BASE_URL + '/login'
+};
+
+console.log('Portal mode:', PORTAL_MODE);
+
 function rcHeaders() {
   return {
     'X-Recharge-Access-Token': RECHARGE_API_KEY,
@@ -286,22 +304,25 @@ app.post('/magic-login/request', async function(req, res) {
       });
     }
 
-    var token    = crypto.randomBytes(32).toString('hex');
-    var BASE_URL = process.env.BASE_URL || 'https://help.thegreatproject.com';
+    var token = crypto.randomBytes(32).toString('hex');
     var magicLink;
+    var isRechargeOnly = foundIn.includes('recharge') && !foundIn.includes('checkoutchamp');
 
-    /* ── RECHARGE-ONLY customer → recharge-portal ── */
-    if (foundIn.includes('recharge') && !foundIn.includes('checkoutchamp')) {
+    if (isRechargeOnly) {
+      /* ── RECHARGE-ONLY customer ── */
       tokenStore[token] = {
-        email:     email,
-        type:      'recharge',
-        expires:   Date.now() + 24 * 60 * 60 * 1000
+        email:   email,
+        type:    'recharge',
+        expires: Date.now() + 24 * 60 * 60 * 1000
       };
-      magicLink = BASE_URL + '/recharge-portal?token=' + token;
-      console.log('Recharge-only magic link for', email);
+      /* In split mode → /recharge-portal, in unified mode → /unified-portal */
+      magicLink = PORTAL_MODE === 'unified'
+        ? PORTAL_URLS.unified + '?token=' + token
+        : PORTAL_URLS.recharge + '?token=' + token;
+      console.log('Recharge-only magic link for', email, '| mode:', PORTAL_MODE);
 
-    /* ── CC customer (with or without Recharge) → CC portal ── */
     } else {
+      /* ── CC customer (with or without Recharge) ── */
       var tempPassword = ccMember ? (ccMember.clubPassword || null) : null;
       tokenStore[token] = {
         email:        email,
@@ -312,8 +333,11 @@ app.post('/magic-login/request', async function(req, res) {
         password:     tempPassword,
         expires:      Date.now() + 24 * 60 * 60 * 1000
       };
-      magicLink = BASE_URL + '/magic-login?token=' + token;
-      console.log('CC magic link for', email);
+      /* In split mode → /magic-login (CC login page), in unified mode → /unified-portal */
+      magicLink = PORTAL_MODE === 'unified'
+        ? PORTAL_URLS.unified + '?token=' + token
+        : PORTAL_URLS.login.replace('/login', '/magic-login') + '?token=' + token;
+      console.log('CC magic link for', email, '| mode:', PORTAL_MODE);
     }
 
     /* ── Fire Klaviyo Magic_Link_Access event ── */
@@ -346,10 +370,10 @@ app.get('/magic-login/test', function(req, res) {
   if (!email || !password) return res.status(400).json({ error: 'email and password required' });
   var token = crypto.randomBytes(32).toString('hex');
   tokenStore[token] = { email, password, type: 'checkoutchamp', expires: Date.now() + 15 * 60 * 1000 };
-  res.json({
-    magicLink: 'https://help.thegreatproject.com/magic-login?token=' + token,
-    expiresIn: '15 minutes'
-  });
+  var link = PORTAL_MODE === 'unified'
+    ? PORTAL_URLS.unified + '?token=' + token
+    : BASE_URL + '/magic-login?token=' + token;
+  res.json({ magicLink: link, expiresIn: '15 minutes', mode: PORTAL_MODE });
 });
 
 /* ── POST /magic-login/verify — CC portal login ── */
@@ -688,10 +712,10 @@ app.get('/recharge-portal/test', async function(req, res) {
 
   var token = crypto.randomBytes(32).toString('hex');
   tokenStore[token] = { email, type: 'recharge', expires: Date.now() + 24 * 60 * 60 * 1000 };
-  res.json({
-    magicLink: 'https://help.thegreatproject.com/recharge-portal?token=' + token,
-    expiresIn: '24 hours'
-  });
+  var link = PORTAL_MODE === 'unified'
+    ? PORTAL_URLS.unified + '?token=' + token
+    : PORTAL_URLS.recharge + '?token=' + token;
+  res.json({ magicLink: link, expiresIn: '24 hours', mode: PORTAL_MODE });
 });
 
 /* ── POST /recharge-portal/verify ── */
