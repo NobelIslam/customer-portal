@@ -502,79 +502,24 @@ app.get('/cc/subscriptions', async function(req, res) {
     var today   = new Date();
     var endDate = (today.getMonth()+1).toString().padStart(2,'0')+'/'+today.getDate().toString().padStart(2,'0')+'/'+today.getFullYear();
 
-    /* Strategy: collect ALL customerIds for this email, then fetch memberships for each */
+    /* Simple email query — returns all subscriptions across all clubs */
     var subs = [];
-    var seenPurchaseIds = {};
-
-    function addSubs(data) {
-      (data || []).forEach(function(s) {
-        if (!seenPurchaseIds[s.purchaseId || s.memberId]) {
-          seenPurchaseIds[s.purchaseId || s.memberId] = true;
-          subs.push(s);
-        }
-      });
+    var page = 1, perPage = 200, keepGoing = true;
+    while (keepGoing) {
+      try {
+        var r = await fetch(CC_BASE + '/members/query/?' + ccParams({
+          emailAddress: email,
+          startDate: '01/01/2016', endDate,
+          resultsPerPage: perPage, page: page
+        }), { method: 'POST' });
+        var d = JSON.parse(await r.text());
+        var pageData = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+        subs = subs.concat(pageData);
+        console.log('CC subscriptions page', page, '| got:', pageData.length, '| total:', subs.length);
+        if (pageData.length < perPage) keepGoing = false; else page++;
+        if (page > 10) keepGoing = false;
+      } catch(e) { console.error('Subscriptions error:', e.message); break; }
     }
-
-    async function fetchMembersByEmail(emailAddr) {
-      var page = 1, perPage = 200, keepGoing = true;
-      while (keepGoing) {
-        try {
-          var r = await fetch(CC_BASE + '/members/query/?' + ccParams({
-            emailAddress: emailAddr,
-            startDate: '01/01/2016', endDate,
-            resultsPerPage: perPage, page: page
-          }), { method: 'POST' });
-          var d = JSON.parse(await r.text());
-          var pageData = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
-          addSubs(pageData);
-          console.log('members/query email', emailAddr, 'page', page, '| got:', pageData.length);
-          if (pageData.length < perPage) keepGoing = false; else page++;
-          if (page > 10) keepGoing = false;
-        } catch(e) { console.error('fetchMembersByEmail error:', e.message); break; }
-      }
-    }
-
-    async function fetchMembersByCustomerId(customerId) {
-      var page = 1, perPage = 200, keepGoing = true;
-      while (keepGoing) {
-        try {
-          var r = await fetch(CC_BASE + '/members/query/?' + ccParams({
-            customerId: customerId,
-            startDate: '01/01/2016', endDate,
-            resultsPerPage: perPage, page: page
-          }), { method: 'POST' });
-          var d = JSON.parse(await r.text());
-          var pageData = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
-          addSubs(pageData);
-          console.log('members/query customerId', customerId, 'page', page, '| got:', pageData.length);
-          if (pageData.length < perPage) keepGoing = false; else page++;
-          if (page > 10) keepGoing = false;
-        } catch(e) { console.error('fetchMembersByCustomerId error:', e.message); break; }
-      }
-    }
-
-    /* Step 1: fetch by email first */
-    await fetchMembersByEmail(email);
-
-    /* Step 2: find ALL customerIds for this email via customer/query */
-    try {
-      var cr = await fetch(CC_BASE + '/customer/query/?' + ccParams({
-        emailAddress: email,
-        startDate: '01/01/2016', endDate,
-        resultsPerPage: 200
-      }), { method: 'POST' });
-      var cd = JSON.parse(await cr.text());
-      var customers = (cd.result === 'SUCCESS' && cd.message && cd.message.data) ? cd.message.data : [];
-      console.log('Found', customers.length, 'customer records for', email);
-
-      /* Step 3: for each customerId, fetch memberships */
-      for (var ci = 0; ci < customers.length; ci++) {
-        var cid = customers[ci].customerId;
-        if (cid) await fetchMembersByCustomerId(cid);
-      }
-    } catch(e) { console.error('customer/query error:', e.message); }
-
-    console.log('Total unique subscriptions found:', subs.length);
 
     /* Enrich with product name by fetching related order */
     if (subs.length > 0) {
