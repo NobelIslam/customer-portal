@@ -15,14 +15,14 @@ const KLAVIYO_API_KEY  = process.env.KLAVIYO_API_KEY;
 
 /* ════════════════════════════════════════════════════
    PORTAL MODE CONFIG
-   'unified' → everyone goes to /dashboard (magic link for all)
+   'unified' → everyone goes to /unified-portal (magic link for all)
    'split'   → CC goes to /memberarea, Recharge goes to /recharge-portal
 ════════════════════════════════════════════════════ */
 const PORTAL_MODE = process.env.PORTAL_MODE || 'unified';
 const BASE_URL    = process.env.BASE_URL    || 'https://help.thegreatproject.com';
 
 var PORTAL_URLS = {
-  unified:  BASE_URL + '/dashboard',
+  unified:  BASE_URL + '/unified-portal',
   cc:       BASE_URL + '/memberarea',        /* split mode — CC customers */
   recharge: BASE_URL + '/recharge-portal',   /* split mode — Recharge-only */
   profile:  BASE_URL + '/unified-profile',
@@ -315,7 +315,7 @@ app.post('/magic-login/request', async function(req, res) {
         type:    'recharge',
         expires: Date.now() + 24 * 60 * 60 * 1000
       };
-      /* In split mode → /recharge-portal, in unified mode → /dashboard */
+      /* In split mode → /recharge-portal, in unified mode → /unified-portal */
       magicLink = PORTAL_MODE === 'unified'
         ? PORTAL_URLS.unified + '?token=' + token
         : PORTAL_URLS.recharge + '?token=' + token;
@@ -333,7 +333,7 @@ app.post('/magic-login/request', async function(req, res) {
         password:     tempPassword,
         expires:      Date.now() + 24 * 60 * 60 * 1000
       };
-      /* In split mode → /magic-login (CC login page), in unified mode → /dashboard */
+      /* In split mode → /magic-login (CC login page), in unified mode → /unified-portal */
       magicLink = PORTAL_MODE === 'unified'
         ? PORTAL_URLS.unified + '?token=' + token
         : PORTAL_URLS.login.replace('/login', '/magic-login') + '?token=' + token;
@@ -634,6 +634,22 @@ app.get('/cc/shipments', async function(req, res) {
 
     console.log('Unique shipping addresses:', shipments.length, 'from', orders.length, 'orders');
     res.json({ success: true, shipments });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+/* POST /cc/order/cancel  body: { orderId } */
+app.post('/cc/order/cancel', async function(req, res) {
+  try {
+    var orderId = req.body.orderId;
+    if (!orderId) return res.status(400).json({ error: 'orderId required' });
+    var r = await fetch(CC_BASE + '/order/cancel/?' + ccParams({ orderId }), { method: 'POST' });
+    var text = await r.text();
+    var d;
+    try { d = JSON.parse(text); } catch(e) {
+      return res.status(500).json({ error: 'CC API error: ' + text.substring(0,100) });
+    }
+    if (d.result !== 'SUCCESS') return res.status(400).json({ error: d.message || 'Cancel failed' });
+    res.json({ success: true });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
 
