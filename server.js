@@ -502,9 +502,9 @@ app.get('/cc/subscriptions', async function(req, res) {
     var today   = new Date();
     var endDate = (today.getMonth()+1).toString().padStart(2,'0')+'/'+today.getDate().toString().padStart(2,'0')+'/'+today.getFullYear();
 
-    /* Use members/query directly by email — same as magic login, avoids wrong customerId */
+    /* Use members/query by email only — no clubId filter, returns ALL subscriptions across all clubs */
     var r = await fetch(CC_BASE + '/members/query/?' + ccParams({
-      emailAddress: email, clubId: CC_CLUB_ID,
+      emailAddress: email,
       startDate: '01/01/2016', endDate, resultsPerPage: 200
     }), { method: 'POST' });
     var text = await r.text();
