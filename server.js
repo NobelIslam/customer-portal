@@ -532,18 +532,34 @@ app.get('/cc/subscriptions', async function(req, res) {
     if (subs.length > 0) {
       var orderIds = [...new Set(subs.map(function(s){ return s.orderId; }).filter(Boolean))];
       var orderMap = {};
-      await Promise.all(orderIds.slice(0,5).map(async function(orderId) {
+      var today3  = new Date();
+      var endDate3 = (today3.getMonth()+1).toString().padStart(2,'0')+'/'+today3.getDate().toString().padStart(2,'0')+'/'+today3.getFullYear();
+      await Promise.all(orderIds.slice(0,10).map(async function(orderId) {
         try {
-          var or = await fetch(CC_BASE + '/order/?' + ccParams({ orderId }), { method: 'GET' });
-          var od = await or.json();
-          if (od.result === 'SUCCESS' && od.message) {
-            var items = od.message.items ? Object.values(od.message.items) : [];
-            orderMap[orderId] = items.map(function(i){ return i.name; }).join(', ');
+          var or   = await fetch(CC_BASE + '/order/query/?' + ccParams({
+            orderId, startDate: '01/01/2016', endDate: endDate3, resultsPerPage: 1
+          }), { method: 'POST' });
+          var text = await or.text();
+          var od   = JSON.parse(text);
+          if (od.result === 'SUCCESS' && od.message && od.message.data && od.message.data.length) {
+            var order = od.message.data[0];
+            var items = order.items ? Object.values(order.items) : [];
+            /* Filter out shipping/protection items, keep product items */
+            var productItems = items.filter(function(i){
+              return i.productType === 'OFFER' || (!i.productType && i.name);
+            });
+            orderMap[orderId] = {
+              name: productItems.map(function(i){ return i.name; }).join(', ') || items.map(function(i){ return i.name; }).join(', '),
+              frequency: order.billingFrequency || order.rebillFrequency || ''
+            };
           }
-        } catch(e) {}
+        } catch(e) { console.error('Order fetch error for', orderId, e.message); }
       }));
       subs = subs.map(function(s) {
-        if (s.orderId && orderMap[s.orderId]) s.product = orderMap[s.orderId];
+        if (s.orderId && orderMap[s.orderId]) {
+          s.product   = orderMap[s.orderId].name;
+          s.frequency = orderMap[s.orderId].frequency;
+        }
         return s;
       });
     }
