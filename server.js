@@ -475,10 +475,20 @@ app.get('/cc/order', async function(req, res) {
   try {
     var orderId = req.query.orderId;
     if (!orderId) return res.status(400).json({ error: 'orderId required' });
-    var r = await fetch(CC_BASE + '/order/?' + ccParams({ orderId }), { method: 'GET' });
-    var d = await r.json();
-    if (d.result !== 'SUCCESS') return res.status(404).json({ error: 'Order not found' });
-    res.json({ success: true, order: d.message });
+    var today   = new Date();
+    var endDate = (today.getMonth()+1).toString().padStart(2,'0')+'/'+today.getDate().toString().padStart(2,'0')+'/'+today.getFullYear();
+    var r = await fetch(CC_BASE + '/order/query/?' + ccParams({
+      orderId, startDate: '01/01/2016', endDate, resultsPerPage: 1
+    }), { method: 'POST' });
+    var text = await r.text();
+    var d;
+    try { d = JSON.parse(text); } catch(e) {
+      return res.status(500).json({ error: 'CC API error: ' + text.substring(0,100) });
+    }
+    if (d.result !== 'SUCCESS' || !d.message || !d.message.data || !d.message.data.length) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    res.json({ success: true, order: d.message.data[0] });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -517,6 +527,27 @@ app.get('/cc/subscriptions', async function(req, res) {
     }
     console.log('CC subscriptions result:', d.result, JSON.stringify(d).substring(0,200));
     var subs = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+
+    /* Enrich with product name by fetching related order */
+    if (subs.length > 0) {
+      var orderIds = [...new Set(subs.map(function(s){ return s.orderId; }).filter(Boolean))];
+      var orderMap = {};
+      await Promise.all(orderIds.slice(0,5).map(async function(orderId) {
+        try {
+          var or = await fetch(CC_BASE + '/order/?' + ccParams({ orderId }), { method: 'GET' });
+          var od = await or.json();
+          if (od.result === 'SUCCESS' && od.message) {
+            var items = od.message.items ? Object.values(od.message.items) : [];
+            orderMap[orderId] = items.map(function(i){ return i.name; }).join(', ');
+          }
+        } catch(e) {}
+      }));
+      subs = subs.map(function(s) {
+        if (s.orderId && orderMap[s.orderId]) s.product = orderMap[s.orderId];
+        return s;
+      });
+    }
+
     res.json({ success: true, subscriptions: subs });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
@@ -529,7 +560,7 @@ app.get('/cc/shipments', async function(req, res) {
 
     var today   = new Date();
     var endDate = (today.getMonth()+1).toString().padStart(2,'0')+'/'+today.getDate().toString().padStart(2,'0')+'/'+today.getFullYear();
-    /* CC shipments via order/query — filter orders with tracking numbers */
+    /* CC shipments — group orders by unique shipping address */
     var r = await fetch(CC_BASE + '/order/query/?' + ccParams({
       emailAddress: email, startDate: '01/01/2016', endDate, resultsPerPage: 200
     }), { method: 'POST' });
@@ -540,20 +571,44 @@ app.get('/cc/shipments', async function(req, res) {
       return res.json({ success: true, shipments: [] });
     }
     var orders = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
-    /* Extract shipment info from orders that have tracking */
-    var shipments = orders.map(function(o) {
-      return {
-        orderId:       o.orderId,
-        dateShipped:   o.dateUpdated || o.dateCreated,
-        trackingNumber: o.trackingNumber || '',
-        shipCarrier:   o.shipCarrier || '',
-        shipStatus:    o.orderStatus || '',
-        shipAddress1:  o.shipAddress1 || '',
-        shipCity:      o.shipCity || '',
-        shipCountry:   o.shipCountry || ''
-      };
-    }).filter(function(s) { return s.trackingNumber; });
-    console.log('Shipments found:', shipments.length, 'out of', orders.length, 'orders');
+
+    /* Group by unique shipping address — key = address1+city+country+zip */
+    var shipMap = {};
+    orders.forEach(function(o) {
+      var addrKey = [
+        (o.shipAddress1 || '').toLowerCase().trim(),
+        (o.shipCity     || '').toLowerCase().trim(),
+        (o.shipCountry  || '').toLowerCase().trim(),
+        (o.shipPostalCode || o.shipZip || '').toLowerCase().trim()
+      ].join('|');
+
+      if (!addrKey.replace(/\|/g,'').trim()) return; /* skip if no address */
+
+      if (!shipMap[addrKey]) {
+        shipMap[addrKey] = {
+          shipAddress1:  o.shipAddress1  || '',
+          shipAddress2:  o.shipAddress2  || '',
+          shipCity:      o.shipCity      || '',
+          shipState:     o.shipState     || '',
+          shipCountry:   o.shipCountry   || '',
+          shipPostalCode: o.shipPostalCode || o.shipZip || '',
+          shipFirstName: o.shipFirstName || '',
+          shipLastName:  o.shipLastName  || '',
+          orderIds:      [],
+          lastOrderDate: ''
+        };
+      }
+      shipMap[addrKey].orderIds.push(o.orderId);
+      if (!shipMap[addrKey].lastOrderDate || o.dateCreated > shipMap[addrKey].lastOrderDate) {
+        shipMap[addrKey].lastOrderDate = o.dateCreated;
+      }
+    });
+
+    var shipments = Object.values(shipMap).sort(function(a,b){
+      return b.lastOrderDate.localeCompare(a.lastOrderDate);
+    });
+
+    console.log('Unique shipping addresses:', shipments.length, 'from', orders.length, 'orders');
     res.json({ success: true, shipments });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
