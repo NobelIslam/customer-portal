@@ -522,19 +522,10 @@ app.get('/cc/subscriptions', async function(req, res) {
                   today.getDate().toString().padStart(2,'0') + '/' +
                   today.getFullYear();
 
-    /* ── STEP 1: Get ALL customerIds for this email ── */
-    var cr = await fetch(CC_BASE + '/customer/query/?' + ccParams({
-      emailAddress: email, startDate: '01/01/2016', endDate, resultsPerPage: 200
-    }), { method: 'POST' });
-    var cd = JSON.parse(await cr.text());
-    var customers = (cd.result === 'SUCCESS' && cd.message && cd.message.data) ? cd.message.data : [];
-    var customerIds = [...new Set(customers.map(function(c){ return c.customerId; }).filter(Boolean))];
-    console.log('CustomerIds for', email, ':', customerIds.join(', '));
-
-    /* ── STEP 2: Get ALL memberships for this email (for actions: cancel/pause/restart) ── */
-    var memberships = [];
+    var memberships   = [];
     var seenMemberIds = {};
 
+    /* Helper: fetch all membership pages for a given query */
     async function fetchMembers(queryParams) {
       var page = 1, perPage = 200;
       while (true) {
@@ -549,120 +540,90 @@ app.get('/cc/subscriptions', async function(req, res) {
           });
           if (pageData.length < perPage) break;
           page++; if (page > 20) break;
-        } catch(e) { break; }
+        } catch(e) { console.error('fetchMembers error:', e.message); break; }
       }
     }
 
-    /* Fetch memberships by email + by each customerId */
+    /* ── STEP 1: Query memberships by email ── */
     await fetchMembers({ emailAddress: email });
+    console.log('After email query:', memberships.length, 'memberships');
+
+    /* ── STEP 2: Get all unique customerIds and query memberships for each ── */
+    var customerIds = [...new Set(memberships.map(function(m){ return m.customerId; }).filter(Boolean))];
+    console.log('CustomerIds:', customerIds.join(', '));
     await Promise.all(customerIds.map(function(cid){ return fetchMembers({ customerId: cid }); }));
-    console.log('Total memberships found:', memberships.length);
+    console.log('After customerId queries:', memberships.length, 'total memberships');
 
-    /* Build membership lookup maps */
-    var memberByOrderAndProduct = {}; /* key: orderId_productId → membership */
-    var memberByOrderId = {};         /* key: orderId → [memberships] */
-    memberships.forEach(function(m) {
-      if (m.orderId) {
-        var key = m.orderId + '_' + (m.productId || m.actualProductId || '');
-        memberByOrderAndProduct[key] = m;
-        if (!memberByOrderId[m.orderId]) memberByOrderId[m.orderId] = [];
-        memberByOrderId[m.orderId].push(m);
-      }
-    });
+    /* ── STEP 3: Fetch unique orders to get product names ── */
+    var orderIds = [...new Set(memberships.map(function(m){ return m.orderId; }).filter(Boolean))];
+    var orderMap = {};
 
-    /* ── STEP 3: Get ALL orders for each customerId ── */
-    var allOrders = [];
-    var seenOrderIds = {};
+    await Promise.all(orderIds.map(async function(orderId) {
+      try {
+        var or = await fetch(CC_BASE + '/order/query/?' + ccParams({
+          orderId, startDate: '01/01/2016', endDate, resultsPerPage: 1
+        }), { method: 'POST' });
+        var od = JSON.parse(await or.text());
+        if (od.result === 'SUCCESS' && od.message && od.message.data && od.message.data.length) {
+          var order = od.message.data[0];
+          orderMap[orderId] = {
+            items:     order.items ? Object.values(order.items).filter(function(i){ return i.name; }) : [],
+            frequency: order.billingFrequency || order.rebillFrequency || ''
+          };
+        }
+      } catch(e) { console.error('Order fetch error', orderId, e.message); }
+    }));
 
-    async function fetchOrders(customerId) {
-      var page = 1, perPage = 200;
-      while (true) {
-        try {
-          var or = await fetch(CC_BASE + '/order/query/?' + ccParams({
-            customerId, startDate: '01/01/2016', endDate, resultsPerPage: perPage, page
-          }), { method: 'POST' });
-          var od = JSON.parse(await or.text());
-          var pageData = (od.result === 'SUCCESS' && od.message && od.message.data) ? od.message.data : [];
-          pageData.forEach(function(o) {
-            if (!seenOrderIds[o.orderId]) { seenOrderIds[o.orderId] = true; allOrders.push(o); }
+    /* ── STEP 4: Build one row per membership, match product name from order ── */
+    var subscriptions = memberships.map(function(m) {
+      var product   = '';
+      var frequency = m.billingFrequency || m.rebillFrequency || '';
+
+      if (m.orderId && orderMap[m.orderId]) {
+        var items = orderMap[m.orderId].items;
+
+        /* Match by productId / actualProductId */
+        var matched = null;
+        if (m.productId || m.actualProductId) {
+          matched = items.find(function(i){
+            return String(i.productId) === String(m.productId) ||
+                   String(i.productId) === String(m.actualProductId) ||
+                   String(i.variantId) === String(m.productId) ||
+                   String(i.variantId) === String(m.actualProductId);
           });
-          if (pageData.length < perPage) break;
-          page++; if (page > 10) break;
-        } catch(e) { break; }
-      }
-    }
-
-    await Promise.all(customerIds.map(function(cid){ return fetchOrders(cid); }));
-    console.log('Total orders found:', allOrders.length);
-
-    /* ── STEP 4: Extract all recurring items from all orders ── */
-    var subscriptions = [];
-    var seenSubKeys   = {};
-
-    /* Log sample order fields to debug */
-    if (allOrders.length > 0) {
-      var sample = allOrders[0];
-      console.log('Sample order fields:', Object.keys(sample).join(', '));
-      console.log('Sample order billing:', JSON.stringify({
-        orderId: sample.orderId,
-        billingFrequency: sample.billingFrequency,
-        rebillFrequency: sample.rebillFrequency,
-        orderType: sample.orderType,
-        isRebill: sample.isRebill,
-        subscriptionId: sample.subscriptionId,
-        parentOrderId: sample.parentOrderId
-      }));
-    }
-
-    /* Count how many orders have billing frequency */
-    var recurringOrders = allOrders.filter(function(o){
-      return (o.billingFrequency && parseInt(o.billingFrequency) > 0) ||
-             (o.rebillFrequency  && parseInt(o.rebillFrequency)  > 0);
-    });
-    console.log('Orders with billingFrequency > 0:', recurringOrders.length, '/', allOrders.length);
-
-    allOrders.forEach(function(order) {
-      /* Only process orders with recurring billing */
-      var freq = order.billingFrequency || order.rebillFrequency || '';
-      if (!freq || parseInt(freq) === 0) return;
-
-      var items = order.items ? Object.values(order.items) : [];
-      items.forEach(function(item) {
-        if (!item.name || !item.name.trim()) return;
-
-        /* Find the matching membership for this item */
-        var membership = memberByOrderAndProduct[order.orderId + '_' + item.productId]
-                      || memberByOrderAndProduct[order.orderId + '_' + item.variantId]
-                      || (memberByOrderId[order.orderId] && memberByOrderId[order.orderId][0])
-                      || null;
-
-        /* Deduplicate: one row per memberId (or orderId+productId if no membership) */
-        var dedupeKey = membership ? membership.memberId : (order.orderId + '_' + item.productId);
-        if (seenSubKeys[dedupeKey]) return;
-        seenSubKeys[dedupeKey] = true;
-
-        var status = membership ? (membership.status || 'ACTIVE').toUpperCase() : 'ACTIVE';
-
-        /* Extract frequency from product name if not on order */
-        var itemFreq = freq;
-        if (!itemFreq) {
-          var fm = (item.name || '').match(/(\d+)\s*days?\s*supply/i);
-          if (fm) itemFreq = fm[1];
         }
 
-        subscriptions.push({
-          product:      item.name,
-          status:       status,
-          orderId:      order.orderId,
-          frequency:    itemFreq,
-          nextBillDate: membership ? (membership.nextBillDate || membership.activationDate || '') : '',
-          memberId:     membership ? (membership.memberId   || '') : '',
-          purchaseId:   membership ? (membership.purchaseId || '') : '',
-          clubId:       membership ? (membership.clubId     || '') : '',
-          firstName:    membership ? (membership.firstName  || '') : '',
-          lastName:     membership ? (membership.lastName   || '') : '',
-        });
-      });
+        if (matched) {
+          product = matched.name;
+        } else if (items.length === 1) {
+          product = items[0].name;
+        } else {
+          product = items[0] ? items[0].name : '';
+        }
+
+        if (!frequency) frequency = orderMap[m.orderId].frequency;
+      }
+
+      /* Extract frequency from product name if still missing */
+      if (!frequency && product) {
+        var fm = (product || '').match(/(\d+)\s*days?\s*supply/i);
+        if (fm) frequency = fm[1];
+      }
+
+      if (!product) product = 'Product ' + (m.productId || m.memberId || '');
+
+      return {
+        product:      product,
+        status:       (m.status || 'ACTIVE').toUpperCase(),
+        orderId:      m.orderId    || '',
+        frequency:    frequency,
+        nextBillDate: m.nextBillDate || m.activationDate || '',
+        memberId:     m.memberId   || '',
+        purchaseId:   m.purchaseId || '',
+        clubId:       m.clubId     || '',
+        firstName:    m.firstName  || '',
+        lastName:     m.lastName   || '',
+      };
     });
 
     /* Sort: ACTIVE first, then PAUSED, then CANCELLED */
@@ -671,7 +632,7 @@ app.get('/cc/subscriptions', async function(req, res) {
       return (statusOrder[a.status] || 9) - (statusOrder[b.status] || 9);
     });
 
-    console.log('Total recurring subscriptions:', subscriptions.length);
+    console.log('Returning', subscriptions.length, 'subscriptions');
     res.json({ success: true, subscriptions: subscriptions });
 
   } catch(err) {
@@ -679,6 +640,7 @@ app.get('/cc/subscriptions', async function(req, res) {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 
 
