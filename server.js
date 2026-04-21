@@ -599,6 +599,28 @@ app.get('/cc/subscriptions', async function(req, res) {
     var subscriptions = [];
     var seenSubKeys   = {};
 
+    /* Log sample order fields to debug */
+    if (allOrders.length > 0) {
+      var sample = allOrders[0];
+      console.log('Sample order fields:', Object.keys(sample).join(', '));
+      console.log('Sample order billing:', JSON.stringify({
+        orderId: sample.orderId,
+        billingFrequency: sample.billingFrequency,
+        rebillFrequency: sample.rebillFrequency,
+        orderType: sample.orderType,
+        isRebill: sample.isRebill,
+        subscriptionId: sample.subscriptionId,
+        parentOrderId: sample.parentOrderId
+      }));
+    }
+
+    /* Count how many orders have billing frequency */
+    var recurringOrders = allOrders.filter(function(o){
+      return (o.billingFrequency && parseInt(o.billingFrequency) > 0) ||
+             (o.rebillFrequency  && parseInt(o.rebillFrequency)  > 0);
+    });
+    console.log('Orders with billingFrequency > 0:', recurringOrders.length, '/', allOrders.length);
+
     allOrders.forEach(function(order) {
       /* Only process orders with recurring billing */
       var freq = order.billingFrequency || order.rebillFrequency || '';
