@@ -544,38 +544,59 @@ app.get('/cc/subscriptions', async function(req, res) {
       } catch(e) { console.error('Subscriptions error:', e.message); break; }
     }
 
-    /* Enrich with product name by fetching related order */
+    /* Enrich product names:
+       Priority 1 — direct fields on membership record (productName, variantName, productTitle)
+       Priority 2 — fetch linked order and extract all named items
+       Priority 3 — fallback to club name or membership ID */
     if (subs.length > 0) {
-      var orderIds = [...new Set(subs.map(function(s){ return s.orderId; }).filter(Boolean))];
+
+      /* Step 1: apply direct product fields if present */
+      subs = subs.map(function(s) {
+        var directName = s.productName || s.variantName || s.productTitle || s.itemName || s.clubName || '';
+        if (directName) s.product = directName;
+        return s;
+      });
+
+      /* Step 2: for subs still missing product name, fetch linked order */
+      var subsNeedingEnrich = subs.filter(function(s){ return !s.product && s.orderId; });
+      var orderIds = [...new Set(subsNeedingEnrich.map(function(s){ return s.orderId; }).filter(Boolean))];
+      console.log('Subscriptions needing order enrichment:', orderIds.length);
+
       var orderMap = {};
-      var today3  = new Date();
+      var today3   = new Date();
       var endDate3 = (today3.getMonth()+1).toString().padStart(2,'0')+'/'+today3.getDate().toString().padStart(2,'0')+'/'+today3.getFullYear();
-      await Promise.all(orderIds.slice(0,50).map(async function(orderId) {
+
+      await Promise.all(orderIds.map(async function(orderId) {
         try {
           var or   = await fetch(CC_BASE + '/order/query/?' + ccParams({
             orderId, startDate: '01/01/2016', endDate: endDate3, resultsPerPage: 1
           }), { method: 'POST' });
-          var text = await or.text();
-          var od   = JSON.parse(text);
+          var od   = JSON.parse(await or.text());
           if (od.result === 'SUCCESS' && od.message && od.message.data && od.message.data.length) {
             var order = od.message.data[0];
             var items = order.items ? Object.values(order.items) : [];
-            /* Keep all items that have a name — no type filtering */
             var namedItems = items.filter(function(i){ return i.name && i.name.trim(); });
             orderMap[orderId] = {
-              name: namedItems.map(function(i){ return i.name; }).join(', ') || '--',
+              name:      namedItems.map(function(i){ return i.name; }).join(', ') || '--',
               frequency: order.billingFrequency || order.rebillFrequency || ''
             };
+            console.log('Order', orderId, '→', namedItems.length, 'items:', orderMap[orderId].name.substring(0,80));
           }
-        } catch(e) { console.error('Order fetch error for', orderId, e.message); }
+        } catch(e) { console.error('Order fetch error for', orderId, ':', e.message); }
       }));
+
+      /* Step 3: apply order data to subs still missing product */
       subs = subs.map(function(s) {
-        if (s.orderId && orderMap[s.orderId]) {
+        if (!s.product && s.orderId && orderMap[s.orderId]) {
           s.product   = orderMap[s.orderId].name;
-          s.frequency = orderMap[s.orderId].frequency;
+          s.frequency = s.frequency || orderMap[s.orderId].frequency;
         }
+        /* Final fallback */
+        if (!s.product) s.product = 'Subscription ' + (s.purchaseId || s.memberId || '');
         return s;
       });
+
+      console.log('Total enriched subscriptions:', subs.length, '| sample:', subs[0] ? subs[0].product : 'none');
     }
 
     res.json({ success: true, subscriptions: subs });
