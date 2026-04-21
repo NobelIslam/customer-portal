@@ -675,8 +675,13 @@ app.post('/cc/subscription/pause', async function(req, res) {
   try {
     var purchaseId = req.body.purchaseId;
     if (!purchaseId) return res.status(400).json({ error: 'purchaseId required' });
-    var r = await fetch(CC_BASE + '/membership/pause/?' + ccParams({ purchaseId }), { method: 'POST' });
-    var d = await r.json();
+    var r    = await fetch(CC_BASE + '/membership/pause/?' + ccParams({ purchaseId }), { method: 'POST' });
+    var text = await r.text();
+    console.log('CC sub pause raw:', text.substring(0, 300));
+    var d;
+    try { d = JSON.parse(text); } catch(e) {
+      return res.status(500).json({ error: 'CC API returned unexpected response: ' + text.substring(0, 200) });
+    }
     if (d.result !== 'SUCCESS') return res.status(400).json({ error: d.message || 'Pause failed' });
     res.json({ success: true });
   } catch(err) { res.status(500).json({ error: err.message }); }
@@ -687,8 +692,13 @@ app.post('/cc/subscription/restart', async function(req, res) {
   try {
     var purchaseId = req.body.purchaseId;
     if (!purchaseId) return res.status(400).json({ error: 'purchaseId required' });
-    var r = await fetch(CC_BASE + '/membership/restart/?' + ccParams({ purchaseId }), { method: 'POST' });
-    var d = await r.json();
+    var r    = await fetch(CC_BASE + '/membership/restart/?' + ccParams({ purchaseId }), { method: 'POST' });
+    var text = await r.text();
+    console.log('CC sub restart raw:', text.substring(0, 300));
+    var d;
+    try { d = JSON.parse(text); } catch(e) {
+      return res.status(500).json({ error: 'CC API returned unexpected response: ' + text.substring(0, 200) });
+    }
     if (d.result !== 'SUCCESS') return res.status(400).json({ error: d.message || 'Restart failed' });
     res.json({ success: true });
   } catch(err) { res.status(500).json({ error: err.message }); }
