@@ -574,8 +574,10 @@ app.get('/cc/subscriptions', async function(req, res) {
           sampleLogged = true;
         }
 
-        /* Only recurring items have nextBillDate */
+        /* Only recurring items with a FUTURE nextBillDate */
         if (!item.nextBillDate) return;
+        var billDate = new Date(item.nextBillDate);
+        if (isNaN(billDate.getTime()) || billDate <= new Date()) return;
 
         /* Deduplicate by purchaseId */
         var pid = item.purchaseId || item.purchase_id || '';
