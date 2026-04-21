@@ -660,10 +660,15 @@ app.post('/cc/order/cancel', async function(req, res) {
 /* POST /cc/subscription/cancel  body: { purchaseId } */
 app.post('/cc/subscription/cancel', async function(req, res) {
   try {
+    var memberId   = req.body.memberId;
     var purchaseId = req.body.purchaseId;
+    var clubId     = req.body.clubId || process.env.CC_CLUB_ID || '12';
     var reason     = req.body.reason || 'Customer requested';
-    if (!purchaseId) return res.status(400).json({ error: 'purchaseId required' });
-    var r    = await fetch(CC_BASE + '/members/cancel/?' + ccParams({ purchaseId, cancelReason: reason }), { method: 'POST' });
+    if (!memberId && !purchaseId) return res.status(400).json({ error: 'memberId or purchaseId required' });
+    var params = { clubId, cancelReason: reason };
+    if (memberId)   params.memberId   = memberId;
+    if (purchaseId) params.purchaseId = purchaseId;
+    var r    = await fetch(CC_BASE + '/members/cancel/?' + ccParams(params), { method: 'POST' });
     var text = await r.text();
     console.log('CC sub cancel HTTP:', r.status, '| raw:', text.substring(0, 300));
     var d;
@@ -678,16 +683,21 @@ app.post('/cc/subscription/cancel', async function(req, res) {
 /* POST /cc/subscription/pause  body: { purchaseId } */
 app.post('/cc/subscription/pause', async function(req, res) {
   try {
+    var memberId   = req.body.memberId;
     var purchaseId = req.body.purchaseId;
-    if (!purchaseId) return res.status(400).json({ error: 'purchaseId required' });
-    var r    = await fetch(CC_BASE + '/members/pause/?' + ccParams({ purchaseId }), { method: 'POST' });
+    var clubId     = req.body.clubId || process.env.CC_CLUB_ID || '12';
+    if (!memberId && !purchaseId) return res.status(400).json({ error: 'memberId or purchaseId required' });
+    var params = { clubId };
+    if (memberId)   params.memberId   = memberId;
+    if (purchaseId) params.purchaseId = purchaseId;
+    var r    = await fetch(CC_BASE + '/members/pause/?' + ccParams(params), { method: 'POST' });
     var text = await r.text();
-    console.log('CC sub pause raw:', text.substring(0, 300));
+    console.log('CC sub pause HTTP:', r.status, '| raw:', text.substring(0, 300));
     var d;
     try { d = JSON.parse(text); } catch(e) {
-      return res.status(500).json({ error: 'CC API returned unexpected response: ' + text.substring(0, 200) });
+      return res.status(500).json({ error: 'CC API error (HTTP ' + r.status + '): ' + text.substring(0, 200) });
     }
-    if (d.result !== 'SUCCESS') return res.status(400).json({ error: d.message || 'Pause failed' });
+    if (d.result !== 'SUCCESS') return res.status(400).json({ error: typeof d.message === 'object' ? JSON.stringify(d.message) : (d.message || 'Pause failed') });
     res.json({ success: true });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
@@ -695,16 +705,21 @@ app.post('/cc/subscription/pause', async function(req, res) {
 /* POST /cc/subscription/restart  body: { purchaseId } */
 app.post('/cc/subscription/restart', async function(req, res) {
   try {
+    var memberId   = req.body.memberId;
     var purchaseId = req.body.purchaseId;
-    if (!purchaseId) return res.status(400).json({ error: 'purchaseId required' });
-    var r    = await fetch(CC_BASE + '/members/restart/?' + ccParams({ purchaseId }), { method: 'POST' });
+    var clubId     = req.body.clubId || process.env.CC_CLUB_ID || '12';
+    if (!memberId && !purchaseId) return res.status(400).json({ error: 'memberId or purchaseId required' });
+    var params = { clubId };
+    if (memberId)   params.memberId   = memberId;
+    if (purchaseId) params.purchaseId = purchaseId;
+    var r    = await fetch(CC_BASE + '/members/restart/?' + ccParams(params), { method: 'POST' });
     var text = await r.text();
-    console.log('CC sub restart raw:', text.substring(0, 300));
+    console.log('CC sub restart HTTP:', r.status, '| raw:', text.substring(0, 300));
     var d;
     try { d = JSON.parse(text); } catch(e) {
-      return res.status(500).json({ error: 'CC API returned unexpected response: ' + text.substring(0, 200) });
+      return res.status(500).json({ error: 'CC API error (HTTP ' + r.status + '): ' + text.substring(0, 200) });
     }
-    if (d.result !== 'SUCCESS') return res.status(400).json({ error: d.message || 'Restart failed' });
+    if (d.result !== 'SUCCESS') return res.status(400).json({ error: typeof d.message === 'object' ? JSON.stringify(d.message) : (d.message || 'Restart failed') });
     res.json({ success: true });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
