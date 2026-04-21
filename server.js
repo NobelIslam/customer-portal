@@ -535,6 +535,10 @@ app.get('/cc/subscriptions', async function(req, res) {
         var pageData = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
         subs = subs.concat(pageData);
         console.log('CC subscriptions page', page, '| got:', pageData.length, '| total:', subs.length);
+        if (page === 1 && pageData.length > 0) {
+          console.log('CC membership sample fields:', JSON.stringify(Object.keys(pageData[0])));
+          console.log('CC membership sample record:', JSON.stringify(pageData[0]).substring(0, 500));
+        }
         if (pageData.length < perPage) keepGoing = false; else page++;
         if (page > 10) keepGoing = false;
       } catch(e) { console.error('Subscriptions error:', e.message); break; }
