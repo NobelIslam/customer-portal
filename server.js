@@ -583,10 +583,11 @@ app.get('/cc/subscriptions', async function(req, res) {
       if (!isRecurring) return;
 
       var items = order.items ? Object.values(order.items) : [];
-      /* Skip shipping, protection, coaching, gel items */
-      var skipKeywords = /^(free\s|expedit|ship|protect|handling|coaching|gel pad|conductive)/i;
+      /* Only show items that have a linked membership — 100% accurate recurring filter */
       var recurringProducts = items.filter(function(i){
-        return i.name && i.name.trim() && !skipKeywords.test(i.name.trim());
+        return i.name && i.name.trim() &&
+               (membershipByProductId[String(i.productId)] ||
+                membershipByProductId[String(i.variantId)]);
       });
 
       /* Find the memberships linked to this order */
