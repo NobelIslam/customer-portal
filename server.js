@@ -517,91 +517,138 @@ app.get('/cc/subscriptions', async function(req, res) {
     var email = (req.query.email || '').trim().toLowerCase();
     if (!email) return res.status(400).json({ error: 'email required' });
 
-    var CC_CLUB_ID = process.env.CC_CLUB_ID || '12';
     var today   = new Date();
     var endDate = (today.getMonth()+1).toString().padStart(2,'0')+'/'+today.getDate().toString().padStart(2,'0')+'/'+today.getFullYear();
 
-    /* Simple email query — returns all subscriptions across all clubs */
-    var subs = [];
+    /* ── STEP 1: Get all memberships for this email (for status + actions) ── */
+    var memberships = [];
     var page = 1, perPage = 200, keepGoing = true;
     while (keepGoing) {
       try {
-        var r = await fetch(CC_BASE + '/members/query/?' + ccParams({
-          emailAddress: email,
-          startDate: '01/01/2016', endDate,
-          resultsPerPage: perPage, page: page
+        var mr = await fetch(CC_BASE + '/members/query/?' + ccParams({
+          emailAddress: email, startDate: '01/01/2016', endDate, resultsPerPage: perPage, page
         }), { method: 'POST' });
-        var d = JSON.parse(await r.text());
-        var pageData = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
-        subs = subs.concat(pageData);
-        console.log('CC subscriptions page', page, '| got:', pageData.length, '| total:', subs.length);
-        if (page === 1 && pageData.length > 0) {
-          console.log('CC membership sample fields:', JSON.stringify(Object.keys(pageData[0])));
-          console.log('CC membership sample record:', JSON.stringify(pageData[0]).substring(0, 500));
-        }
+        var md = JSON.parse(await mr.text());
+        var pageData = (md.result === 'SUCCESS' && md.message && md.message.data) ? md.message.data : [];
+        memberships = memberships.concat(pageData);
         if (pageData.length < perPage) keepGoing = false; else page++;
         if (page > 10) keepGoing = false;
-      } catch(e) { console.error('Subscriptions error:', e.message); break; }
+      } catch(e) { break; }
     }
+    console.log('Total memberships for', email, ':', memberships.length);
 
-    /* Enrich product names:
-       Priority 1 — direct fields on membership record (productName, variantName, productTitle)
-       Priority 2 — fetch linked order and extract all named items
-       Priority 3 — fallback to club name or membership ID */
-    if (subs.length > 0) {
+    /* Build a map: orderId → membership record (for status + actions) */
+    var membershipByOrderId = {};
+    var membershipByProductId = {};
+    memberships.forEach(function(m) {
+      if (m.orderId) {
+        if (!membershipByOrderId[m.orderId]) membershipByOrderId[m.orderId] = [];
+        membershipByOrderId[m.orderId].push(m);
+      }
+      var pid = String(m.productId || m.actualProductId || '');
+      if (pid) {
+        if (!membershipByProductId[pid]) membershipByProductId[pid] = [];
+        membershipByProductId[pid].push(m);
+      }
+    });
 
-      /* Step 1: apply direct product fields if present */
-      subs = subs.map(function(s) {
-        var directName = s.productName || s.variantName || s.productTitle || s.itemName || s.clubName || '';
-        if (directName) s.product = directName;
-        return s;
+    /* ── STEP 2: Get all orders for this email ── */
+    var allOrders = [];
+    page = 1; keepGoing = true;
+    while (keepGoing) {
+      try {
+        var or = await fetch(CC_BASE + '/order/query/?' + ccParams({
+          emailAddress: email, startDate: '01/01/2016', endDate,
+          resultsPerPage: 200, page
+        }), { method: 'POST' });
+        var od = JSON.parse(await or.text());
+        var orderPage = (od.result === 'SUCCESS' && od.message && od.message.data) ? od.message.data : [];
+        allOrders = allOrders.concat(orderPage);
+        if (orderPage.length < 200) keepGoing = false; else page++;
+        if (page > 5) keepGoing = false;
+      } catch(e) { break; }
+    }
+    console.log('Total orders for', email, ':', allOrders.length);
+
+    /* ── STEP 3: Filter to recurring orders + extract recurring items ── */
+    /* A recurring order has billingFrequency > 0 OR has a linked membership */
+    var recurringItems = [];
+    var seenKey = {}; /* deduplicate by orderId+productId */
+
+    allOrders.forEach(function(order) {
+      var isRecurring = (order.billingFrequency && parseInt(order.billingFrequency) > 0)
+                      || (order.rebillFrequency  && parseInt(order.rebillFrequency)  > 0)
+                      || membershipByOrderId[order.orderId];
+
+      if (!isRecurring) return;
+
+      var items = order.items ? Object.values(order.items) : [];
+      /* Skip shipping, protection, coaching, gel items */
+      var skipKeywords = /^(free\s|expedit|ship|protect|handling|coaching|gel pad|conductive)/i;
+      var recurringProducts = items.filter(function(i){
+        return i.name && i.name.trim() && !skipKeywords.test(i.name.trim());
       });
 
-      /* Step 2: for subs still missing product name, fetch linked order */
-      var subsNeedingEnrich = subs.filter(function(s){ return !s.product && s.orderId; });
-      var orderIds = [...new Set(subsNeedingEnrich.map(function(s){ return s.orderId; }).filter(Boolean))];
-      console.log('Subscriptions needing order enrichment:', orderIds.length);
+      /* Find the memberships linked to this order */
+      var linkedMemberships = membershipByOrderId[order.orderId] || [];
 
-      var orderMap = {};
-      var today3   = new Date();
-      var endDate3 = (today3.getMonth()+1).toString().padStart(2,'0')+'/'+today3.getDate().toString().padStart(2,'0')+'/'+today3.getFullYear();
+      recurringProducts.forEach(function(item) {
+        var key = order.orderId + '_' + (item.productId || item.name);
+        if (seenKey[key]) return;
+        seenKey[key] = true;
 
-      await Promise.all(orderIds.map(async function(orderId) {
-        try {
-          var or   = await fetch(CC_BASE + '/order/query/?' + ccParams({
-            orderId, startDate: '01/01/2016', endDate: endDate3, resultsPerPage: 1
-          }), { method: 'POST' });
-          var od   = JSON.parse(await or.text());
-          if (od.result === 'SUCCESS' && od.message && od.message.data && od.message.data.length) {
-            var order = od.message.data[0];
-            var items = order.items ? Object.values(order.items) : [];
-            var namedItems = items.filter(function(i){ return i.name && i.name.trim(); });
-            orderMap[orderId] = {
-              name:      namedItems.map(function(i){ return i.name; }).join(', ') || '--',
-              frequency: order.billingFrequency || order.rebillFrequency || ''
-            };
-            console.log('Order', orderId, '→', namedItems.length, 'items:', orderMap[orderId].name.substring(0,80));
-          }
-        } catch(e) { console.error('Order fetch error for', orderId, ':', e.message); }
-      }));
-
-      /* Step 3: apply order data to subs still missing product */
-      subs = subs.map(function(s) {
-        if (!s.product && s.orderId && orderMap[s.orderId]) {
-          s.product   = orderMap[s.orderId].name;
-          s.frequency = s.frequency || orderMap[s.orderId].frequency;
+        /* Find the specific membership for this product */
+        var membership = null;
+        if (linkedMemberships.length === 1) {
+          membership = linkedMemberships[0];
+        } else if (linkedMemberships.length > 1) {
+          /* Match by productId */
+          membership = linkedMemberships.find(function(m){
+            return String(m.productId) === String(item.productId) ||
+                   String(m.actualProductId) === String(item.productId);
+          }) || linkedMemberships[0];
         }
-        /* Final fallback */
-        if (!s.product) s.product = 'Subscription ' + (s.purchaseId || s.memberId || '');
-        return s;
+
+        var status = membership ? (membership.status || 'ACTIVE') : 'ACTIVE';
+        var freq   = order.billingFrequency || order.rebillFrequency || '';
+        /* Extract frequency from product name if not on order */
+        if (!freq && item.name) {
+          var fm = item.name.match(/(\d+)\s*days?\s*supply/i);
+          if (fm) freq = fm[1];
+        }
+
+        recurringItems.push({
+          /* Display fields */
+          product:      item.name,
+          productId:    item.productId || '',
+          status:       status.toUpperCase(),
+          orderId:      order.orderId,
+          frequency:    freq,
+          nextBillDate: membership ? (membership.nextBillDate || membership.activationDate || '') : '',
+          /* Action fields */
+          memberId:     membership ? (membership.memberId   || '') : '',
+          purchaseId:   membership ? (membership.purchaseId || '') : '',
+          clubId:       membership ? (membership.clubId     || '') : '',
+          /* Name fields for topbar */
+          firstName:    membership ? (membership.firstName  || '') : '',
+          lastName:     membership ? (membership.lastName   || '') : '',
+        });
       });
+    });
 
-      console.log('Total enriched subscriptions:', subs.length, '| sample:', subs[0] ? subs[0].product : 'none');
-    }
+    /* Sort: ACTIVE first, then by product name */
+    recurringItems.sort(function(a, b){
+      if (a.status === 'ACTIVE' && b.status !== 'ACTIVE') return -1;
+      if (a.status !== 'ACTIVE' && b.status === 'ACTIVE') return 1;
+      return (a.product || '').localeCompare(b.product || '');
+    });
 
-    res.json({ success: true, subscriptions: subs });
+    console.log('Total recurring items found:', recurringItems.length);
+    res.json({ success: true, subscriptions: recurringItems });
+
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
+
 
 /* GET /cc/shipments?email=xxx */
 app.get('/cc/shipments', async function(req, res) {
