@@ -712,7 +712,7 @@ app.post('/cc/subscription/restart', async function(req, res) {
     var params = { clubId };
     if (memberId)   params.memberId   = memberId;
     if (purchaseId) params.purchaseId = purchaseId;
-    var r    = await fetch(CC_BASE + '/members/restart/?' + ccParams(params), { method: 'POST' });
+    var r    = await fetch(CC_BASE + '/members/activate/?' + ccParams(params), { method: 'POST' });
     var text = await r.text();
     console.log('CC sub restart HTTP:', r.status, '| raw:', text.substring(0, 300));
     var d;
