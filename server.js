@@ -778,8 +778,9 @@ app.post('/cc/subscription/restart', async function(req, res) {
   try {
     var purchaseId = req.body.purchaseId;
     if (!purchaseId) return res.status(400).json({ error: 'purchaseId required' });
-    var r    = await fetch(CC_BASE + '/purchase/restart/?' + ccParams({
-      purchaseId: purchaseId
+    var r    = await fetch(CC_BASE + '/purchase/update/?' + ccParams({
+      purchaseId: purchaseId,
+      reactivate: true
     }), { method: 'POST' });
     var text = await r.text();
     console.log('CC sub restart HTTP:', r.status, '| raw:', text.substring(0, 300));
