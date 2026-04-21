@@ -522,117 +522,86 @@ app.get('/cc/subscriptions', async function(req, res) {
                   today.getDate().toString().padStart(2,'0') + '/' +
                   today.getFullYear();
 
-    var memberships   = [];
-    var seenMemberIds = {};
+    /* ── STEP 1: Get all customerIds for this email ── */
+    var cr = await fetch(CC_BASE + '/customer/query/?' + ccParams({
+      emailAddress: email, startDate: '01/01/2016', endDate, resultsPerPage: 200
+    }), { method: 'POST' });
+    var cd       = JSON.parse(await cr.text());
+    var customers = (cd.result === 'SUCCESS' && cd.message && cd.message.data) ? cd.message.data : [];
+    var customerIds = [...new Set(customers.map(function(c){ return c.customerId; }).filter(Boolean))];
+    console.log('CustomerIds:', customerIds.join(', '));
 
-    /* Helper: fetch all membership pages for a given query */
-    async function fetchMembers(queryParams) {
+    /* ── STEP 2: Get ALL orders for each customerId ── */
+    var allOrders   = [];
+    var seenOrderIds = {};
+
+    async function fetchOrders(queryParams) {
       var page = 1, perPage = 200;
       while (true) {
         try {
-          var mr = await fetch(CC_BASE + '/members/query/?' + ccParams(
-            Object.assign({}, queryParams, { startDate: '01/01/2016', endDate, resultsPerPage: perPage, page })
+          var or = await fetch(CC_BASE + '/order/query/?' + ccParams(
+            Object.assign({}, queryParams, { startDate: '01/01/2016', endDate, resultsPerPage: perPage, page, sortDir: -1 })
           ), { method: 'POST' });
-          var md = JSON.parse(await mr.text());
-          var pageData = (md.result === 'SUCCESS' && md.message && md.message.data) ? md.message.data : [];
-          pageData.forEach(function(m) {
-            if (!seenMemberIds[m.memberId]) { seenMemberIds[m.memberId] = true; memberships.push(m); }
+          var od       = JSON.parse(await or.text());
+          var pageData = (od.result === 'SUCCESS' && od.message && od.message.data) ? od.message.data : [];
+          pageData.forEach(function(o) {
+            if (!seenOrderIds[o.orderId]) { seenOrderIds[o.orderId] = true; allOrders.push(o); }
           });
           if (pageData.length < perPage) break;
-          page++; if (page > 20) break;
-        } catch(e) { console.error('fetchMembers error:', e.message); break; }
+          page++; if (page > 10) break;
+        } catch(e) { break; }
       }
     }
 
-    /* ── STEP 1: Query memberships by email ── */
-    await fetchMembers({ emailAddress: email });
-    console.log('After email query:', memberships.length, 'memberships');
+    /* Fetch by email + each customerId to get all orders */
+    await fetchOrders({ emailAddress: email });
+    await Promise.all(customerIds.map(function(cid){ return fetchOrders({ customerId: cid }); }));
+    console.log('Total unique orders:', allOrders.length);
 
-    /* ── STEP 2: Get all unique customerIds and query memberships for each ── */
-    var customerIds = [...new Set(memberships.map(function(m){ return m.customerId; }).filter(Boolean))];
-    console.log('CustomerIds:', customerIds.join(', '));
-    await Promise.all(customerIds.map(function(cid){ return fetchMembers({ customerId: cid }); }));
-    console.log('After customerId queries:', memberships.length, 'total memberships');
+    /* ── STEP 3: Extract items with nextBillDate — these are recurring products ── */
+    var subscriptions = [];
+    var seenPurchaseIds = {};
 
-    /* ── STEP 3: Fetch unique orders to get product names ── */
-    var orderIds = [...new Set(memberships.map(function(m){ return m.orderId; }).filter(Boolean))];
-    var orderMap = {};
+    /* Log first item fields to verify nextBillDate exists */
+    var sampleLogged = false;
 
-    await Promise.all(orderIds.map(async function(orderId) {
-      try {
-        var or = await fetch(CC_BASE + '/order/query/?' + ccParams({
-          orderId, startDate: '01/01/2016', endDate, resultsPerPage: 1
-        }), { method: 'POST' });
-        var od = JSON.parse(await or.text());
-        if (od.result === 'SUCCESS' && od.message && od.message.data && od.message.data.length) {
-          var order = od.message.data[0];
-          orderMap[orderId] = {
-            items:     order.items ? Object.values(order.items).filter(function(i){ return i.name; }) : [],
-            frequency: order.billingFrequency || order.rebillFrequency || ''
-          };
-        }
-      } catch(e) { console.error('Order fetch error', orderId, e.message); }
-    }));
-
-    /* ── STEP 4: Build one row per membership, match product name from order ── */
-    var subscriptions = memberships.map(function(m) {
-      var product   = '';
-      var frequency = m.billingFrequency || m.rebillFrequency || '';
-
-      if (m.orderId && orderMap[m.orderId]) {
-        var items = orderMap[m.orderId].items;
-
-        /* Match by productId / actualProductId */
-        var matched = null;
-        if (m.productId || m.actualProductId) {
-          matched = items.find(function(i){
-            return String(i.productId) === String(m.productId) ||
-                   String(i.productId) === String(m.actualProductId) ||
-                   String(i.variantId) === String(m.productId) ||
-                   String(i.variantId) === String(m.actualProductId);
-          });
+    allOrders.forEach(function(order) {
+      var items = order.items ? Object.values(order.items) : [];
+      items.forEach(function(item) {
+        if (!sampleLogged && item) {
+          console.log('Sample item fields:', Object.keys(item).join(', '));
+          console.log('Sample item:', JSON.stringify(item).substring(0, 300));
+          sampleLogged = true;
         }
 
-        if (matched) {
-          product = matched.name;
-        } else if (items.length === 1) {
-          product = items[0].name;
-        } else {
-          product = items[0] ? items[0].name : '';
-        }
+        /* Only recurring items have nextBillDate */
+        if (!item.nextBillDate) return;
 
-        if (!frequency) frequency = orderMap[m.orderId].frequency;
-      }
+        /* Deduplicate by purchaseId */
+        var pid = item.purchaseId || item.purchase_id || '';
+        if (pid && seenPurchaseIds[pid]) return;
+        if (pid) seenPurchaseIds[pid] = true;
 
-      /* Extract frequency from product name if still missing */
-      if (!frequency && product) {
-        var fm = (product || '').match(/(\d+)\s*days?\s*supply/i);
-        if (fm) frequency = fm[1];
-      }
-
-      if (!product) product = 'Product ' + (m.productId || m.memberId || '');
-
-      return {
-        product:      product,
-        status:       (m.status || 'ACTIVE').toUpperCase(),
-        orderId:      m.orderId    || '',
-        frequency:    frequency,
-        nextBillDate: m.nextBillDate || m.activationDate || '',
-        memberId:     m.memberId   || '',
-        purchaseId:   m.purchaseId || '',
-        clubId:       m.clubId     || '',
-        firstName:    m.firstName  || '',
-        lastName:     m.lastName   || '',
-      };
+        subscriptions.push({
+          product:      item.name        || '',
+          status:       (item.purchaseStatus || item.status || 'ACTIVE').toUpperCase(),
+          orderId:      order.orderId    || '',
+          frequency:    item.billingIntervalDays || item.billingFrequency || '',
+          nextBillDate: item.nextBillDate || '',
+          purchaseId:   pid,
+          firstName:    order.firstName  || '',
+          lastName:     order.lastName   || '',
+        });
+      });
     });
 
-    /* Sort: ACTIVE first, then PAUSED, then CANCELLED */
+    /* Sort: ACTIVE first */
     var statusOrder = { ACTIVE: 0, PAUSED: 1, CANCELLED: 2, INACTIVE: 3 };
     subscriptions.sort(function(a, b){
       return (statusOrder[a.status] || 9) - (statusOrder[b.status] || 9);
     });
 
-    console.log('Returning', subscriptions.length, 'subscriptions');
+    console.log('Total recurring subscriptions:', subscriptions.length);
     res.json({ success: true, subscriptions: subscriptions });
 
   } catch(err) {
@@ -640,6 +609,7 @@ app.get('/cc/subscriptions', async function(req, res) {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 
 
