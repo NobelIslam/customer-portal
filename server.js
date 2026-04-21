@@ -518,137 +518,111 @@ app.get('/cc/subscriptions', async function(req, res) {
     if (!email) return res.status(400).json({ error: 'email required' });
 
     var today   = new Date();
-    var endDate = (today.getMonth()+1).toString().padStart(2,'0')+'/'+today.getDate().toString().padStart(2,'0')+'/'+today.getFullYear();
+    var endDate = (today.getMonth()+1).toString().padStart(2,'0') + '/' +
+                  today.getDate().toString().padStart(2,'0') + '/' +
+                  today.getFullYear();
 
-    /* ── STEP 1: Get all memberships for this email (for status + actions) ── */
+    /* ── STEP 1: Get ALL memberships (date range 01/01/2025 → today gets all 18) ── */
     var memberships = [];
-    var page = 1, perPage = 200, keepGoing = true;
-    while (keepGoing) {
-      try {
-        var mr = await fetch(CC_BASE + '/members/query/?' + ccParams({
-          emailAddress: email, startDate: '01/01/2016', endDate, resultsPerPage: perPage, page
-        }), { method: 'POST' });
-        var md = JSON.parse(await mr.text());
-        var pageData = (md.result === 'SUCCESS' && md.message && md.message.data) ? md.message.data : [];
-        memberships = memberships.concat(pageData);
-        if (pageData.length < perPage) keepGoing = false; else page++;
-        if (page > 10) keepGoing = false;
-      } catch(e) { break; }
+    var page = 1, perPage = 200;
+    while (true) {
+      var mr = await fetch(CC_BASE + '/members/query/?' + ccParams({
+        emailAddress:   email,
+        startDate:      '01/01/2016',
+        endDate:        endDate,
+        resultsPerPage: perPage,
+        page:           page
+      }), { method: 'POST' });
+      var md       = JSON.parse(await mr.text());
+      var pageData = (md.result === 'SUCCESS' && md.message && md.message.data) ? md.message.data : [];
+      memberships  = memberships.concat(pageData);
+      console.log('Members page', page, '| got:', pageData.length, '| total:', memberships.length);
+      if (pageData.length < perPage) break;
+      page++;
+      if (page > 20) break;
     }
-    console.log('Total memberships for', email, ':', memberships.length);
+    console.log('TOTAL memberships:', memberships.length);
 
-    /* Build a map: orderId → membership record (for status + actions) */
-    var membershipByOrderId = {};
-    var membershipByProductId = {};
-    memberships.forEach(function(m) {
-      if (m.orderId) {
-        if (!membershipByOrderId[m.orderId]) membershipByOrderId[m.orderId] = [];
-        membershipByOrderId[m.orderId].push(m);
-      }
-      var pid = String(m.productId || m.actualProductId || '');
-      if (pid) {
-        if (!membershipByProductId[pid]) membershipByProductId[pid] = [];
-        membershipByProductId[pid].push(m);
-      }
-    });
+    /* ── STEP 2: Batch fetch unique orders to get product names ── */
+    var orderIds = [...new Set(memberships.map(function(m){ return m.orderId; }).filter(Boolean))];
+    var orderMap = {};
 
-    /* ── STEP 2: Get all orders for this email ── */
-    var allOrders = [];
-    page = 1; keepGoing = true;
-    while (keepGoing) {
+    await Promise.all(orderIds.map(async function(orderId) {
       try {
         var or = await fetch(CC_BASE + '/order/query/?' + ccParams({
-          emailAddress: email, startDate: '01/01/2016', endDate,
-          resultsPerPage: 200, page
+          orderId, startDate: '01/01/2010', endDate, resultsPerPage: 1
         }), { method: 'POST' });
         var od = JSON.parse(await or.text());
-        var orderPage = (od.result === 'SUCCESS' && od.message && od.message.data) ? od.message.data : [];
-        allOrders = allOrders.concat(orderPage);
-        if (orderPage.length < 200) keepGoing = false; else page++;
-        if (page > 5) keepGoing = false;
-      } catch(e) { break; }
-    }
-    console.log('Total orders for', email, ':', allOrders.length);
-
-    /* ── STEP 3: Filter to recurring orders + extract recurring items ── */
-    /* A recurring order has billingFrequency > 0 OR has a linked membership */
-    var recurringItems = [];
-    var seenKey = {}; /* deduplicate by orderId+productId */
-
-    allOrders.forEach(function(order) {
-      var isRecurring = (order.billingFrequency && parseInt(order.billingFrequency) > 0)
-                      || (order.rebillFrequency  && parseInt(order.rebillFrequency)  > 0)
-                      || membershipByOrderId[order.orderId];
-
-      if (!isRecurring) return;
-
-      var items = order.items ? Object.values(order.items) : [];
-      /* Only show items that have a linked membership — 100% accurate recurring filter */
-      var recurringProducts = items.filter(function(i){
-        return i.name && i.name.trim() &&
-               (membershipByProductId[String(i.productId)] ||
-                membershipByProductId[String(i.variantId)]);
-      });
-
-      /* Find the memberships linked to this order */
-      var linkedMemberships = membershipByOrderId[order.orderId] || [];
-
-      recurringProducts.forEach(function(item) {
-        var key = order.orderId + '_' + (item.productId || item.name);
-        if (seenKey[key]) return;
-        seenKey[key] = true;
-
-        /* Find the specific membership for this product */
-        var membership = null;
-        if (linkedMemberships.length === 1) {
-          membership = linkedMemberships[0];
-        } else if (linkedMemberships.length > 1) {
-          /* Match by productId */
-          membership = linkedMemberships.find(function(m){
-            return String(m.productId) === String(item.productId) ||
-                   String(m.actualProductId) === String(item.productId);
-          }) || linkedMemberships[0];
+        if (od.result === 'SUCCESS' && od.message && od.message.data && od.message.data.length) {
+          var order = od.message.data[0];
+          orderMap[orderId] = {
+            items:     order.items ? Object.values(order.items).filter(function(i){ return i.name; }) : [],
+            frequency: order.billingFrequency || order.rebillFrequency || ''
+          };
         }
+      } catch(e) { console.error('Order fetch error', orderId, e.message); }
+    }));
 
-        var status = membership ? (membership.status || 'ACTIVE') : 'ACTIVE';
-        var freq   = order.billingFrequency || order.rebillFrequency || '';
-        /* Extract frequency from product name if not on order */
-        if (!freq && item.name) {
-          var fm = item.name.match(/(\d+)\s*days?\s*supply/i);
-          if (fm) freq = fm[1];
-        }
+    /* ── STEP 3: Build one row per membership, get product name from order by productId ── */
+    var subscriptions = memberships.map(function(m) {
+      var product   = '';
+      var frequency = m.billingFrequency || m.rebillFrequency || '';
 
-        recurringItems.push({
-          /* Display fields */
-          product:      item.name,
-          productId:    item.productId || '',
-          status:       status.toUpperCase(),
-          orderId:      order.orderId,
-          frequency:    freq,
-          nextBillDate: membership ? (membership.nextBillDate || membership.activationDate || '') : '',
-          /* Action fields */
-          memberId:     membership ? (membership.memberId   || '') : '',
-          purchaseId:   membership ? (membership.purchaseId || '') : '',
-          clubId:       membership ? (membership.clubId     || '') : '',
-          /* Name fields for topbar */
-          firstName:    membership ? (membership.firstName  || '') : '',
-          lastName:     membership ? (membership.lastName   || '') : '',
+      if (m.orderId && orderMap[m.orderId]) {
+        var items = orderMap[m.orderId].items;
+
+        /* Match by productId or actualProductId */
+        var matched = items.find(function(i){
+          return String(i.productId) === String(m.productId) ||
+                 String(i.productId) === String(m.actualProductId) ||
+                 String(i.variantId) === String(m.productId) ||
+                 String(i.variantId) === String(m.actualProductId);
         });
-      });
+
+        /* No match — just use first item, no skipping */
+        product = matched ? matched.name : (items[0] ? items[0].name : '');
+
+        if (!frequency) frequency = orderMap[m.orderId].frequency;
+      }
+
+      /* Extract frequency from product name if still missing */
+      if (!frequency && product) {
+        var fm = product.match(/(\d+)\s*days?\s*supply/i);
+        if (fm) frequency = fm[1];
+      }
+
+      if (!product) product = 'Product ' + (m.productId || m.memberId || '');
+
+      return {
+        product:      product,
+        status:       (m.status || 'ACTIVE').toUpperCase(),
+        orderId:      m.orderId    || '',
+        frequency:    frequency,
+        nextBillDate: m.nextBillDate || m.activationDate || '',
+        memberId:     m.memberId   || '',
+        purchaseId:   m.purchaseId || '',
+        clubId:       m.clubId     || '',
+        firstName:    m.firstName  || '',
+        lastName:     m.lastName   || '',
+      };
     });
 
-    /* Sort: ACTIVE first, then by product name */
-    recurringItems.sort(function(a, b){
-      if (a.status === 'ACTIVE' && b.status !== 'ACTIVE') return -1;
-      if (a.status !== 'ACTIVE' && b.status === 'ACTIVE') return 1;
-      return (a.product || '').localeCompare(b.product || '');
+    /* Sort: ACTIVE first, then PAUSED, then CANCELLED */
+    var statusOrder = { ACTIVE: 0, PAUSED: 1, CANCELLED: 2, INACTIVE: 3 };
+    subscriptions.sort(function(a, b){
+      return (statusOrder[a.status] || 9) - (statusOrder[b.status] || 9);
     });
 
-    console.log('Total recurring items found:', recurringItems.length);
-    res.json({ success: true, subscriptions: recurringItems });
+    console.log('Returning', subscriptions.length, 'subscriptions');
+    res.json({ success: true, subscriptions: subscriptions });
 
-  } catch(err) { res.status(500).json({ error: err.message }); }
+  } catch(err) {
+    console.error('Subscriptions error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
+
+
 
 
 /* GET /cc/shipments?email=xxx */
