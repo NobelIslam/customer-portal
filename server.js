@@ -663,7 +663,7 @@ app.post('/cc/subscription/cancel', async function(req, res) {
     var purchaseId = req.body.purchaseId;
     var reason     = req.body.reason || 'Customer requested';
     if (!purchaseId) return res.status(400).json({ error: 'purchaseId required' });
-    var r    = await fetch(CC_BASE + '/membership/cancel?' + ccParams({ purchaseId, cancelReason: reason }), { method: 'POST' });
+    var r    = await fetch(CC_BASE + '/members/cancel/?' + ccParams({ purchaseId, cancelReason: reason }), { method: 'POST' });
     var text = await r.text();
     console.log('CC sub cancel HTTP:', r.status, '| raw:', text.substring(0, 300));
     var d;
@@ -680,7 +680,7 @@ app.post('/cc/subscription/pause', async function(req, res) {
   try {
     var purchaseId = req.body.purchaseId;
     if (!purchaseId) return res.status(400).json({ error: 'purchaseId required' });
-    var r    = await fetch(CC_BASE + '/membership/pause/?' + ccParams({ purchaseId }), { method: 'POST' });
+    var r    = await fetch(CC_BASE + '/members/pause/?' + ccParams({ purchaseId }), { method: 'POST' });
     var text = await r.text();
     console.log('CC sub pause raw:', text.substring(0, 300));
     var d;
@@ -697,7 +697,7 @@ app.post('/cc/subscription/restart', async function(req, res) {
   try {
     var purchaseId = req.body.purchaseId;
     if (!purchaseId) return res.status(400).json({ error: 'purchaseId required' });
-    var r    = await fetch(CC_BASE + '/membership/restart/?' + ccParams({ purchaseId }), { method: 'POST' });
+    var r    = await fetch(CC_BASE + '/members/restart/?' + ccParams({ purchaseId }), { method: 'POST' });
     var text = await r.text();
     console.log('CC sub restart raw:', text.substring(0, 300));
     var d;
