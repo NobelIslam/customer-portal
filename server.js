@@ -727,15 +727,14 @@ app.post('/cc/order/cancel', async function(req, res) {
 /* POST /cc/subscription/cancel  body: { purchaseId } */
 app.post('/cc/subscription/cancel', async function(req, res) {
   try {
-    var memberId   = req.body.memberId;
     var purchaseId = req.body.purchaseId;
-    var clubId     = req.body.clubId || process.env.CC_CLUB_ID || '12';
-    var reason     = req.body.reason || 'Customer requested';
-    if (!memberId && !purchaseId) return res.status(400).json({ error: 'memberId or purchaseId required' });
-    var params = { clubId, cancelReason: reason };
-    if (memberId)   params.memberId   = memberId;
-    if (purchaseId) params.purchaseId = purchaseId;
-    var r    = await fetch(CC_BASE + '/members/cancel/?' + ccParams(params), { method: 'POST' });
+    var reason     = req.body.reason || req.body.cancelReason || 'Customer requested';
+    if (!purchaseId) return res.status(400).json({ error: 'purchaseId required' });
+    var r    = await fetch(CC_BASE + '/purchase/cancel/?' + ccParams({
+      purchaseId:    purchaseId,
+      cancelReason:  reason,
+      cancelFulfillment: true
+    }), { method: 'POST' });
     var text = await r.text();
     console.log('CC sub cancel HTTP:', r.status, '| raw:', text.substring(0, 300));
     var d;
@@ -750,14 +749,20 @@ app.post('/cc/subscription/cancel', async function(req, res) {
 /* POST /cc/subscription/pause  body: { purchaseId } */
 app.post('/cc/subscription/pause', async function(req, res) {
   try {
-    var memberId   = req.body.memberId;
-    var purchaseId = req.body.purchaseId;
-    var clubId     = req.body.clubId || process.env.CC_CLUB_ID || '12';
-    if (!memberId && !purchaseId) return res.status(400).json({ error: 'memberId or purchaseId required' });
-    var params = { clubId };
-    if (memberId)   params.memberId   = memberId;
-    if (purchaseId) params.purchaseId = purchaseId;
-    var r    = await fetch(CC_BASE + '/members/pause/?' + ccParams(params), { method: 'POST' });
+    var purchaseId  = req.body.purchaseId;
+    var restartDate = req.body.restartDate;
+    if (!purchaseId) return res.status(400).json({ error: 'purchaseId required' });
+    /* Default restart date = 30 days from now if not provided */
+    if (!restartDate) {
+      var d30 = new Date(); d30.setDate(d30.getDate() + 30);
+      restartDate = (d30.getMonth()+1).toString().padStart(2,'0') + '/' +
+                    d30.getDate().toString().padStart(2,'0') + '/' +
+                    d30.getFullYear().toString().slice(-2);
+    }
+    var r    = await fetch(CC_BASE + '/purchase/pause/?' + ccParams({
+      purchaseId:  purchaseId,
+      restartDate: restartDate
+    }), { method: 'POST' });
     var text = await r.text();
     console.log('CC sub pause HTTP:', r.status, '| raw:', text.substring(0, 300));
     var d;
@@ -768,21 +773,15 @@ app.post('/cc/subscription/pause', async function(req, res) {
     res.json({ success: true });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
-
 /* POST /cc/subscription/restart  body: { purchaseId } */
 app.post('/cc/subscription/restart', async function(req, res) {
   try {
-    var memberId   = req.body.memberId;
     var purchaseId = req.body.purchaseId;
-    var clubId     = req.body.clubId || process.env.CC_CLUB_ID || '12';
-    if (!memberId && !purchaseId) return res.status(400).json({ error: 'memberId or purchaseId required' });
-    var params = { clubId };
-    if (memberId)   params.memberId   = memberId;
-    if (purchaseId) params.purchaseId = purchaseId;
-    var r    = await fetch(CC_BASE + '/members/reactivate/?' + ccParams(params), { method: 'POST' });
+    if (!purchaseId) return res.status(400).json({ error: 'purchaseId required' });
+    var r    = await fetch(CC_BASE + '/purchase/restart/?' + ccParams({
+      purchaseId: purchaseId
+    }), { method: 'POST' });
     var text = await r.text();
-    var fullUrl = CC_BASE + '/members/reactivate/?' + ccParams(params);
-    console.log('CC sub restart URL:', fullUrl);
     console.log('CC sub restart HTTP:', r.status, '| raw:', text.substring(0, 300));
     var d;
     try { d = JSON.parse(text); } catch(e) {
@@ -792,7 +791,6 @@ app.post('/cc/subscription/restart', async function(req, res) {
     res.json({ success: true });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
-
 /* POST /cc/profile/update  body: { customerId, firstName, lastName, phone, address... } */
 app.post('/cc/profile/update', async function(req, res) {
   try {
