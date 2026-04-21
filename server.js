@@ -663,9 +663,14 @@ app.post('/cc/subscription/cancel', async function(req, res) {
     var purchaseId = req.body.purchaseId;
     var reason     = req.body.reason || 'Customer requested';
     if (!purchaseId) return res.status(400).json({ error: 'purchaseId required' });
-    var r = await fetch(CC_BASE + '/membership/cancel/?' + ccParams({ purchaseId, cancelReason: reason }), { method: 'POST' });
-    var d = await r.json();
-    if (d.result !== 'SUCCESS') return res.status(400).json({ error: d.message || 'Cancel failed' });
+    var r    = await fetch(CC_BASE + '/membership/cancel?' + ccParams({ purchaseId, cancelReason: reason }), { method: 'POST' });
+    var text = await r.text();
+    console.log('CC sub cancel HTTP:', r.status, '| raw:', text.substring(0, 300));
+    var d;
+    try { d = JSON.parse(text); } catch(e) {
+      return res.status(500).json({ error: 'CC API error (HTTP ' + r.status + '): ' + text.substring(0, 200) });
+    }
+    if (d.result !== 'SUCCESS') return res.status(400).json({ error: typeof d.message === 'object' ? JSON.stringify(d.message) : (d.message || 'Cancel failed') });
     res.json({ success: true });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
