@@ -522,88 +522,49 @@ app.get('/cc/subscriptions', async function(req, res) {
                   today.getDate().toString().padStart(2,'0') + '/' +
                   today.getFullYear();
 
-    /* ── STEP 1: Get all customerIds for this email ── */
-    var cr = await fetch(CC_BASE + '/customer/query/?' + ccParams({
-      emailAddress: email, startDate: '01/01/2016', endDate, resultsPerPage: 200
-    }), { method: 'POST' });
-    var cd       = JSON.parse(await cr.text());
-    var customers = (cd.result === 'SUCCESS' && cd.message && cd.message.data) ? cd.message.data : [];
-    var customerIds = [...new Set(customers.map(function(c){ return c.customerId; }).filter(Boolean))];
-    console.log('CustomerIds:', customerIds.join(', '));
-
-    /* ── STEP 2: Get ALL orders for each customerId ── */
-    var allOrders   = [];
-    var seenOrderIds = {};
-
-    async function fetchOrders(queryParams) {
-      var page = 1, perPage = 200;
-      while (true) {
-        try {
-          var or = await fetch(CC_BASE + '/order/query/?' + ccParams(
-            Object.assign({}, queryParams, { startDate: '01/01/2016', endDate, resultsPerPage: perPage, page, sortDir: -1 })
-          ), { method: 'POST' });
-          var od       = JSON.parse(await or.text());
-          var pageData = (od.result === 'SUCCESS' && od.message && od.message.data) ? od.message.data : [];
-          pageData.forEach(function(o) {
-            if (!seenOrderIds[o.orderId]) { seenOrderIds[o.orderId] = true; allOrders.push(o); }
-          });
-          if (pageData.length < perPage) break;
-          page++; if (page > 10) break;
-        } catch(e) { break; }
-      }
+    /* Get all purchases for this email */
+    var purchases = [];
+    var page = 1, perPage = 200;
+    while (true) {
+      var pr = await fetch(CC_BASE + '/purchase/query/?' + ccParams({
+        emailAddress:   email,
+        startDate:      '01/01/2016',
+        endDate:        endDate,
+        resultsPerPage: perPage,
+        page:           page
+      }), { method: 'POST' });
+      var pd = JSON.parse(await pr.text());
+      var pageData = (pd.result === 'SUCCESS' && pd.message && pd.message.data) ? pd.message.data : [];
+      purchases = purchases.concat(pageData);
+      console.log('Purchases page', page, '| got:', pageData.length, '| total:', purchases.length);
+      if (pageData.length < perPage) break;
+      page++; if (page > 20) break;
     }
+    console.log('Total purchases:', purchases.length);
 
-    /* Fetch by email + each customerId to get all orders */
-    await fetchOrders({ emailAddress: email });
-    await Promise.all(customerIds.map(function(cid){ return fetchOrders({ customerId: cid }); }));
-    console.log('Total unique orders:', allOrders.length);
-
-    /* ── STEP 3: Extract items with nextBillDate — these are recurring products ── */
-    var subscriptions = [];
-    var seenPurchaseIds = {};
-
-    /* Log first item fields to verify nextBillDate exists */
-    var sampleLogged = false;
-
-    allOrders.forEach(function(order) {
-      var items = order.items ? Object.values(order.items) : [];
-      items.forEach(function(item) {
-        if (!sampleLogged && item) {
-          console.log('Sample item fields:', Object.keys(item).join(', '));
-          console.log('Sample item:', JSON.stringify(item).substring(0, 300));
-          sampleLogged = true;
-        }
-
-        /* Only recurring items with a FUTURE nextBillDate */
-        if (!item.nextBillDate) return;
-        var billDate = new Date(item.nextBillDate);
-        if (isNaN(billDate.getTime()) || billDate <= new Date()) return;
-
-        /* Deduplicate by purchaseId */
-        var pid = item.purchaseId || item.purchase_id || '';
-        if (pid && seenPurchaseIds[pid]) return;
-        if (pid) seenPurchaseIds[pid] = true;
-
-        subscriptions.push({
-          product:      item.name        || '',
-          status:       (item.purchaseStatus || item.status || 'ACTIVE').toUpperCase(),
-          orderId:      order.orderId    || '',
-          frequency:    item.billingIntervalDays || item.billingFrequency || '',
-          nextBillDate: item.nextBillDate || '',
-          purchaseId:   pid,
-          firstName:    order.firstName  || '',
-          lastName:     order.lastName   || '',
-        });
-      });
+    /* Build one row per purchase — productName is directly on the record */
+    var subscriptions = purchases.map(function(p) {
+      return {
+        product:          p.productName        || ('Product ' + (p.productId || p.purchaseId || '')),
+        status:           (p.status            || 'ACTIVE').toUpperCase(),
+        orderId:          p.orderId            || '',
+        purchaseId:       p.purchaseId         || '',
+        frequency:        p.billingIntervalDays|| '',
+        nextBillDate:     p.nextBillDate       || '',
+        billingCycleType: p.billingCycleType   || '',
+        price:            p.price              || '',
+        firstName:        p.firstName          || '',
+        lastName:         p.lastName           || '',
+      };
     });
 
-    /* Sort: ACTIVE first */
+    /* Sort: ACTIVE first, then PAUSED, then CANCELLED */
     var statusOrder = { ACTIVE: 0, PAUSED: 1, CANCELLED: 2, INACTIVE: 3 };
     subscriptions.sort(function(a, b){
       return (statusOrder[a.status] || 9) - (statusOrder[b.status] || 9);
     });
 
-    console.log('Total recurring subscriptions:', subscriptions.length);
+    console.log('Returning', subscriptions.length, 'subscriptions');
     res.json({ success: true, subscriptions: subscriptions });
 
   } catch(err) {
@@ -611,6 +572,9 @@ app.get('/cc/subscriptions', async function(req, res) {
     res.status(500).json({ error: err.message });
   }
 });
+
+
+
 
 
 
