@@ -536,7 +536,33 @@ app.get('/cc/order', async function(req, res) {
     if (d.result !== 'SUCCESS' || !d.message || !d.message.data || !d.message.data.length) {
       return res.status(404).json({ error: 'Order not found' });
     }
-    res.json({ success: true, order: d.message.data[0] });
+    var order = d.message.data[0];
+
+    /* Extract tracking + shipping status from fulfillments */
+    if (order.fulfillments && order.fulfillments.length) {
+      var delivered = order.fulfillments.find(function(f){ return f.status === 'DELIVERED' && f.trackingNumber; });
+      var shipped   = order.fulfillments.find(function(f){ return f.status === 'SHIPPED'   && f.trackingNumber; });
+      var anyTrack  = order.fulfillments.find(function(f){ return f.trackingNumber; });
+      var best      = delivered || shipped || anyTrack;
+
+      if (best) {
+        order.trackingNumber = best.trackingNumber;
+        order.shipCarrier    = best.shipCarrier || order.shipCarrier;
+        order.shipMethod     = best.shipMethod  || order.shipMethod;
+        order.dateShipped    = best.dateShipped || order.dateShipped;
+      }
+
+      /* Set shippingStatus from highest ranked fulfillment */
+      var rank = { DELIVERED: 4, SHIPPED: 3, PROCESSING: 2, HOLD: 1, CANCELLED: 0 };
+      var topFulfillment = order.fulfillments.reduce(function(best, f) {
+        return (rank[f.status] || 0) > (rank[best.status] || 0) ? f : best;
+      }, order.fulfillments[0]);
+      order.shippingStatus = topFulfillment.status || 'HOLD';
+    } else {
+      order.shippingStatus = 'PENDING';
+    }
+
+    res.json({ success: true, order: order });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
 
