@@ -12,6 +12,8 @@ app.use(cors({ origin: '*' }));
 const RECHARGE_API_KEY = process.env.RECHARGE_API_KEY;
 const RECHARGE_BASE    = 'https://api.rechargeapps.com';
 const KLAVIYO_API_KEY  = process.env.KLAVIYO_API_KEY;
+const SUBI_API_KEY     = process.env.SUBI_API_KEY;
+const SUBI_BASE        = 'https://api.subi.co/public/v1.0';
 
 /* ════════════════════════════════════════════════════
    PORTAL MODE CONFIG
@@ -34,6 +36,13 @@ console.log('Portal mode:', PORTAL_MODE);
 function rcHeaders() {
   return {
     'X-Recharge-Access-Token': RECHARGE_API_KEY,
+    'Content-Type': 'application/json'
+  };
+}
+
+function subiHeaders() {
+  return {
+    'X-Api-Key': SUBI_API_KEY,
     'Content-Type': 'application/json'
   };
 }
@@ -262,7 +271,7 @@ function verifyToken(token) {
 }
 
 /* ════════════════════════════════════════════════════
-   MAGIC LOGIN — CheckoutChamp customers
+   MAGIC LOGIN — multi-source customer identification
 ════════════════════════════════════════════════════ */
 
 app.get('/portal-access', function(req, res) {
@@ -270,7 +279,10 @@ app.get('/portal-access', function(req, res) {
 });
 
 /* POST /magic-login/request
-   Identifies customer → Recharge OR CC → sends correct magic link */
+   Checks ALL three sources: CC, Recharge, Subi
+   foundIn[] carries every source the customer exists in
+   Token type = primary source (cc > recharge > subi),
+   but foundIn is stored in token so dashboard fetches all */
 app.post('/magic-login/request', async function(req, res) {
   try {
     var email = (req.body.email || '').trim().toLowerCase();
@@ -291,7 +303,6 @@ app.post('/magic-login/request', async function(req, res) {
       var CC_LOGIN_ID = process.env.CC_LOGIN_ID;
       var CC_API_PASS = process.env.CC_API_PASSWORD;
       var CC_CLUB_ID  = process.env.CC_CLUB_ID || '12';
-      var CC_BASE     = 'https://api.checkoutchamp.com';
       var today       = new Date();
       var endDate     = (today.getMonth()+1).toString().padStart(2,'0') + '/' + today.getDate().toString().padStart(2,'0') + '/' + today.getFullYear();
 
@@ -311,6 +322,16 @@ app.post('/magic-login/request', async function(req, res) {
       }
     } catch (e) { console.error('CheckoutChamp lookup error:', e.message); }
 
+    /* ── 3. Check Subi ── */
+    try {
+      var subiRes  = await fetch(SUBI_BASE + '/subscribers/?email=' + encodeURIComponent(email), { headers: subiHeaders() });
+      var subiData = await subiRes.json();
+      if (subiData.results && subiData.results.length > 0) {
+        foundIn.push('subi');
+        console.log('Subi subscriber found for', email, '— subiId:', subiData.results[0].id);
+      }
+    } catch (e) { console.error('Subi lookup error:', e.message); }
+
     if (foundIn.length === 0) {
       return res.json({
         found: false,
@@ -318,21 +339,20 @@ app.post('/magic-login/request', async function(req, res) {
       });
     }
 
+    /* ── Determine primary type for token (cc > recharge > subi) ── */
+    var primaryType;
+    if (foundIn.includes('checkoutchamp')) {
+      primaryType = 'checkoutchamp';
+    } else if (foundIn.includes('recharge')) {
+      primaryType = 'recharge';
+    } else {
+      primaryType = 'subi';
+    }
+
     var token;
     var magicLink;
-    var isRechargeOnly = foundIn.includes('recharge') && !foundIn.includes('checkoutchamp');
 
-    if (isRechargeOnly) {
-      /* ── RECHARGE-ONLY customer ── */
-      token = createToken({ email: email, type: 'recharge' });
-      /* In split mode → /recharge-portal, in unified mode → /dashboard */
-      magicLink = PORTAL_MODE === 'unified'
-        ? PORTAL_URLS.unified + '?token=' + token
-        : PORTAL_URLS.recharge + '?token=' + token;
-      console.log('Recharge-only magic link for', email, '| mode:', PORTAL_MODE);
-
-    } else {
-      /* ── CC customer (with or without Recharge) ── */
+    if (primaryType === 'checkoutchamp') {
       var tempPassword = ccMember ? (ccMember.clubPassword || null) : null;
       token = createToken({
         email:        email,
@@ -340,14 +360,32 @@ app.post('/magic-login/request', async function(req, res) {
         loginType:    'club',
         memberId:     ccMember ? (ccMember.memberId     || null) : null,
         clubUsername: ccMember ? (ccMember.clubUsername || null) : null,
-        password:     tempPassword
+        password:     tempPassword,
+        foundIn:      foundIn   /* ← carries ALL sources */
       });
-      /* In split mode → /magic-login (CC login page), in unified mode → /dashboard */
-      magicLink = PORTAL_MODE === 'unified'
-        ? PORTAL_URLS.unified + '?token=' + token
-        : PORTAL_URLS.login.replace('/login', '/magic-login') + '?token=' + token;
-      console.log('CC magic link for', email, '| mode:', PORTAL_MODE);
+    } else if (primaryType === 'recharge') {
+      token = createToken({
+        email:   email,
+        type:    'recharge',
+        foundIn: foundIn
+      });
+    } else {
+      /* Subi-only */
+      token = createToken({
+        email:   email,
+        type:    'subi',
+        foundIn: foundIn
+      });
     }
+
+    /* In unified mode everyone goes to /dashboard */
+    magicLink = PORTAL_MODE === 'unified'
+      ? PORTAL_URLS.unified + '?token=' + token
+      : (primaryType === 'checkoutchamp'
+          ? PORTAL_URLS.login.replace('/login', '/magic-login') + '?token=' + token
+          : PORTAL_URLS.recharge + '?token=' + token);
+
+    console.log('Magic link for', email, '| primary:', primaryType, '| foundIn:', foundIn, '| mode:', PORTAL_MODE);
 
     /* ── Fire Klaviyo Magic_Link_Access event ── */
     try {
@@ -355,7 +393,8 @@ app.post('/magic-login/request', async function(req, res) {
         magic_link:  magicLink,
         link_expiry: '24 hours',
         login_url:   'https://try.thegreatproject.com/login',
-        portal_type: foundIn.includes('checkoutchamp') ? 'checkoutchamp' : 'recharge'
+        portal_type: primaryType,
+        sources:     foundIn.join(',')
       });
     } catch (e) { console.error('Klaviyo event error:', e.message); }
 
@@ -393,7 +432,6 @@ app.get('/magic-login/test', async function(req, res) {
     }
   } catch(e) { console.error('Test endpoint CC lookup error:', e.message); }
 
-  /* Use provided password or fall back to CC member password */
   var resolvedPassword = password || (ccMember ? ccMember.clubPassword : null);
   var token = createToken({
     email:        email,
@@ -401,7 +439,8 @@ app.get('/magic-login/test', async function(req, res) {
     loginType:    'club',
     memberId:     ccMember ? (ccMember.memberId     || null) : null,
     clubUsername: ccMember ? (ccMember.clubUsername || null) : null,
-    password:     resolvedPassword
+    password:     resolvedPassword,
+    foundIn:      ['checkoutchamp']
   });
   var link = PORTAL_MODE === 'unified'
     ? PORTAL_URLS.unified + '?token=' + token
@@ -422,12 +461,12 @@ app.post('/magic-login/verify', function(req, res) {
     var data  = verifyToken(token);
     if (!data) return res.status(401).json({ error: 'Invalid or expired token' });
 
-    /* Token signature already proves authenticity — no CC login needed */
-    console.log('Magic login verify OK for:', data.email, '| type:', data.type);
+    console.log('Magic login verify OK for:', data.email, '| type:', data.type, '| foundIn:', data.foundIn);
     res.json({
       success: true,
       email:   data.email,
-      type:    data.type || 'checkoutchamp'
+      type:    data.type || 'checkoutchamp',
+      foundIn: data.foundIn || [data.type || 'checkoutchamp']  /* ← pass all sources to frontend */
     });
 
   } catch (err) {
@@ -435,7 +474,6 @@ app.post('/magic-login/verify', function(req, res) {
     res.status(500).json({ error: err.message });
   }
 });
-
 
 
 /* ════════════════════════════════════════════════════
@@ -486,10 +524,8 @@ app.get('/cc/orders', async function(req, res) {
     var d = await r.json();
     var orders = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
 
-    /* Enrich orders with tracking + shipping status from fulfillments */
     orders = orders.map(function(o) {
       if (o.fulfillments && o.fulfillments.length) {
-        /* Priority: DELIVERED > SHIPPED > any with tracking */
         var delivered = o.fulfillments.find(function(f){ return f.status === 'DELIVERED' && f.trackingNumber; });
         var shipped   = o.fulfillments.find(function(f){ return f.status === 'SHIPPED'   && f.trackingNumber; });
         var anyTrack  = o.fulfillments.find(function(f){ return f.trackingNumber; });
@@ -502,7 +538,6 @@ app.get('/cc/orders', async function(req, res) {
           o.dateShipped    = best.dateShipped || o.dateShipped;
         }
 
-        /* Shipping status from best fulfillment */
         var topStatus = o.fulfillments.reduce(function(best, f) {
           var rank = { DELIVERED: 4, SHIPPED: 3, PROCESSING: 2, HOLD: 1, CANCELLED: 0 };
           return (rank[f.status] || 0) > (rank[best] || 0) ? f.status : best;
@@ -538,7 +573,6 @@ app.get('/cc/order', async function(req, res) {
     }
     var order = d.message.data[0];
 
-    /* Extract tracking + shipping status from fulfillments */
     if (order.fulfillments && order.fulfillments.length) {
       var delivered = order.fulfillments.find(function(f){ return f.status === 'DELIVERED' && f.trackingNumber; });
       var shipped   = order.fulfillments.find(function(f){ return f.status === 'SHIPPED'   && f.trackingNumber; });
@@ -552,7 +586,6 @@ app.get('/cc/order', async function(req, res) {
         order.dateShipped    = best.dateShipped || order.dateShipped;
       }
 
-      /* Set shippingStatus from highest ranked fulfillment */
       var rank = { DELIVERED: 4, SHIPPED: 3, PROCESSING: 2, HOLD: 1, CANCELLED: 0 };
       var topFulfillment = order.fulfillments.reduce(function(best, f) {
         return (rank[f.status] || 0) > (rank[best.status] || 0) ? f : best;
@@ -577,7 +610,6 @@ app.get('/cc/subscriptions', async function(req, res) {
                   today.getDate().toString().padStart(2,'0') + '/' +
                   today.getFullYear();
 
-    /* Get all purchases for this email */
     var purchases = [];
     var page = 1, perPage = 200;
     while (true) {
@@ -597,7 +629,6 @@ app.get('/cc/subscriptions', async function(req, res) {
     }
     console.log('Total purchases:', purchases.length);
 
-    /* Build one row per purchase — productName is directly on the record */
     var subscriptions = purchases.map(function(p) {
       return {
         product:          p.productName        || ('Product ' + (p.productId || p.purchaseId || '')),
@@ -613,7 +644,6 @@ app.get('/cc/subscriptions', async function(req, res) {
       };
     });
 
-    /* Sort: ACTIVE first, then PAUSED, then CANCELLED */
     var statusOrder = { ACTIVE: 0, PAUSED: 1, CANCELLED: 2, INACTIVE: 3 };
     subscriptions.sort(function(a, b){
       return (statusOrder[a.status] || 9) - (statusOrder[b.status] || 9);
@@ -628,16 +658,6 @@ app.get('/cc/subscriptions', async function(req, res) {
   }
 });
 
-
-
-
-
-
-
-
-
-
-
 /* GET /cc/shipments?email=xxx */
 app.get('/cc/shipments', async function(req, res) {
   try {
@@ -646,7 +666,6 @@ app.get('/cc/shipments', async function(req, res) {
 
     var today   = new Date();
     var endDate = (today.getMonth()+1).toString().padStart(2,'0')+'/'+today.getDate().toString().padStart(2,'0')+'/'+today.getFullYear();
-    /* CC shipments — group orders by unique shipping address */
     var r = await fetch(CC_BASE + '/order/query/?' + ccParams({
       emailAddress: email, startDate: '01/01/2016', endDate, resultsPerPage: 200
     }), { method: 'POST' });
@@ -658,7 +677,6 @@ app.get('/cc/shipments', async function(req, res) {
     }
     var orders = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
 
-    /* Group by unique shipping address — key = address1+city+country+zip */
     var shipMap = {};
     orders.forEach(function(o) {
       var addrKey = [
@@ -668,7 +686,7 @@ app.get('/cc/shipments', async function(req, res) {
         (o.shipPostalCode || o.shipZip || '').toLowerCase().trim()
       ].join('|');
 
-      if (!addrKey.replace(/\|/g,'').trim()) return; /* skip if no address */
+      if (!addrKey.replace(/\|/g,'').trim()) return;
 
       if (!shipMap[addrKey]) {
         shipMap[addrKey] = {
@@ -743,7 +761,6 @@ app.post('/cc/subscription/pause', async function(req, res) {
     var purchaseId  = req.body.purchaseId;
     var restartDate = req.body.restartDate;
     if (!purchaseId) return res.status(400).json({ error: 'purchaseId required' });
-    /* Default restart date = 30 days from now if not provided */
     if (!restartDate) {
       var d30 = new Date(); d30.setDate(d30.getDate() + 30);
       restartDate = (d30.getMonth()+1).toString().padStart(2,'0') + '/' +
@@ -764,6 +781,7 @@ app.post('/cc/subscription/pause', async function(req, res) {
     res.json({ success: true });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
+
 /* POST /cc/subscription/restart  body: { purchaseId } */
 app.post('/cc/subscription/restart', async function(req, res) {
   try {
@@ -783,7 +801,8 @@ app.post('/cc/subscription/restart', async function(req, res) {
     res.json({ success: true });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
-/* POST /cc/profile/update  body: { customerId, firstName, lastName, phone, address... } */
+
+/* POST /cc/profile/update */
 app.post('/cc/profile/update', async function(req, res) {
   try {
     var b = req.body;
@@ -817,7 +836,6 @@ app.post('/cc/profile/update', async function(req, res) {
    RECHARGE CUSTOMER PROFILE
 ════════════════════════════════════════════════════ */
 
-/* GET /recharge/customer?email=xxx — fetch profile */
 app.get('/recharge/customer', async function(req, res) {
   try {
     var email = (req.query.email || '').trim().toLowerCase();
@@ -857,13 +875,11 @@ app.get('/recharge/customer', async function(req, res) {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-/* POST /recharge/customer/update — update profile */
 app.post('/recharge/customer/update', async function(req, res) {
   try {
     var email = (req.body.email || '').trim().toLowerCase();
     if (!email) return res.status(400).json({ error: 'email required' });
 
-    /* Find customer ID first */
     var rcRes  = await fetch(RECHARGE_BASE + '/customers?email=' + encodeURIComponent(email), { headers: rcHeaders() });
     var rcData = await rcRes.json();
     if (!rcData.customers || !rcData.customers.length) {
@@ -871,7 +887,6 @@ app.post('/recharge/customer/update', async function(req, res) {
     }
     var customerId = rcData.customers[0].id;
 
-    /* Build update payload — never update email */
     var payload = {};
     if (req.body.firstName)  payload.first_name = req.body.firstName;
     if (req.body.lastName)   payload.last_name  = req.body.lastName;
@@ -914,12 +929,10 @@ app.post('/recharge/customer/update', async function(req, res) {
    RECHARGE PORTAL — Recharge-only customers
 ════════════════════════════════════════════════════ */
 
-/* ── TEST: generate Recharge portal magic link ── */
 app.get('/recharge-portal/test', async function(req, res) {
   var email = (req.query.email || '').trim().toLowerCase();
   if (!email) return res.status(400).json({ error: 'email required' });
 
-  /* Check email exists in Recharge before generating link */
   try {
     var rcRes  = await fetch(RECHARGE_BASE + '/customers?email=' + encodeURIComponent(email), { headers: rcHeaders() });
     var rcData = await rcRes.json();
@@ -930,20 +943,18 @@ app.get('/recharge-portal/test', async function(req, res) {
     return res.status(500).json({ error: 'Could not verify Recharge subscription: ' + e.message });
   }
 
-  var token = createToken({ email, type: 'recharge' });
+  var token = createToken({ email, type: 'recharge', foundIn: ['recharge'] });
   var link = PORTAL_MODE === 'unified'
     ? PORTAL_URLS.unified + '?token=' + token
     : PORTAL_URLS.recharge + '?token=' + token;
   res.json({ magicLink: link, expiresIn: '24 hours', mode: PORTAL_MODE });
 });
 
-/* ── POST /recharge-portal/verify ── */
 app.post('/recharge-portal/verify', async function(req, res) {
   var token = req.body.token;
   var data   = verifyToken(token);
   if (!data) return res.status(401).json({ error: 'Invalid or expired token' });
 
-  /* Verify email actually exists in Recharge */
   try {
     var rcRes  = await fetch(RECHARGE_BASE + '/customers?email=' + encodeURIComponent(data.email), { headers: rcHeaders() });
     var rcData = await rcRes.json();
@@ -957,7 +968,204 @@ app.post('/recharge-portal/verify', async function(req, res) {
   }
 
   console.log('Recharge portal verify OK for:', data.email);
-  res.json({ success: true, email: data.email });
+  res.json({ success: true, email: data.email, foundIn: data.foundIn || ['recharge'] });
+});
+
+/* ════════════════════════════════════════════════════
+   SUBI SUBSCRIPTIONS
+════════════════════════════════════════════════════ */
+
+/* GET /subi/subscriptions?email=xxx
+   Step 1: find subscriber by email → get their Subi customer_id
+   Step 2: fetch all subscription contracts for that customer_id
+   Returns normalised array matching the shape used by CC/Recharge */
+app.get('/subi/subscriptions', async function(req, res) {
+  try {
+    var email = (req.query.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ error: 'email required' });
+
+    /* ── Step 1: find subscriber ── */
+    var subRes  = await fetch(SUBI_BASE + '/subscribers/?email=' + encodeURIComponent(email), { headers: subiHeaders() });
+    if (!subRes.ok) {
+      var errText = await subRes.text();
+      console.error('Subi subscribers lookup HTTP', subRes.status, errText.substring(0, 200));
+      return res.status(subRes.status).json({ error: 'Subi API error: ' + errText.substring(0, 100) });
+    }
+    var subData = await subRes.json();
+
+    if (!subData.results || subData.results.length === 0) {
+      return res.json({ success: true, subscriptions: [] });
+    }
+
+    var subiCustomerId = subData.results[0].id;
+    console.log('Subi subscriber found for', email, '— subiCustomerId:', subiCustomerId);
+
+    /* ── Step 2: fetch contracts ── */
+    var contractRes  = await fetch(
+      SUBI_BASE + '/subscription-contracts/?customer_id=' + subiCustomerId + '&limit=100',
+      { headers: subiHeaders() }
+    );
+    if (!contractRes.ok) {
+      var errText2 = await contractRes.text();
+      console.error('Subi contracts HTTP', contractRes.status, errText2.substring(0, 200));
+      return res.status(contractRes.status).json({ error: 'Subi contracts error: ' + errText2.substring(0, 100) });
+    }
+    var contractData = await contractRes.json();
+    var contracts    = contractData.results || [];
+
+    console.log('Subi contracts found:', contracts.length, 'for customer', subiCustomerId);
+
+    /* ── Normalise to a consistent shape ── */
+    var subscriptions = contracts.map(function(c) {
+      /* Build a human-readable frequency string, e.g. "Every 1 MONTH" */
+      var freq = c.billing_policy_interval_count && c.billing_policy_interval
+        ? 'Every ' + c.billing_policy_interval_count + ' ' + c.billing_policy_interval
+        : '';
+
+      /* Product name from first line item (most contracts have one) */
+      var productName = (c.lines && c.lines.length > 0)
+        ? (c.lines[0].title || c.lines[0].variant_title || 'Subscription')
+        : 'Subscription';
+
+      /* Variant detail if present */
+      var variantTitle = (c.lines && c.lines.length > 0) ? (c.lines[0].variant_title || '') : '';
+
+      /* Price: use total_price from contract */
+      var price = c.total_price != null ? c.total_price : '';
+      var currency = c.currency_code || '';
+
+      return {
+        source:       'subi',                               /* flag so dashboard can label/route correctly */
+        id:           c.id,                                 /* Subi contract id — used for actions */
+        status:       (c.status || 'ACTIVE').toUpperCase(),
+        product:      productName,
+        variantTitle: variantTitle,
+        price:        price,
+        currency:     currency,
+        frequency:    freq,
+        nextBillDate: c.next_billing_date || '',
+        linesCount:   c.lines_count || (c.lines ? c.lines.length : 0),
+        lastPaymentStatus: c.last_payment_status || ''
+      };
+    });
+
+    /* Sort: ACTIVE first, then PAUSED, then others */
+    var statusOrder = { ACTIVE: 0, PAUSED: 1, FAILED: 2, CANCELLED: 3, EXPIRED: 4, DEACTIVATED: 5 };
+    subscriptions.sort(function(a, b) {
+      return (statusOrder[a.status] || 9) - (statusOrder[b.status] || 9);
+    });
+
+    res.json({ success: true, subscriptions: subscriptions });
+
+  } catch (err) {
+    console.error('Subi subscriptions error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ── Subi subscription actions ─────────────────────────────
+   All follow the same pattern:
+   POST /subi/subscription/:id/<action>
+   Proxies to SUBI_BASE/subscription-contracts/:id/<action>/
+─────────────────────────────────────────────────────────── */
+
+/* POST /subi/subscription/:id/cancel */
+app.post('/subi/subscription/:id/cancel', async function(req, res) {
+  try {
+    var contractId = req.params.id;
+    var r = await fetch(SUBI_BASE + '/subscription-contracts/' + contractId + '/cancel/', {
+      method: 'POST',
+      headers: subiHeaders(),
+      body: JSON.stringify({})
+    });
+    if (!r.ok) {
+      var errText = await r.text();
+      console.error('Subi cancel HTTP', r.status, errText.substring(0, 200));
+      return res.status(r.status).json({ error: 'Subi cancel failed: ' + errText.substring(0, 100) });
+    }
+    console.log('Subi cancel OK for contract', contractId);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+/* POST /subi/subscription/:id/pause */
+app.post('/subi/subscription/:id/pause', async function(req, res) {
+  try {
+    var contractId = req.params.id;
+    var r = await fetch(SUBI_BASE + '/subscription-contracts/' + contractId + '/pause/', {
+      method: 'POST',
+      headers: subiHeaders(),
+      body: JSON.stringify({})
+    });
+    if (!r.ok) {
+      var errText = await r.text();
+      console.error('Subi pause HTTP', r.status, errText.substring(0, 200));
+      return res.status(r.status).json({ error: 'Subi pause failed: ' + errText.substring(0, 100) });
+    }
+    console.log('Subi pause OK for contract', contractId);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+/* POST /subi/subscription/:id/resume */
+app.post('/subi/subscription/:id/resume', async function(req, res) {
+  try {
+    var contractId = req.params.id;
+    var r = await fetch(SUBI_BASE + '/subscription-contracts/' + contractId + '/resume/', {
+      method: 'POST',
+      headers: subiHeaders(),
+      body: JSON.stringify({})
+    });
+    if (!r.ok) {
+      var errText = await r.text();
+      console.error('Subi resume HTTP', r.status, errText.substring(0, 200));
+      return res.status(r.status).json({ error: 'Subi resume failed: ' + errText.substring(0, 100) });
+    }
+    console.log('Subi resume OK for contract', contractId);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+/* POST /subi/subscription/:id/skip */
+app.post('/subi/subscription/:id/skip', async function(req, res) {
+  try {
+    var contractId = req.params.id;
+    var r = await fetch(SUBI_BASE + '/subscription-contracts/' + contractId + '/skip/', {
+      method: 'POST',
+      headers: subiHeaders(),
+      body: JSON.stringify({})
+    });
+    if (!r.ok) {
+      var errText = await r.text();
+      console.error('Subi skip HTTP', r.status, errText.substring(0, 200));
+      return res.status(r.status).json({ error: 'Subi skip failed: ' + errText.substring(0, 100) });
+    }
+    console.log('Subi skip OK for contract', contractId);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+/* POST /subi/subscription/:id/reschedule
+   body: { date: "2025-09-01T00:00:00Z" }  (ISO 8601) */
+app.post('/subi/subscription/:id/reschedule', async function(req, res) {
+  try {
+    var contractId = req.params.id;
+    var date = req.body.date;
+    if (!date) return res.status(400).json({ error: 'date required (ISO 8601 format)' });
+    var r = await fetch(SUBI_BASE + '/subscription-contracts/' + contractId + '/reschedule/', {
+      method: 'POST',
+      headers: subiHeaders(),
+      body: JSON.stringify({ date: date })
+    });
+    if (!r.ok) {
+      var errText = await r.text();
+      console.error('Subi reschedule HTTP', r.status, errText.substring(0, 200));
+      return res.status(r.status).json({ error: 'Subi reschedule failed: ' + errText.substring(0, 100) });
+    }
+    var data = await r.json().catch(function() { return {}; });
+    console.log('Subi reschedule OK for contract', contractId, '→', date);
+    res.json({ success: true, nextBillingDate: data.date || date });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 /* ════════════════════════════════════════════════════ */
