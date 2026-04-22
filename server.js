@@ -485,6 +485,35 @@ app.get('/cc/orders', async function(req, res) {
     }), { method: 'POST' });
     var d = await r.json();
     var orders = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+
+    /* Enrich orders with tracking + shipping status from fulfillments */
+    orders = orders.map(function(o) {
+      if (o.fulfillments && o.fulfillments.length) {
+        /* Priority: DELIVERED > SHIPPED > any with tracking */
+        var delivered = o.fulfillments.find(function(f){ return f.status === 'DELIVERED' && f.trackingNumber; });
+        var shipped   = o.fulfillments.find(function(f){ return f.status === 'SHIPPED'   && f.trackingNumber; });
+        var anyTrack  = o.fulfillments.find(function(f){ return f.trackingNumber; });
+        var best      = delivered || shipped || anyTrack;
+
+        if (best) {
+          o.trackingNumber = best.trackingNumber;
+          o.shipCarrier    = best.shipCarrier || o.shipCarrier;
+          o.shipMethod     = best.shipMethod  || o.shipMethod;
+          o.dateShipped    = best.dateShipped || o.dateShipped;
+        }
+
+        /* Shipping status from best fulfillment */
+        var topStatus = o.fulfillments.reduce(function(best, f) {
+          var rank = { DELIVERED: 4, SHIPPED: 3, PROCESSING: 2, HOLD: 1, CANCELLED: 0 };
+          return (rank[f.status] || 0) > (rank[best] || 0) ? f.status : best;
+        }, 'HOLD');
+        o.shippingStatus = topStatus;
+      } else {
+        o.shippingStatus = 'PENDING';
+      }
+      return o;
+    });
+
     res.json({ success: true, orders });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
