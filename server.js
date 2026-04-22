@@ -972,6 +972,96 @@ app.post('/recharge-portal/verify', async function(req, res) {
 });
 
 /* ════════════════════════════════════════════════════
+   SUBI TEST ENDPOINTS
+════════════════════════════════════════════════════ */
+
+/* GET /subi/test?email=xxx
+   - Verifies the email exists in Subi
+   - Returns a magic link (same pattern as /recharge-portal/test)
+   - Also returns the raw subscriber record so you can confirm the data */
+app.get('/subi/test', async function(req, res) {
+  var email = (req.query.email || '').trim().toLowerCase();
+  if (!email) return res.status(400).json({ error: 'email required' });
+
+  try {
+    var subRes  = await fetch(SUBI_BASE + '/subscribers/?email=' + encodeURIComponent(email), { headers: subiHeaders() });
+    if (!subRes.ok) {
+      var errText = await subRes.text();
+      return res.status(subRes.status).json({ error: 'Subi API error: ' + errText.substring(0, 200) });
+    }
+    var subData = await subRes.json();
+    if (!subData.results || subData.results.length === 0) {
+      return res.status(404).json({ error: 'No Subi subscriber found for this email.' });
+    }
+
+    var subscriber     = subData.results[0];
+    var subiCustomerId = subscriber.id;
+
+    /* Also fetch their contracts so you can see what comes back */
+    var contractRes  = await fetch(
+      SUBI_BASE + '/subscription-contracts/?customer_id=' + subiCustomerId + '&limit=100',
+      { headers: subiHeaders() }
+    );
+    var contractData = contractRes.ok ? await contractRes.json() : { results: [] };
+
+    /* Generate a portal magic link for this email */
+    var token = createToken({ email: email, type: 'subi', foundIn: ['subi'] });
+    var link  = PORTAL_URLS.unified + '?token=' + token;
+
+    res.json({
+      found:           true,
+      magicLink:       link,
+      expiresIn:       '24 hours',
+      mode:            PORTAL_MODE,
+      /* Raw Subi data — useful for debugging field names */
+      subiCustomerId:  subiCustomerId,
+      subscriber:      subscriber,
+      contractCount:   (contractData.results || []).length,
+      contracts:       contractData.results || []
+    });
+
+  } catch (e) {
+    res.status(500).json({ error: 'Subi test error: ' + e.message });
+  }
+});
+
+/* GET /subi/debug?email=xxx
+   Lighter version — just returns raw API responses with no token generation.
+   Useful for checking exact field names / data shapes from Subi. */
+app.get('/subi/debug', async function(req, res) {
+  var email = (req.query.email || '').trim().toLowerCase();
+  if (!email) return res.status(400).json({ error: 'email required' });
+
+  var result = { email: email, subscriberLookup: null, contractsLookup: null };
+
+  try {
+    var subRes  = await fetch(SUBI_BASE + '/subscribers/?email=' + encodeURIComponent(email), { headers: subiHeaders() });
+    result.subscriberLookup = { status: subRes.status, body: await subRes.json() };
+  } catch (e) {
+    result.subscriberLookup = { error: e.message };
+  }
+
+  /* If subscriber found, also pull contracts */
+  try {
+    var results = result.subscriberLookup && result.subscriberLookup.body && result.subscriberLookup.body.results;
+    if (results && results.length > 0) {
+      var subiId       = results[0].id;
+      var contractRes  = await fetch(
+        SUBI_BASE + '/subscription-contracts/?customer_id=' + subiId + '&limit=100',
+        { headers: subiHeaders() }
+      );
+      result.contractsLookup = { status: contractRes.status, body: await contractRes.json() };
+    } else {
+      result.contractsLookup = { skipped: 'no subscriber found' };
+    }
+  } catch (e) {
+    result.contractsLookup = { error: e.message };
+  }
+
+  res.json(result);
+});
+
+/* ════════════════════════════════════════════════════
    SUBI SUBSCRIPTIONS
 ════════════════════════════════════════════════════ */
 
