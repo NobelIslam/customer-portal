@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Admin login — The Great Project</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{
+      background:#0d0d0d;
+      font-family:'Inter',-apple-system,sans-serif;
+      display:flex;align-items:center;justify-content:center;
+      min-height:100vh;color:#eee;padding:20px;
+    }
+    .box{
+      background:#141414;border:1px solid #272727;
+      border-radius:12px;padding:40px;
+      max-width:420px;width:100%;
+    }
+    .brand{
+      font-family:'Oswald','Inter',sans-serif;
+      font-size:24px;font-weight:600;letter-spacing:0.02em;
+      color:#fff;margin-bottom:4px;text-transform:uppercase;
+    }
+    .accent{color:#f04e00}
+    .subtitle{font-size:13px;color:#888;margin-bottom:32px}
+    h1{
+      font-family:'Oswald','Inter',sans-serif;
+      font-size:20px;font-weight:500;margin-bottom:8px;
+      letter-spacing:0.02em;
+    }
+    p{font-size:14px;color:#aaa;margin-bottom:24px;line-height:1.5}
+    label{display:block;font-size:12px;color:#888;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em}
+    input{
+      width:100%;background:#0d0d0d;border:1px solid #272727;color:#eee;
+      padding:12px 14px;border-radius:8px;font-size:14px;font-family:inherit;
+      outline:none;transition:border-color 0.15s;
+    }
+    input:focus{border-color:#f04e00}
+    button{
+      width:100%;background:#f04e00;border:none;color:#fff;
+      padding:12px;border-radius:8px;font-size:14px;font-weight:600;
+      cursor:pointer;margin-top:16px;font-family:inherit;
+      transition:background 0.15s;letter-spacing:0.02em;
+    }
+    button:hover{background:#d84600}
+    button:disabled{background:#333;cursor:not-allowed}
+    .msg{
+      margin-top:20px;padding:12px 14px;border-radius:8px;
+      font-size:13px;display:none;line-height:1.5;
+    }
+    .msg.ok{background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.3);color:#86efac;display:block}
+    .msg.err{background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:#fca5a5;display:block}
+    .footer{font-size:11px;color:#555;margin-top:24px;text-align:center}
+  </style>
+</head>
+<body>
+<div class="box">
+  <div class="brand">TGP <span class="accent">Admin</span></div>
+  <div class="subtitle">Subscription dashboard</div>
+
+  <h1>Sign in</h1>
+  <p>Enter your email and we'll send a magic link. Link expires in 15 minutes.</p>
+
+  <label for="email">Email</label>
+  <input id="email" type="email" placeholder="you@example.com" autocomplete="email"/>
+
+  <button id="submit" onclick="send()">Send magic link</button>
+
+  <div class="msg" id="msg"></div>
+
+  <div class="footer">Allowlisted access only</div>
+</div>
+
+<script>
+async function send() {
+  const email = document.getElementById('email').value.trim();
+  const btn   = document.getElementById('submit');
+  const msg   = document.getElementById('msg');
+
+  if (!email) {
+    msg.className = 'msg err';
+    msg.textContent = 'Please enter your email.';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+  msg.className = 'msg';
+  msg.textContent = '';
+
+  try {
+    const r = await fetch('/admin/auth/request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Failed to send link');
+
+    msg.className = 'msg ok';
+    msg.textContent = "If that email is allowlisted, a magic link has been sent. Check your inbox (and the server logs in dev).";
+    btn.textContent = 'Sent';
+  } catch (err) {
+    msg.className = 'msg err';
+    msg.textContent = err.message;
+    btn.disabled = false;
+    btn.textContent = 'Send magic link';
+  }
+}
+
+document.getElementById('email').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') send();
+});
+</script>
+</body>
+</html>

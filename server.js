@@ -1261,7 +1261,52 @@ app.post('/subi/subscription/:id/reschedule', async function(req, res) {
 /* ════════════════════════════════════════════════════ */
 app.get('/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
 
+/* ════════════════════════════════════════════════════
+   ADMIN DASHBOARD — DB, routes, sync cron
+════════════════════════════════════════════════════ */
+const adminDb     = require('./admin/db');
+const adminRouter = require('./admin/routes');
+const adminSync   = require('./admin/sync');
+const cron        = require('node-cron');
+
+app.use('/admin', adminRouter);
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, function() {
-  console.log('Server running on port ' + PORT);
-});
+
+(async function bootstrap() {
+  /* 1. Apply migrations (idempotent, safe to run on every boot) */
+  if (process.env.DATABASE_URL) {
+    try {
+      await adminDb.runMigrations();
+      console.log('[boot] migrations OK');
+    } catch (err) {
+      console.error('[boot] migrations failed — admin dashboard will not work:', err.message);
+    }
+  } else {
+    console.warn('[boot] DATABASE_URL not set — admin dashboard disabled');
+  }
+
+  /* 2. Start the sync cron unless explicitly disabled */
+  if (process.env.DATABASE_URL && process.env.SYNC_DISABLED !== 'true') {
+    /* Every 15 min — pulls deltas from CC + Recharge + Subi */
+    cron.schedule('*/15 * * * *', function() {
+      adminSync.runSyncCycle({ full: false }).catch(function(err) {
+        console.error('[sync-cron] error:', err.message);
+      });
+    });
+    console.log('[boot] sync cron scheduled every 15 min');
+
+    /* Kick off an immediate sync ~10s after boot — first run does a full pull */
+    setTimeout(function() {
+      console.log('[boot] running initial sync');
+      adminSync.runSyncCycle({ full: true }).catch(function(err) {
+        console.error('[boot] initial sync failed:', err.message);
+      });
+    }, 10000);
+  }
+
+  /* 3. Start the HTTP server */
+  app.listen(PORT, function() {
+    console.log('Server running on port ' + PORT);
+  });
+})();

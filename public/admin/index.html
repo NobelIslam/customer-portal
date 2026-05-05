@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>TGP Admin — Subscription dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{
+      background:#0d0d0d;color:#eee;
+      font-family:'Inter',-apple-system,sans-serif;font-size:14px;line-height:1.5;
+      min-height:100vh;
+    }
+    .topbar{
+      display:flex;align-items:center;justify-content:space-between;
+      padding:16px 24px;border-bottom:1px solid #1f1f1f;
+      background:#0d0d0d;position:sticky;top:0;z-index:10;
+    }
+    .brand{
+      font-family:'Oswald',sans-serif;font-size:20px;font-weight:600;
+      letter-spacing:0.04em;text-transform:uppercase;color:#fff;
+    }
+    .brand .accent{color:#f04e00}
+    .topbar-right{display:flex;gap:16px;align-items:center}
+    .sync-state{font-size:12px;color:#888}
+    .sync-state .ok{color:#86efac}
+    .sync-state .err{color:#fca5a5}
+    .btn{
+      background:transparent;border:1px solid #272727;color:#ccc;
+      padding:8px 14px;border-radius:6px;cursor:pointer;
+      font-family:inherit;font-size:13px;transition:all 0.15s;
+    }
+    .btn:hover{border-color:#f04e00;color:#fff}
+    .btn.primary{background:#f04e00;border-color:#f04e00;color:#fff}
+    .btn.primary:hover{background:#d84600}
+    .btn:disabled{opacity:0.5;cursor:not-allowed}
+
+    .container{padding:24px;max-width:1400px;margin:0 auto}
+
+    .section-label{
+      font-size:11px;text-transform:uppercase;letter-spacing:0.08em;
+      color:#666;margin:24px 0 12px;font-weight:500;
+    }
+    .section-label:first-child{margin-top:0}
+
+    /* KPI grid */
+    .kpi-grid{
+      display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+      gap:12px;margin-bottom:8px;
+    }
+    .kpi{
+      background:#141414;border:1px solid #1f1f1f;
+      border-radius:10px;padding:16px 18px;
+    }
+    .kpi-label{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px}
+    .kpi-value{
+      font-family:'Oswald',sans-serif;font-size:28px;font-weight:500;
+      color:#fff;line-height:1.1;letter-spacing:0.01em;
+    }
+    .kpi-delta{font-size:11px;margin-top:6px}
+    .delta-up{color:#86efac}
+    .delta-down{color:#fca5a5}
+    .delta-neutral{color:#888}
+    .kpi.highlight{border-color:#f04e00}
+    .kpi.highlight .kpi-value{color:#f04e00}
+
+    /* Panels */
+    .panel{
+      background:#141414;border:1px solid #1f1f1f;
+      border-radius:10px;padding:18px 20px;
+    }
+    .panel-title{
+      font-family:'Oswald',sans-serif;font-size:14px;font-weight:500;
+      letter-spacing:0.05em;text-transform:uppercase;
+      color:#fff;margin-bottom:14px;
+    }
+    .row-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:8px}
+    .row-3{display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-bottom:8px}
+    @media(max-width:900px){
+      .row-2,.row-3{grid-template-columns:1fr}
+    }
+
+    /* Activity feed */
+    .activity{display:flex;flex-direction:column;gap:0}
+    .activity-item{
+      display:flex;align-items:center;gap:10px;
+      padding:10px 0;border-bottom:1px solid #1f1f1f;font-size:13px;
+    }
+    .activity-item:last-child{border-bottom:none}
+    .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+    .dot.success{background:#22c55e}
+    .dot.danger{background:#ef4444}
+    .dot.info{background:#3b82f6}
+    .dot.warning{background:#f59e0b}
+    .dot.subi{background:#a855f7}
+    .activity-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#ccc}
+    .activity-time{color:#666;font-size:11px;flex-shrink:0}
+    .src-tag{
+      display:inline-block;font-size:9px;padding:1px 5px;border-radius:3px;
+      font-weight:600;margin-left:4px;letter-spacing:0.05em;text-transform:uppercase;
+    }
+    .src-cc{background:rgba(59,130,246,0.15);color:#93c5fd}
+    .src-rc{background:rgba(34,197,94,0.15);color:#86efac}
+    .src-subi{background:rgba(168,85,247,0.15);color:#d8b4fe}
+
+    /* Cancellations table */
+    .cancel-row{
+      display:flex;justify-content:space-between;align-items:center;
+      padding:10px 0;border-bottom:1px solid #1f1f1f;gap:12px;
+    }
+    .cancel-row:last-child{border-bottom:none}
+    .cancel-name{font-size:13px;font-weight:500;color:#eee}
+    .cancel-meta{color:#888;font-size:11px;margin-top:2px}
+    .cancel-mrr{color:#fca5a5;font-size:13px;font-weight:500;flex-shrink:0;font-family:'Oswald',sans-serif}
+
+    /* Chart wrappers */
+    .chart-wrap{position:relative;width:100%;height:240px}
+    .chart-wrap.short{height:180px}
+
+    /* Empty state */
+    .empty{padding:32px;text-align:center;color:#666;font-size:13px}
+
+    /* Loading */
+    .loading{display:flex;align-items:center;justify-content:center;min-height:60vh}
+    .spinner{
+      width:40px;height:40px;border:3px solid #272727;border-top-color:#f04e00;
+      border-radius:50%;animation:spin 0.8s linear infinite;
+    }
+    @keyframes spin{to{transform:rotate(360deg)}}
+
+    /* Source breakdown bars */
+    .src-bar{margin-bottom:14px}
+    .src-bar:last-child{margin-bottom:0}
+    .src-bar-head{display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px}
+    .src-bar-head .src-name{color:#ccc;font-weight:500}
+    .src-bar-head .src-count{color:#888}
+    .src-bar-track{height:8px;background:#1f1f1f;border-radius:4px;overflow:hidden}
+    .src-bar-fill{height:100%;border-radius:4px;transition:width 0.4s}
+
+    .product-row{
+      display:flex;justify-content:space-between;align-items:center;
+      padding:8px 0;border-bottom:1px solid #1f1f1f;font-size:13px;
+    }
+    .product-row:last-child{border-bottom:none}
+    .product-count{color:#888;font-size:12px;font-family:'Oswald',sans-serif}
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">TGP <span class="accent">Admin</span></div>
+  <div class="topbar-right">
+    <span class="sync-state" id="sync-state">—</span>
+    <button class="btn" id="sync-btn" onclick="runSync()">Sync now</button>
+    <button class="btn" onclick="logout()">Sign out</button>
+  </div>
+</div>
+
+<div class="container">
+  <div id="loading" class="loading"><div class="spinner"></div></div>
+  <div id="content" style="display:none">
+
+    <div class="section-label">Today at a glance</div>
+    <div class="kpi-grid" id="kpi-row-1"></div>
+    <div class="kpi-grid" id="kpi-row-2"></div>
+
+    <div class="section-label">Revenue, last 30 days</div>
+    <div class="panel">
+      <div class="chart-wrap"><canvas id="rev-chart"></canvas></div>
+    </div>
+
+    <div class="section-label">Forecast and breakdown</div>
+    <div class="row-2">
+      <div class="panel">
+        <div class="panel-title">Upcoming rebills, next 7 days</div>
+        <div class="chart-wrap short"><canvas id="forecast-chart"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Active subs by source</div>
+        <div id="source-bars"></div>
+      </div>
+    </div>
+
+    <div class="section-label">Today</div>
+    <div class="row-2">
+      <div class="panel">
+        <div class="panel-title">Live activity</div>
+        <div class="activity" id="activity-feed"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Recent cancellations</div>
+        <div id="cancels-list"></div>
+      </div>
+    </div>
+
+    <div class="section-label">Top products</div>
+    <div class="panel" id="products-panel"></div>
+
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+/* ════════════════════════════════════════════════════
+   Auth — pull session from URL fragment or localStorage
+   ════════════════════════════════════════════════════ */
+
+(function() {
+  /* If we just came from /admin/auth/verify, the session is in the fragment */
+  if (location.hash.indexOf('session=') !== -1) {
+    const m = location.hash.match(/session=([^&]+)/);
+    if (m) {
+      localStorage.setItem('tgp_admin_session', m[1]);
+      history.replaceState(null, '', location.pathname);
+    }
+  }
+  if (!localStorage.getItem('tgp_admin_session')) {
+    location.href = '/admin/login';
+  }
+})();
+
+const SESSION = localStorage.getItem('tgp_admin_session');
+const HEADERS = { 'Authorization': 'Bearer ' + SESSION };
+
+function logout() {
+  localStorage.removeItem('tgp_admin_session');
+  location.href = '/admin/login';
+}
+
+/* ════════════════════════════════════════════════════
+   Formatting helpers
+   ════════════════════════════════════════════════════ */
+
+function fmtMoney(cents) {
+  const n = Math.round((cents || 0) / 100);
+  return '$' + n.toLocaleString('en-US');
+}
+function fmtMoneyShort(cents) {
+  const n = (cents || 0) / 100;
+  if (n >= 1000) return '$' + (n/1000).toFixed(1) + 'k';
+  return '$' + Math.round(n);
+}
+function fmtCount(n) { return (n || 0).toLocaleString('en-US'); }
+function fmtRelative(iso) {
+  const t = new Date(iso).getTime();
+  const ms = Date.now() - t;
+  const m = Math.floor(ms / 60000);
+  if (m < 1)    return 'just now';
+  if (m < 60)   return m + 'm';
+  const h = Math.floor(m / 60);
+  if (h < 24)   return h + 'h';
+  const d = Math.floor(h / 24);
+  return d + 'd';
+}
+function delta(today, yesterday) {
+  const diff = (today || 0) - (yesterday || 0);
+  if (diff === 0) return { txt: 'same as yesterday', cls: 'delta-neutral' };
+  const sign = diff > 0 ? '+' : '';
+  return {
+    txt: sign + diff + ' vs yesterday',
+    cls: diff > 0 ? 'delta-up' : 'delta-down'
+  };
+}
+
+/* ════════════════════════════════════════════════════
+   KPI rendering
+   ════════════════════════════════════════════════════ */
+
+function renderKpis(kpis) {
+  const newDelta    = delta(kpis.newToday, kpis.newYesterday);
+  const cancelDelta = delta(kpis.cancelsToday, kpis.cancelsYesterday);
+  /* For cancels, more = worse, so flip the colour intent */
+  const cancelCls = kpis.cancelsToday > kpis.cancelsYesterday ? 'delta-down'
+                  : kpis.cancelsToday < kpis.cancelsYesterday ? 'delta-up' : 'delta-neutral';
+
+  const row1 = [
+    { label: 'Active subscriptions', value: fmtCount(kpis.activeSubs),       sub: 'across CC + Recharge + Subi', cls: 'delta-neutral' },
+    { label: 'MRR',                  value: fmtMoney(kpis.mrrCents),         sub: 'sum of active sub prices',    cls: 'delta-neutral' },
+    { label: "Today's revenue",      value: fmtMoney(kpis.todayRevenueCents), sub: kpis.todayOrders + ' orders',  cls: 'delta-neutral' }
+  ];
+  const row2 = [
+    { label: 'New subs today', value: fmtCount(kpis.newToday),        sub: newDelta.txt, cls: newDelta.cls },
+    { label: 'Cancels today',  value: fmtCount(kpis.cancelsToday),    sub: cancelDelta.txt + ' yesterday', cls: cancelCls },
+    { label: "Tomorrow's forecast", value: fmtMoney(kpis.tomorrowForecastCents), sub: kpis.tomorrowRebillCount + ' rebills due', cls: 'delta-neutral', highlight: true }
+  ];
+
+  document.getElementById('kpi-row-1').innerHTML = row1.map(kpiHtml).join('');
+  document.getElementById('kpi-row-2').innerHTML = row2.map(kpiHtml).join('');
+}
+
+function kpiHtml(k) {
+  return '<div class="kpi' + (k.highlight ? ' highlight' : '') + '">' +
+    '<div class="kpi-label">' + k.label + '</div>' +
+    '<div class="kpi-value">' + k.value + '</div>' +
+    '<div class="kpi-delta ' + k.cls + '">' + k.sub + '</div>' +
+  '</div>';
+}
+
+/* ════════════════════════════════════════════════════
+   Charts
+   ════════════════════════════════════════════════════ */
+
+let revChart = null;
+let forecastChart = null;
+
+function renderRevChart(trend) {
+  const labels = trend.map(function(r) { return new Date(r.day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); });
+  const data   = trend.map(function(r) { return Number(r.cents) / 100; });
+
+  if (revChart) revChart.destroy();
+  revChart = new Chart(document.getElementById('rev-chart'), {
+    type: 'line',
+    data: { labels: labels, datasets: [{
+      data: data, borderColor: '#f04e00',
+      backgroundColor: 'rgba(240, 78, 0, 0.1)',
+      fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2
+    }]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#0d0d0d', borderColor: '#272727', borderWidth: 1,
+          titleColor: '#fff', bodyColor: '#ccc',
+          callbacks: { label: function(c) { return '$' + Math.round(c.parsed.y).toLocaleString(); } }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#666', font: { size: 11 }, maxTicksLimit: 10 }, grid: { display: false } },
+        y: {
+          ticks: { color: '#666', font: { size: 11 }, callback: function(v) { return '$' + (v/1000).toFixed(1) + 'k'; } },
+          grid: { color: '#1f1f1f' }
+        }
+      }
+    }
+  });
+}
+
+function renderForecastChart(forecast) {
+  const labels = forecast.map(function(r) { return new Date(r.day).toLocaleDateString('en-US', { weekday: 'short' }); });
+  const data   = forecast.map(function(r) { return Number(r.cents) / 100; });
+
+  if (forecastChart) forecastChart.destroy();
+  forecastChart = new Chart(document.getElementById('forecast-chart'), {
+    type: 'bar',
+    data: { labels: labels, datasets: [{
+      data: data, backgroundColor: '#f04e00', borderRadius: 4
+    }]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#0d0d0d', borderColor: '#272727', borderWidth: 1,
+          titleColor: '#fff', bodyColor: '#ccc',
+          callbacks: { label: function(c) {
+            const r = forecast[c.dataIndex];
+            return r.n + ' rebills · $' + Math.round(c.parsed.y).toLocaleString();
+          }}
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#666', font: { size: 11 } }, grid: { display: false } },
+        y: {
+          ticks: { color: '#666', font: { size: 11 }, callback: function(v) { return '$' + (v/1000).toFixed(1) + 'k'; } },
+          grid: { color: '#1f1f1f' }
+        }
+      }
+    }
+  });
+}
+
+/* ════════════════════════════════════════════════════
+   Source breakdown — horizontal bars
+   ════════════════════════════════════════════════════ */
+
+function renderSourceBars(sources) {
+  if (!sources || !sources.length) {
+    document.getElementById('source-bars').innerHTML = '<div class="empty">No active subs yet</div>';
+    return;
+  }
+  const total = sources.reduce(function(a, s) { return a + s.n; }, 0);
+  const colors = { cc: '#3b82f6', recharge: '#22c55e', subi: '#a855f7' };
+  const labels = { cc: 'CheckoutChamp', recharge: 'Recharge', subi: 'Subi' };
+
+  document.getElementById('source-bars').innerHTML = sources.map(function(s) {
+    const pct = total > 0 ? Math.round(s.n / total * 100) : 0;
+    return '<div class="src-bar">' +
+      '<div class="src-bar-head">' +
+        '<span class="src-name">' + (labels[s.source] || s.source) + '</span>' +
+        '<span class="src-count">' + fmtCount(s.n) + ' subs · ' + fmtMoney(s.mrr_cents) + ' MRR · ' + pct + '%</span>' +
+      '</div>' +
+      '<div class="src-bar-track"><div class="src-bar-fill" style="width:' + pct + '%;background:' + (colors[s.source] || '#666') + '"></div></div>' +
+    '</div>';
+  }).join('');
+}
+
+/* ════════════════════════════════════════════════════
+   Activity feed
+   ════════════════════════════════════════════════════ */
+
+const KIND_LABELS = {
+  sub_created:    { label: 'New sub',       cls: 'success' },
+  sub_cancelled:  { label: 'Cancel',        cls: 'danger' },
+  rebill:         { label: 'Rebill',        cls: 'success' },
+  login:          { label: 'Login',         cls: 'info' },
+  failed_charge:  { label: 'Failed charge', cls: 'warning' }
+};
+
+function renderActivity(events) {
+  if (!events || !events.length) {
+    document.getElementById('activity-feed').innerHTML = '<div class="empty">No recent activity</div>';
+    return;
+  }
+  document.getElementById('activity-feed').innerHTML = events.map(function(e) {
+    const meta = KIND_LABELS[e.kind] || { label: e.kind, cls: 'info' };
+    const srcTag = e.source ? '<span class="src-tag src-' + (e.source === 'recharge' ? 'rc' : e.source) + '">' + e.source + '</span>' : '';
+    let detail = '';
+    if (e.kind === 'login') {
+      detail = e.email;
+    } else if (e.kind === 'rebill') {
+      detail = (e.payload && e.payload.amount ? '$' + e.payload.amount + ' · ' : '') + (e.payload && e.payload.product || e.email);
+    } else {
+      detail = (e.payload && e.payload.product ? e.payload.product + ' · ' : '') + e.email;
+    }
+    return '<div class="activity-item">' +
+      '<span class="dot ' + meta.cls + '"></span>' +
+      '<span class="activity-text">' + meta.label + ' — ' + escapeHtml(detail) + srcTag + '</span>' +
+      '<span class="activity-time">' + fmtRelative(e.ts) + '</span>' +
+    '</div>';
+  }).join('');
+}
+
+/* ════════════════════════════════════════════════════
+   Cancellations + products
+   ════════════════════════════════════════════════════ */
+
+function renderCancels(cancels) {
+  if (!cancels || !cancels.length) {
+    document.getElementById('cancels-list').innerHTML = '<div class="empty">No recent cancellations</div>';
+    return;
+  }
+  document.getElementById('cancels-list').innerHTML = cancels.map(function(c) {
+    const reason = c.cancel_reason ? 'Reason: ' + c.cancel_reason : 'No reason given';
+    return '<div class="cancel-row">' +
+      '<div>' +
+        '<div class="cancel-name">' + escapeHtml(c.product || 'Subscription') + '</div>' +
+        '<div class="cancel-meta">' + escapeHtml(c.customer_email || '') + ' · ' + reason + '</div>' +
+      '</div>' +
+      '<span class="cancel-mrr">-' + fmtMoney(c.price_cents) + '</span>' +
+    '</div>';
+  }).join('');
+}
+
+function renderProducts(products) {
+  if (!products || !products.length) {
+    document.getElementById('products-panel').innerHTML = '<div class="empty">No product data yet</div>';
+    return;
+  }
+  document.getElementById('products-panel').innerHTML =
+    '<div class="panel-title">Active subs by product</div>' +
+    products.map(function(p) {
+      return '<div class="product-row">' +
+        '<div>' + escapeHtml(p.product) + ' <span class="src-tag src-' + (p.source === 'recharge' ? 'rc' : p.source) + '">' + p.source + '</span></div>' +
+        '<span class="product-count">' + fmtCount(p.n) + ' · ' + fmtMoney(p.mrr_cents) + '/mo</span>' +
+      '</div>';
+    }).join('');
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+/* ════════════════════════════════════════════════════
+   Sync state
+   ════════════════════════════════════════════════════ */
+
+async function loadSyncState() {
+  try {
+    const r = await fetch('/admin/api/sync-state', { headers: HEADERS });
+    if (!r.ok) return;
+    const d = await r.json();
+    const states = d.sync || [];
+    const latest = states
+      .map(function(s) { return s.last_delta_sync_at ? new Date(s.last_delta_sync_at) : null; })
+      .filter(Boolean)
+      .sort(function(a,b) { return b - a; })[0];
+    const errors = states.filter(function(s) { return s.last_error; });
+
+    let html = '';
+    if (latest) html += 'Last sync ' + fmtRelative(latest.toISOString());
+    else        html += 'Never synced';
+    if (errors.length) html += ' · <span class="err">' + errors.length + ' source error</span>';
+    else if (latest)   html += ' · <span class="ok">all sources ok</span>';
+
+    document.getElementById('sync-state').innerHTML = html;
+  } catch (err) { /* silent */ }
+}
+
+/* ════════════════════════════════════════════════════
+   Main load
+   ════════════════════════════════════════════════════ */
+
+async function loadOverview() {
+  try {
+    const r = await fetch('/admin/api/overview', { headers: HEADERS });
+    if (r.status === 401) { logout(); return; }
+    if (!r.ok) throw new Error('Failed to load overview');
+    const d = await r.json();
+
+    renderKpis(d.kpis);
+    renderRevChart(d.revenueTrend);
+    renderForecastChart(d.forecast7d);
+    renderSourceBars(d.sourceBreakdown);
+    renderActivity(d.recentEvents);
+    renderCancels(d.recentCancels);
+    renderProducts(d.productBreakdown);
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = 'block';
+
+    await loadSyncState();
+  } catch (err) {
+    document.getElementById('loading').innerHTML =
+      '<div style="color:#fca5a5;text-align:center">' +
+      '<p>' + escapeHtml(err.message) + '</p>' +
+      '<button class="btn" style="margin-top:16px" onclick="location.reload()">Retry</button>' +
+      '</div>';
+  }
+}
+
+async function runSync() {
+  const btn = document.getElementById('sync-btn');
+  btn.disabled = true;
+  btn.textContent = 'Syncing...';
+  try {
+    const r = await fetch('/admin/sync/run', { method: 'POST', headers: HEADERS });
+    if (!r.ok) throw new Error('Sync failed to start');
+    /* Sync runs in background — give it ~10s then refresh */
+    setTimeout(function() {
+      loadOverview();
+      btn.disabled = false;
+      btn.textContent = 'Sync now';
+    }, 10000);
+  } catch (err) {
+    alert(err.message);
+    btn.disabled = false;
+    btn.textContent = 'Sync now';
+  }
+}
+
+/* Initial load + auto-refresh every 30s */
+loadOverview();
+setInterval(loadOverview, 30000);
+</script>
+</body>
+</html>

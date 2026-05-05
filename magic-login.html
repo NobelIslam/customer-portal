@@ -100,6 +100,19 @@
 
       if (!verifyRes.ok || !data.success) { showError(data.error || 'Login failed.'); return; }
 
+      /* Fire-and-forget login event for the admin dashboard.
+         Failures are silently swallowed so we never block the customer. */
+      fetch(PROXY_URL + '/admin/track-login', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          email:   data.email,
+          source:  data.type,
+          foundIn: data.foundIn,
+          ua:      navigator.userAgent
+        })
+      }).catch(function(){});
+
       /* Step 3: Set all session data CC needs */
       var ss  = sessionStorage;
       var ls  = localStorage;
