@@ -50,6 +50,20 @@ function verifySessionToken(token) {
     return payload;
   } catch (e) { return null; }
 }
+/* ── Password verification ──────────────────────── */
+
+function verifyPassword(email, password) {
+  email = (email || '').trim().toLowerCase();
+  if (!email || !password) return null;
+  if (!isAllowed(email)) return null;
+  const expected = process.env.ADMIN_PASSWORD;
+  if (!expected || expected.length < 6) {
+    console.warn('[admin-auth] ADMIN_PASSWORD not set or too short');
+    return null;
+  }
+  if (password !== expected) return null;
+  return { email: email, session: createSessionToken(email) };
+}
 
 /* ── Express middleware ──────────────────────────── */
 
@@ -155,6 +169,7 @@ module.exports = {
   requireAdmin:     requireAdmin,
   requestMagicLink: requestMagicLink,
   verifyMagicLink:  verifyMagicLink,
+  verifyPassword:   verifyPassword,
   isAllowed:        isAllowed,
   getAllowlist:     getAllowlist
 };
