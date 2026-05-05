@@ -53,7 +53,16 @@ router.post('/auth/request', async function(req, res) {
     res.status(400).json({ error: err.message });
   }
 });
-
+/* Auth — password login */
+router.post('/auth/login', function(req, res) {
+  try {
+    const r = auth.verifyPassword(req.body.email, req.body.password);
+    if (!r) return res.status(401).json({ error: 'Invalid email or password' });
+    res.json(r);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 /* Auth — verify magic link, set session token, redirect to dashboard */
 router.get('/auth/verify', async function(req, res) {
   try {
