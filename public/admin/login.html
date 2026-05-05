@@ -30,7 +30,8 @@
       letter-spacing:0.02em;
     }
     p{font-size:14px;color:#aaa;margin-bottom:24px;line-height:1.5}
-    label{display:block;font-size:12px;color:#888;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em}
+    label{display:block;font-size:12px;color:#888;margin-bottom:6px;margin-top:14px;text-transform:uppercase;letter-spacing:0.05em}
+    label:first-of-type{margin-top:0}
     input{
       width:100%;background:#0d0d0d;border:1px solid #272727;color:#eee;
       padding:12px 14px;border-radius:8px;font-size:14px;font-family:inherit;
@@ -40,11 +41,16 @@
     button{
       width:100%;background:#f04e00;border:none;color:#fff;
       padding:12px;border-radius:8px;font-size:14px;font-weight:600;
-      cursor:pointer;margin-top:16px;font-family:inherit;
+      cursor:pointer;margin-top:20px;font-family:inherit;
       transition:background 0.15s;letter-spacing:0.02em;
     }
     button:hover{background:#d84600}
     button:disabled{background:#333;cursor:not-allowed}
+    .alt-btn{
+      background:transparent;border:1px solid #272727;color:#888;
+      margin-top:10px;font-weight:500;
+    }
+    .alt-btn:hover{border-color:#444;color:#ccc;background:transparent}
     .msg{
       margin-top:20px;padding:12px 14px;border-radius:8px;
       font-size:13px;display:none;line-height:1.5;
@@ -60,12 +66,16 @@
   <div class="subtitle">Subscription dashboard</div>
 
   <h1>Sign in</h1>
-  <p>Enter your email and we'll send a magic link. Link expires in 15 minutes.</p>
+  <p>Enter your email and password.</p>
 
   <label for="email">Email</label>
   <input id="email" type="email" placeholder="you@example.com" autocomplete="email"/>
 
-  <button id="submit" onclick="send()">Send magic link</button>
+  <label for="password">Password</label>
+  <input id="password" type="password" placeholder="Password" autocomplete="current-password"/>
+
+  <button id="submit" onclick="login()">Sign in</button>
+  <button class="alt-btn" onclick="sendMagicLink()">Or send me a magic link</button>
 
   <div class="msg" id="msg"></div>
 
@@ -73,19 +83,52 @@
 </div>
 
 <script>
-async function send() {
-  const email = document.getElementById('email').value.trim();
-  const btn   = document.getElementById('submit');
-  const msg   = document.getElementById('msg');
+async function login() {
+  const email    = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  const btn      = document.getElementById('submit');
+  const msg      = document.getElementById('msg');
 
-  if (!email) {
+  if (!email || !password) {
     msg.className = 'msg err';
-    msg.textContent = 'Please enter your email.';
+    msg.textContent = 'Please enter your email and password.';
     return;
   }
 
   btn.disabled = true;
-  btn.textContent = 'Sending...';
+  btn.textContent = 'Signing in...';
+  msg.className = 'msg';
+  msg.textContent = '';
+
+  try {
+    const r = await fetch('/admin/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email, password: password })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Invalid email or password');
+
+    localStorage.setItem('tgp_admin_session', d.session);
+    location.href = '/admin/';
+  } catch (err) {
+    msg.className = 'msg err';
+    msg.textContent = err.message;
+    btn.disabled = false;
+    btn.textContent = 'Sign in';
+  }
+}
+
+async function sendMagicLink() {
+  const email = document.getElementById('email').value.trim();
+  const msg   = document.getElementById('msg');
+
+  if (!email) {
+    msg.className = 'msg err';
+    msg.textContent = 'Please enter your email first.';
+    return;
+  }
+
   msg.className = 'msg';
   msg.textContent = '';
 
@@ -97,20 +140,19 @@ async function send() {
     });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || 'Failed to send link');
-
     msg.className = 'msg ok';
-    msg.textContent = "If that email is allowlisted, a magic link has been sent. Check your inbox (and the server logs in dev).";
-    btn.textContent = 'Sent';
+    msg.textContent = 'If that email is allowlisted, a magic link has been sent. Check Klaviyo or the Render logs.';
   } catch (err) {
     msg.className = 'msg err';
     msg.textContent = err.message;
-    btn.disabled = false;
-    btn.textContent = 'Send magic link';
   }
 }
 
+document.getElementById('password').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') login();
+});
 document.getElementById('email').addEventListener('keydown', function(e) {
-  if (e.key === 'Enter') send();
+  if (e.key === 'Enter') document.getElementById('password').focus();
 });
 </script>
 </body>
