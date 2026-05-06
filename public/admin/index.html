@@ -416,16 +416,8 @@
       <div class="panel mb10" id="products-panel"></div>
 
       <!-- Gateway breakdown -->
-      <div class="section-label" id="s-gateway">Payment gateway breakdown</div>
-      <div class="panel mb10" id="gateway-panel">
-        <div class="panel-head"><span class="panel-title">Active subscriptions by gateway (future bill date only)</span></div>
-        <div style="display:flex;align-items:center;gap:32px;padding:20px 24px;flex-wrap:wrap">
-          <div style="position:relative;width:200px;height:200px;flex-shrink:0">
-            <canvas id="gateway-chart"></canvas>
-          </div>
-          <div id="gateway-legend" style="flex:1;min-width:180px"></div>
-        </div>
-      </div>
+      <div class="section-label" id="s-gateway">Active subscriptions by gateway</div>
+      <div class="panel mb10" id="gateway-panel"></div>
 
     </div><!-- /#content -->
   </div><!-- /.main -->
@@ -912,54 +904,29 @@ function renderProducts(products) {
     }).join('');
 }
 
-/* ── Gateway breakdown donut chart ── */
-var gatewayChart = null;
-var GATEWAY_COLORS = ['#f04e00','#3b82f6','#22c55e','#a855f7','#f59e0b','#06b6d4','#ec4899','#64748b'];
+/* ── Gateway breakdown ── */
 function renderGateway(gateways) {
-  var legendEl = document.getElementById('gateway-legend');
+  var el = document.getElementById('gateway-panel');
   if (!gateways || !gateways.length) {
-    if (legendEl) legendEl.innerHTML = '<div class="empty">No gateway data</div>';
+    el.innerHTML = '<div class="empty">No gateway data</div>';
     return;
   }
-  var total  = gateways.reduce(function(s, g) { return s + g.n; }, 0);
-  var labels = gateways.map(function(g) { return g.gateway; });
-  var counts = gateways.map(function(g) { return g.n; });
-  var colors = gateways.map(function(_, i) { return GATEWAY_COLORS[i % GATEWAY_COLORS.length]; });
-
-  if (gatewayChart) { gatewayChart.destroy(); gatewayChart = null; }
-  var ctx = document.getElementById('gateway-chart');
-  if (!ctx) return;
-  gatewayChart = new Chart(ctx, {
-    type: 'doughnut',
-    data: { labels: labels, datasets: [{ data: counts, backgroundColor: colors, borderColor: '#111111', borderWidth: 2, hoverOffset: 6 }] },
-    options: {
-      cutout: '68%',
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: function(c) {
-              var g = gateways[c.dataIndex];
-              var pct = total ? ((g.n / total) * 100).toFixed(1) : 0;
-              return ' ' + $n(g.n) + ' subs (' + pct + '%) · ' + $m(Number(g.mrr_cents)) + '/mo';
-            }
-          }
-        }
-      }
-    }
-  });
-
-  /* Custom legend */
-  legendEl.innerHTML = gateways.map(function(g, i) {
-    var pct = total ? ((g.n / total) * 100).toFixed(1) : 0;
-    return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">' +
-      '<span style="width:12px;height:12px;border-radius:50%;background:' + colors[i] + ';flex-shrink:0"></span>' +
-      '<div>' +
-        '<div style="font-size:13px;color:var(--fg);font-weight:500">' + esc(g.gateway) + '</div>' +
-        '<div style="font-size:11px;color:var(--muted2)">' + $n(g.n) + ' subs · ' + pct + '% · ' + $m(Number(g.mrr_cents)) + '/mo</div>' +
-      '</div>' +
-    '</div>';
-  }).join('');
+  var total = gateways.reduce(function(s, g) { return s + g.n; }, 0);
+  el.innerHTML =
+    '<div class="panel-head"><span class="panel-title">CheckoutChamp — active subscriptions by payment gateway</span></div>' +
+    gateways.map(function(g) {
+      var pct = total ? ((g.n / total) * 100).toFixed(1) : 0;
+      var bar = '<div style="height:4px;border-radius:2px;background:var(--border);margin-top:4px">' +
+        '<div style="height:4px;border-radius:2px;background:var(--accent);width:' + pct + '%"></div></div>';
+      return '<div class="prod-row">' +
+        '<div class="prod-name">' + esc(g.gateway) + '</div>' +
+        '<div style="flex:1;padding:0 16px">' + bar + '</div>' +
+        '<div class="prod-right">' +
+          '<span class="prod-count">' + $n(g.n) + ' subs (' + pct + '%)</span>' +
+          '<span class="prod-mrr">' + $m(Number(g.mrr_cents)) + '/mo</span>' +
+        '</div>' +
+      '</div>';
+    }).join('');
 }
 
 /* ── Page subtitle ── */
