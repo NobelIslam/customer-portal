@@ -913,7 +913,7 @@ function renderGateway(gateways) {
   }
   var total = gateways.reduce(function(s, g) { return s + g.n; }, 0);
   el.innerHTML =
-    '<div class="panel-head"><span class="panel-title">CheckoutChamp — active subscriptions by payment gateway</span></div>' +
+    '<div class="panel-head"><span class="panel-title">CheckoutChamp — active subscriptions by gateway (future bill date only)</span></div>' +
     gateways.map(function(g) {
       var pct = total ? ((g.n / total) * 100).toFixed(1) : 0;
       var bar = '<div style="height:4px;border-radius:2px;background:var(--border);margin-top:4px">' +

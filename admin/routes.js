@@ -187,7 +187,7 @@ router.get('/api/overview', async function(req, res) {
       db.many(`SELECT COALESCE(raw->>'merchant', 'Unknown') AS gateway,
                COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS mrr_cents
                FROM subscriptions
-               WHERE source = 'cc' AND status = 'ACTIVE'
+               WHERE source = 'cc' AND status = 'ACTIVE' AND next_bill_at >= NOW()
                GROUP BY raw->>'merchant' ORDER BY n DESC`)
     ]);
 
