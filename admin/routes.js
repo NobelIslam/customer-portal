@@ -282,4 +282,254 @@ router.post('/sync/run', async function(req, res) {
   }
 });
 
+/* ════════════════════════════════════════════════════
+   CC API TEST ENDPOINTS
+   All require admin auth. Use these to inspect raw CC
+   API responses and diagnose data accuracy issues.
+   ════════════════════════════════════════════════════ */
+
+const fetch = require('node-fetch');
+
+function ccTestParams(extra) {
+  const p = new URLSearchParams({
+    loginId:  process.env.CC_LOGIN_ID  || '',
+    password: process.env.CC_API_PASSWORD || ''
+  });
+  if (extra) for (const k in extra) p.append(k, extra[k]);
+  return p.toString();
+}
+
+function ccFmtDate(d) {
+  return (d.getMonth()+1).toString().padStart(2,'0') + '/' +
+          d.getDate().toString().padStart(2,'0') + '/' +
+          d.getFullYear();
+}
+
+/* ── GET /admin/api/cc/purchases
+   Returns raw purchase/query results.
+   Query params:
+     startDate  MM/DD/YYYY  (default: 30 days ago)
+     endDate    MM/DD/YYYY  (default: today)
+     page       number      (default: 1)
+     limit      number      (default: 25, max 200)
+     status     e.g. ACTIVE (optional filter)
+   ────────────────────────────────────────────────── */
+router.get('/api/cc/purchases', async function(req, res) {
+  try {
+    const today    = new Date();
+    const ago30    = new Date(); ago30.setDate(ago30.getDate() - 30);
+    const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const startDate = req.query.startDate || ccFmtDate(ago30);
+    const endDate   = req.query.endDate   || ccFmtDate(tomorrow);
+    const page      = parseInt(req.query.page  || '1',  10);
+    const limit     = Math.min(parseInt(req.query.limit || '25', 10), 200);
+
+    const extra = { startDate, endDate, resultsPerPage: limit, page };
+    if (req.query.status) extra.status = req.query.status;
+
+    const url = 'https://api.checkoutchamp.com/purchase/query/?' + ccTestParams(extra);
+    const r   = await fetch(url, { method: 'POST' });
+    const raw = await r.text();
+
+    let d;
+    try { d = JSON.parse(raw); } catch(e) {
+      return res.status(502).json({ error: 'CC returned non-JSON', preview: raw.substring(0, 300) });
+    }
+
+    const rows = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+
+    /* Summarise distinct values to help diagnose field names */
+    const statusValues  = [...new Set(rows.map(function(p){ return p.status; }))];
+    const priceFields   = rows.length ? Object.keys(rows[0]).filter(function(k){ return /price|amount|cost|billing/i.test(k); }) : [];
+    const sampleRecord  = rows[0] || null;
+
+    res.json({
+      _meta: {
+        requestedUrl: 'POST https://api.checkoutchamp.com/purchase/query/',
+        params: { startDate, endDate, page, limit, status: req.query.status || '(all)' },
+        ccResult:   d.result,
+        totalCount: d.message && d.message.totalCount,
+        returnedCount: rows.length,
+        distinctStatusValues: statusValues,
+        priceRelatedFields:   priceFields
+      },
+      sampleRecord: sampleRecord,
+      allRecords:   rows
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ── GET /admin/api/cc/purchases/summary
+   Counts active vs cancelled vs other across a date window.
+   Same query params as /purchases.
+   ────────────────────────────────────────────────── */
+router.get('/api/cc/purchases/summary', async function(req, res) {
+  try {
+    const today    = new Date();
+    const ago30    = new Date(); ago30.setDate(ago30.getDate() - 30);
+    const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const startDate = req.query.startDate || ccFmtDate(ago30);
+    const endDate   = req.query.endDate   || ccFmtDate(tomorrow);
+
+    /* Page through all results (up to 10 pages = 2000 records) */
+    const limit    = 200;
+    let page       = 1;
+    let allRows    = [];
+
+    while (page <= 10) {
+      const url = 'https://api.checkoutchamp.com/purchase/query/?' + ccTestParams({ startDate, endDate, resultsPerPage: limit, page });
+      const r   = await fetch(url, { method: 'POST' });
+      const d   = await r.json();
+      const rows = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+      allRows = allRows.concat(rows);
+      if (rows.length < limit) break;
+      page++;
+    }
+
+    /* Count by status */
+    const byStatus = {};
+    let totalPriceCents = 0;
+    allRows.forEach(function(p) {
+      const s = String(p.status || 'UNKNOWN');
+      byStatus[s] = (byStatus[s] || 0) + 1;
+      /* Try to sum price for whatever status 'active' looks like */
+      const price = parseFloat(p.price || p.recurringPrice || p.billingAmount || 0);
+      if (!isNaN(price)) totalPriceCents += Math.round(price * 100);
+    });
+
+    /* Detect which status value likely means "active" */
+    const activeGuess = Object.keys(byStatus).filter(function(s){
+      return /^(active|1|true|running|enabled)$/i.test(s.trim());
+    });
+
+    res.json({
+      _meta: {
+        params: { startDate, endDate },
+        totalRecordsFetched: allRows.length
+      },
+      countByStatus:    byStatus,
+      likelyActiveKey:  activeGuess,
+      totalMRRCents:    totalPriceCents,
+      totalMRRDollars:  (totalPriceCents / 100).toFixed(2),
+      priceFieldSample: allRows.slice(0,3).map(function(p){ return {
+        purchaseId: p.purchaseId,
+        status:     p.status,
+        price:      p.price,
+        recurringPrice: p.recurringPrice,
+        billingAmount:  p.billingAmount,
+        productName:    p.productName
+      }; })
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ── GET /admin/api/cc/members
+   Calls /members/query/ — may give a more accurate active count
+   than purchase/query since it queries membership status directly.
+   Query params:
+     page   (default: 1)
+     limit  (default: 25)
+   ────────────────────────────────────────────────── */
+router.get('/api/cc/members', async function(req, res) {
+  try {
+    const page  = parseInt(req.query.page  || '1',  10);
+    const limit = Math.min(parseInt(req.query.limit || '25', 10), 200);
+
+    const today    = new Date();
+    const ago2yr   = new Date(); ago2yr.setFullYear(ago2yr.getFullYear() - 2);
+
+    const url = 'https://api.checkoutchamp.com/members/query/?' + ccTestParams({
+      startDate:      ccFmtDate(ago2yr),
+      endDate:        ccFmtDate(today),
+      resultsPerPage: limit,
+      page:           page
+    });
+
+    const r   = await fetch(url, { method: 'POST' });
+    const raw = await r.text();
+    let d;
+    try { d = JSON.parse(raw); } catch(e) {
+      return res.status(502).json({ error: 'CC returned non-JSON', preview: raw.substring(0, 300) });
+    }
+
+    const rows = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+    const statusValues = [...new Set(rows.map(function(m){ return m.status || m.memberStatus; }))];
+
+    res.json({
+      _meta: {
+        endpoint: 'POST https://api.checkoutchamp.com/members/query/',
+        totalCount:    d.message && d.message.totalCount,
+        returnedCount: rows.length,
+        distinctStatusValues: statusValues
+      },
+      sampleRecord: rows[0] || null,
+      allRecords:   rows
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ── GET /admin/api/cc/db-vs-cc
+   Compares our local DB counts against a fresh CC API pull
+   so you can see the gap at a glance.
+   ────────────────────────────────────────────────── */
+router.get('/api/cc/db-vs-cc', async function(req, res) {
+  try {
+    /* DB counts */
+    const [dbActive, dbTotal, dbMrr] = await Promise.all([
+      db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE source='cc' AND status='ACTIVE'`),
+      db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE source='cc'`),
+      db.one(`SELECT COALESCE(SUM(price_cents),0)::bigint AS cents FROM subscriptions WHERE source='cc' AND status='ACTIVE'`)
+    ]);
+
+    /* CC API — last 30 days */
+    const today    = new Date();
+    const ago30    = new Date(); ago30.setDate(ago30.getDate() - 30);
+    const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const url30 = 'https://api.checkoutchamp.com/purchase/query/?' + ccTestParams({
+      startDate: ccFmtDate(ago30), endDate: ccFmtDate(tomorrow), resultsPerPage: 1, page: 1
+    });
+    const r30  = await fetch(url30, { method: 'POST' });
+    const d30  = await r30.json();
+
+    /* CC API — last 2 years */
+    const ago2yr = new Date(); ago2yr.setFullYear(ago2yr.getFullYear() - 2);
+    const url2y  = 'https://api.checkoutchamp.com/purchase/query/?' + ccTestParams({
+      startDate: ccFmtDate(ago2yr), endDate: ccFmtDate(tomorrow), resultsPerPage: 1, page: 1
+    });
+    const r2y  = await fetch(url2y, { method: 'POST' });
+    const d2y  = await r2y.json();
+
+    res.json({
+      database: {
+        activeSubscriptions: dbActive.n,
+        totalSubscriptions:  dbTotal.n,
+        mrrDollars: (Number(dbMrr.cents) / 100).toFixed(2),
+        note: 'Only subscriptions that have been synced into local DB'
+      },
+      ccApi: {
+        totalInLast30Days: d30.message && d30.message.totalCount,
+        totalInLast2Years: d2y.message && d2y.message.totalCount,
+        note: 'Raw count from CC API — includes all statuses (active + cancelled)'
+      },
+      diagnosis: {
+        dbHasLessRecordsThanCC: dbTotal.n < (d2y.message && d2y.message.totalCount),
+        recommendation: dbTotal.n < (d2y.message && d2y.message.totalCount)
+          ? 'Run a FULL sync (POST /admin/sync/run?full=1) to import all historical CC subscriptions'
+          : 'Record counts look close — check status field mapping'
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
