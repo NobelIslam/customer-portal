@@ -1,413 +1,697 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>TGP Admin — Subscription dashboard</title>
+  <title>TGP Admin — Subscription Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
   <style>
-    *{box-sizing:border-box;margin:0;padding:0}
-    body{
-      background:#0d0d0d;color:#eee;
-      font-family:'Inter',-apple-system,sans-serif;font-size:14px;line-height:1.5;
-      min-height:100vh;
-    }
-    .topbar{
-      display:flex;align-items:center;justify-content:space-between;
-      padding:16px 24px;border-bottom:1px solid #1f1f1f;
-      background:#0d0d0d;position:sticky;top:0;z-index:10;
-    }
-    .brand{
-      font-family:'Oswald',sans-serif;font-size:20px;font-weight:600;
-      letter-spacing:0.04em;text-transform:uppercase;color:#fff;
-    }
-    .brand .accent{color:#f04e00}
-    .topbar-right{display:flex;gap:16px;align-items:center}
-    .sync-state{font-size:12px;color:#888}
-    .sync-state .ok{color:#86efac}
-    .sync-state .err{color:#fca5a5}
-    .btn{
-      background:transparent;border:1px solid #272727;color:#ccc;
-      padding:8px 14px;border-radius:6px;cursor:pointer;
-      font-family:inherit;font-size:13px;transition:all 0.15s;
-    }
-    .btn:hover{border-color:#f04e00;color:#fff}
-    .btn.primary{background:#f04e00;border-color:#f04e00;color:#fff}
-    .btn.primary:hover{background:#d84600}
-    .btn:disabled{opacity:0.5;cursor:not-allowed}
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    .container{padding:24px;max-width:1400px;margin:0 auto}
-
-    .section-label{
-      font-size:11px;text-transform:uppercase;letter-spacing:0.08em;
-      color:#666;margin:24px 0 12px;font-weight:500;
-    }
-    .section-label:first-child{margin-top:0}
-
-    /* KPI grid */
-    .kpi-grid{
-      display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
-      gap:12px;margin-bottom:8px;
-    }
-    .kpi{
-      background:#141414;border:1px solid #1f1f1f;
-      border-radius:10px;padding:16px 18px;
-    }
-    .kpi-label{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px}
-    .kpi-value{
-      font-family:'Oswald',sans-serif;font-size:28px;font-weight:500;
-      color:#fff;line-height:1.1;letter-spacing:0.01em;
-    }
-    .kpi-delta{font-size:11px;margin-top:6px}
-    .delta-up{color:#86efac}
-    .delta-down{color:#fca5a5}
-    .delta-neutral{color:#888}
-    .kpi.highlight{border-color:#f04e00}
-    .kpi.highlight .kpi-value{color:#f04e00}
-
-    /* Panels */
-    .panel{
-      background:#141414;border:1px solid #1f1f1f;
-      border-radius:10px;padding:18px 20px;
-    }
-    .panel-title{
-      font-family:'Oswald',sans-serif;font-size:14px;font-weight:500;
-      letter-spacing:0.05em;text-transform:uppercase;
-      color:#fff;margin-bottom:14px;
-    }
-    .row-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:8px}
-    .row-3{display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-bottom:8px}
-    @media(max-width:900px){
-      .row-2,.row-3{grid-template-columns:1fr}
+    :root {
+      --bg:       #0a0a0a;
+      --bg2:      #111111;
+      --bg3:      #181818;
+      --border:   #222222;
+      --border2:  #2a2a2a;
+      --text:     #e8e8e8;
+      --muted:    #666;
+      --muted2:   #999;
+      --accent:   #f04e00;
+      --accent2:  #ff6b35;
+      --green:    #22c55e;
+      --red:      #ef4444;
+      --blue:     #3b82f6;
+      --purple:   #a855f7;
+      --yellow:   #f59e0b;
+      --cc-color:      #3b82f6;
+      --rc-color:      #22c55e;
+      --subi-color:    #a855f7;
     }
 
-    /* Activity feed */
-    .activity{display:flex;flex-direction:column;gap:0}
-    .activity-item{
-      display:flex;align-items:center;gap:10px;
-      padding:10px 0;border-bottom:1px solid #1f1f1f;font-size:13px;
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+      min-height: 100vh;
     }
-    .activity-item:last-child{border-bottom:none}
-    .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-    .dot.success{background:#22c55e}
-    .dot.danger{background:#ef4444}
-    .dot.info{background:#3b82f6}
-    .dot.warning{background:#f59e0b}
-    .dot.subi{background:#a855f7}
-    .activity-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#ccc}
-    .activity-time{color:#666;font-size:11px;flex-shrink:0}
-    .src-tag{
-      display:inline-block;font-size:9px;padding:1px 5px;border-radius:3px;
-      font-weight:600;margin-left:4px;letter-spacing:0.05em;text-transform:uppercase;
+
+    /* ── Topbar ── */
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 24px; height: 56px;
+      background: var(--bg2); border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 50;
     }
-    .src-cc{background:rgba(59,130,246,0.15);color:#93c5fd}
-    .src-rc{background:rgba(34,197,94,0.15);color:#86efac}
-    .src-subi{background:rgba(168,85,247,0.15);color:#d8b4fe}
-
-    /* Cancellations table */
-    .cancel-row{
-      display:flex;justify-content:space-between;align-items:center;
-      padding:10px 0;border-bottom:1px solid #1f1f1f;gap:12px;
+    .brand {
+      font-family: 'Oswald', sans-serif; font-size: 18px; font-weight: 600;
+      letter-spacing: 0.06em; text-transform: uppercase; color: #fff;
     }
-    .cancel-row:last-child{border-bottom:none}
-    .cancel-name{font-size:13px;font-weight:500;color:#eee}
-    .cancel-meta{color:#888;font-size:11px;margin-top:2px}
-    .cancel-mrr{color:#fca5a5;font-size:13px;font-weight:500;flex-shrink:0;font-family:'Oswald',sans-serif}
-
-    /* Chart wrappers */
-    .chart-wrap{position:relative;width:100%;height:240px}
-    .chart-wrap.short{height:180px}
-
-    /* Empty state */
-    .empty{padding:32px;text-align:center;color:#666;font-size:13px}
-
-    /* Loading */
-    .loading{display:flex;align-items:center;justify-content:center;min-height:60vh}
-    .spinner{
-      width:40px;height:40px;border:3px solid #272727;border-top-color:#f04e00;
-      border-radius:50%;animation:spin 0.8s linear infinite;
+    .brand .dot { color: var(--accent); }
+    .topbar-right { display: flex; gap: 10px; align-items: center; }
+    .sync-pill {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 11px; color: var(--muted); background: var(--bg3);
+      border: 1px solid var(--border); border-radius: 20px; padding: 4px 10px;
     }
-    @keyframes spin{to{transform:rotate(360deg)}}
-
-    /* Source breakdown bars */
-    .src-bar{margin-bottom:14px}
-    .src-bar:last-child{margin-bottom:0}
-    .src-bar-head{display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px}
-    .src-bar-head .src-name{color:#ccc;font-weight:500}
-    .src-bar-head .src-count{color:#888}
-    .src-bar-track{height:8px;background:#1f1f1f;border-radius:4px;overflow:hidden}
-    .src-bar-fill{height:100%;border-radius:4px;transition:width 0.4s}
-
-    .product-row{
-      display:flex;justify-content:space-between;align-items:center;
-      padding:8px 0;border-bottom:1px solid #1f1f1f;font-size:13px;
+    .sync-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+    .sync-dot.ok  { background: var(--green); box-shadow: 0 0 6px rgba(34,197,94,.5); }
+    .sync-dot.err { background: var(--red); }
+    .btn {
+      background: var(--bg3); border: 1px solid var(--border2); color: var(--muted2);
+      padding: 7px 14px; border-radius: 6px; cursor: pointer;
+      font-family: inherit; font-size: 12px; font-weight: 500;
+      transition: all 0.15s;
     }
-    .product-row:last-child{border-bottom:none}
-    .product-count{color:#888;font-size:12px;font-family:'Oswald',sans-serif}
+    .btn:hover { border-color: var(--accent); color: #fff; }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+    .btn.primary:hover { background: var(--accent2); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Layout ── */
+    .container { padding: 20px 24px; max-width: 1440px; margin: 0 auto; }
+    .section-label {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
+      color: var(--muted); margin: 24px 0 12px; font-weight: 600;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .section-label::after {
+      content: ''; flex: 1; height: 1px; background: var(--border);
+    }
+    .section-label:first-child { margin-top: 0; }
+    .grid-6 { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .grid-21 { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
+    .grid-12 { display: grid; grid-template-columns: 1fr 2fr; gap: 12px; }
+    @media (max-width: 1100px) {
+      .grid-6 { grid-template-columns: repeat(3, 1fr); }
+      .grid-3 { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 700px) {
+      .grid-6, .grid-3, .grid-2, .grid-21, .grid-12 { grid-template-columns: 1fr; }
+    }
+
+    /* ── KPI Cards ── */
+    .kpi {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 16px 18px;
+      transition: border-color 0.2s;
+    }
+    .kpi:hover { border-color: var(--border2); }
+    .kpi-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; font-weight: 600; }
+    .kpi-value {
+      font-family: 'Oswald', sans-serif; font-size: 30px; font-weight: 500;
+      color: #fff; line-height: 1; letter-spacing: 0.01em;
+    }
+    .kpi-sub { font-size: 11px; margin-top: 6px; display: flex; align-items: center; gap: 4px; }
+    .up   { color: var(--green); }
+    .down { color: var(--red); }
+    .neutral { color: var(--muted); }
+    .kpi.accent-border { border-color: rgba(240,78,0,.4); }
+    .kpi.accent-border .kpi-value { color: var(--accent); }
+    .kpi.green-border { border-color: rgba(34,197,94,.3); }
+    .kpi.green-border .kpi-value { color: var(--green); }
+    .kpi.red-border { border-color: rgba(239,68,68,.3); }
+    .kpi.red-border .kpi-value { color: var(--red); }
+
+    /* ── Source Cards ── */
+    .src-card {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 18px 20px;
+    }
+    .src-card-head {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .src-name {
+      font-family: 'Oswald', sans-serif; font-size: 13px; font-weight: 500;
+      letter-spacing: 0.05em; text-transform: uppercase;
+    }
+    .src-badge {
+      font-size: 10px; padding: 2px 8px; border-radius: 20px; font-weight: 600;
+      letter-spacing: 0.04em; text-transform: uppercase;
+    }
+    .badge-cc    { background: rgba(59,130,246,.15);  color: #93c5fd; border: 1px solid rgba(59,130,246,.3); }
+    .badge-rc    { background: rgba(34,197,94,.15);   color: #86efac; border: 1px solid rgba(34,197,94,.3); }
+    .badge-subi  { background: rgba(168,85,247,.15);  color: #d8b4fe; border: 1px solid rgba(168,85,247,.3); }
+    .src-stats { display: flex; gap: 20px; }
+    .src-stat-val {
+      font-family: 'Oswald', sans-serif; font-size: 26px;
+      font-weight: 500; color: #fff; line-height: 1;
+    }
+    .src-stat-lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 4px; }
+    .src-bar-wrap { margin-top: 14px; }
+    .src-bar-track { height: 4px; background: var(--border2); border-radius: 2px; overflow: hidden; }
+    .src-bar-fill  { height: 100%; border-radius: 2px; transition: width 0.5s ease; }
+
+    /* ── Panels ── */
+    .panel {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 18px 20px;
+    }
+    .panel-head {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .panel-title {
+      font-family: 'Oswald', sans-serif; font-size: 12px; font-weight: 500;
+      letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted2);
+    }
+    .panel-meta { font-size: 11px; color: var(--muted); }
+
+    /* ── Charts ── */
+    .chart-wrap { position: relative; width: 100%; }
+    .chart-wrap.h240 { height: 240px; }
+    .chart-wrap.h200 { height: 200px; }
+    .chart-wrap.h160 { height: 160px; }
+
+    /* ── Activity feed ── */
+    .feed { display: flex; flex-direction: column; }
+    .feed-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 12px;
+    }
+    .feed-item:last-child { border-bottom: none; }
+    .feed-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .feed-dot.success { background: var(--green); }
+    .feed-dot.danger  { background: var(--red); }
+    .feed-dot.info    { background: var(--blue); }
+    .feed-dot.warning { background: var(--yellow); }
+    .feed-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted2); }
+    .feed-text strong { color: var(--text); font-weight: 500; }
+    .feed-time { color: var(--muted); font-size: 11px; flex-shrink: 0; }
+    .src-tag {
+      display: inline-block; font-size: 9px; padding: 1px 5px; border-radius: 3px;
+      font-weight: 600; margin-left: 3px; letter-spacing: 0.04em; text-transform: uppercase;
+    }
+    .tag-cc   { background: rgba(59,130,246,.15);  color: #93c5fd; }
+    .tag-rc   { background: rgba(34,197,94,.15);   color: #86efac; }
+    .tag-subi { background: rgba(168,85,247,.15);  color: #d8b4fe; }
+
+    /* ── Cancels list ── */
+    .cancel-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 0; border-bottom: 1px solid var(--border); gap: 12px;
+    }
+    .cancel-item:last-child { border-bottom: none; }
+    .cancel-name { font-size: 12px; font-weight: 500; color: var(--text); }
+    .cancel-meta { color: var(--muted); font-size: 11px; margin-top: 2px; }
+    .cancel-amt  { color: var(--red); font-size: 13px; font-weight: 600; flex-shrink: 0; font-family: 'Oswald', sans-serif; }
+
+    /* ── Products table ── */
+    .prod-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 9px 0; border-bottom: 1px solid var(--border); gap: 12px;
+    }
+    .prod-row:last-child { border-bottom: none; }
+    .prod-name { font-size: 12px; color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .prod-right { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+    .prod-count { font-family: 'Oswald', sans-serif; font-size: 14px; color: var(--muted2); }
+    .prod-mrr   { font-family: 'Oswald', sans-serif; font-size: 14px; color: var(--text); min-width: 70px; text-align: right; }
+
+    /* ── Legend ── */
+    .legend { display: flex; gap: 16px; flex-wrap: wrap; }
+    .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted2); }
+    .legend-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+
+    /* ── Empty / loading ── */
+    .empty { padding: 30px; text-align: center; color: var(--muted); font-size: 12px; }
+    .page-loading {
+      display: flex; align-items: center; justify-content: center; min-height: 70vh;
+    }
+    .spinner {
+      width: 36px; height: 36px; border: 3px solid var(--border2);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Tab bar (for growth section) ── */
+    .tab-bar { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+    .tab {
+      padding: 8px 14px; font-size: 11px; font-weight: 600; cursor: pointer;
+      color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px;
+      text-transform: uppercase; letter-spacing: 0.05em; transition: all 0.15s;
+    }
+    .tab.active { color: #fff; border-bottom-color: var(--accent); }
+    .tab:hover:not(.active) { color: var(--muted2); }
+
+    .mb12 { margin-bottom: 12px; }
   </style>
 </head>
 <body>
 
+<!-- ── Topbar ── -->
 <div class="topbar">
-  <div class="brand">TGP <span class="accent">Admin</span></div>
+  <div class="brand">TGP <span class="dot">·</span> Admin</div>
   <div class="topbar-right">
-    <span class="sync-state" id="sync-state">—</span>
-    <button class="btn" id="sync-btn" onclick="runSync()">Sync now</button>
+    <div class="sync-pill">
+      <span class="sync-dot" id="sync-dot"></span>
+      <span id="sync-text">Loading...</span>
+    </div>
+    <button class="btn primary" id="sync-btn" onclick="runSync()">↻ Sync now</button>
     <button class="btn" onclick="logout()">Sign out</button>
   </div>
 </div>
 
+<!-- ── Page ── -->
 <div class="container">
-  <div id="loading" class="loading"><div class="spinner"></div></div>
+  <div id="page-loading" class="page-loading"><div class="spinner"></div></div>
   <div id="content" style="display:none">
 
-    <div class="section-label">Today at a glance</div>
-    <div class="kpi-grid" id="kpi-row-1"></div>
-    <div class="kpi-grid" id="kpi-row-2"></div>
+    <!-- KPIs -->
+    <div class="section-label">Overview</div>
+    <div class="grid-6 mb12" id="kpi-grid"></div>
 
-    <div class="section-label">Revenue, last 30 days</div>
-    <div class="panel">
-      <div class="chart-wrap"><canvas id="rev-chart"></canvas></div>
-    </div>
+    <!-- Per-source cards -->
+    <div class="section-label">By source</div>
+    <div class="grid-3 mb12" id="src-grid"></div>
 
-    <div class="section-label">Forecast and breakdown</div>
-    <div class="row-2">
+    <!-- Growth charts -->
+    <div class="section-label">Subscription growth — last 30 days</div>
+    <div class="grid-2 mb12">
       <div class="panel">
-        <div class="panel-title">Upcoming rebills, next 7 days</div>
-        <div class="chart-wrap short"><canvas id="forecast-chart"></canvas></div>
+        <div class="panel-head">
+          <span class="panel-title">Daily new subscriptions</span>
+          <div class="legend">
+            <span class="legend-item"><span class="legend-dot" style="background:var(--cc-color)"></span>CC</span>
+            <span class="legend-item"><span class="legend-dot" style="background:var(--rc-color)"></span>Recharge</span>
+            <span class="legend-item"><span class="legend-dot" style="background:var(--subi-color)"></span>Subi</span>
+          </div>
+        </div>
+        <div class="chart-wrap h240"><canvas id="new-subs-chart"></canvas></div>
       </div>
       <div class="panel">
-        <div class="panel-title">Active subs by source</div>
-        <div id="source-bars"></div>
+        <div class="panel-head">
+          <span class="panel-title">Daily cancellations</span>
+          <div class="legend">
+            <span class="legend-item"><span class="legend-dot" style="background:var(--cc-color)"></span>CC</span>
+            <span class="legend-item"><span class="legend-dot" style="background:var(--rc-color)"></span>Recharge</span>
+            <span class="legend-item"><span class="legend-dot" style="background:var(--subi-color)"></span>Subi</span>
+          </div>
+        </div>
+        <div class="chart-wrap h240"><canvas id="cancels-chart"></canvas></div>
       </div>
     </div>
 
+    <!-- Net growth chart -->
+    <div class="panel mb12">
+      <div class="panel-head">
+        <span class="panel-title">Net growth per day (new − cancelled)</span>
+        <span class="panel-meta" id="net-growth-summary"></span>
+      </div>
+      <div class="chart-wrap h200"><canvas id="net-growth-chart"></canvas></div>
+    </div>
+
+    <!-- Revenue + Forecast -->
+    <div class="section-label">Revenue</div>
+    <div class="grid-21 mb12">
+      <div class="panel">
+        <div class="panel-head">
+          <span class="panel-title">Revenue — last 30 days</span>
+        </div>
+        <div class="chart-wrap h200"><canvas id="rev-chart"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <span class="panel-title">Upcoming rebills — next 7 days</span>
+        </div>
+        <div class="chart-wrap h200"><canvas id="forecast-chart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Activity + Cancels -->
     <div class="section-label">Today</div>
-    <div class="row-2">
+    <div class="grid-2 mb12">
       <div class="panel">
-        <div class="panel-title">Live activity</div>
-        <div class="activity" id="activity-feed"></div>
+        <div class="panel-head">
+          <span class="panel-title">Live activity</span>
+          <span class="panel-meta" id="activity-count"></span>
+        </div>
+        <div id="activity-feed" class="feed"></div>
       </div>
       <div class="panel">
-        <div class="panel-title">Recent cancellations</div>
+        <div class="panel-head">
+          <span class="panel-title">Recent cancellations</span>
+        </div>
         <div id="cancels-list"></div>
       </div>
     </div>
 
+    <!-- Products -->
     <div class="section-label">Top products</div>
-    <div class="panel" id="products-panel"></div>
+    <div class="panel mb12" id="products-panel"></div>
 
   </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
-/* ════════════════════════════════════════════════════
-   Auth — pull session from URL fragment or localStorage
-   ════════════════════════════════════════════════════ */
-
+/* ── Auth ── */
 (function() {
-  /* If we just came from /admin/auth/verify, the session is in the fragment */
   if (location.hash.indexOf('session=') !== -1) {
     const m = location.hash.match(/session=([^&]+)/);
-    if (m) {
-      localStorage.setItem('tgp_admin_session', m[1]);
-      history.replaceState(null, '', location.pathname);
-    }
+    if (m) { localStorage.setItem('tgp_admin_session', m[1]); history.replaceState(null, '', location.pathname); }
   }
-  if (!localStorage.getItem('tgp_admin_session')) {
-    location.href = '/admin/login';
-  }
+  if (!localStorage.getItem('tgp_admin_session')) location.href = '/admin/login';
 })();
 
 const SESSION = localStorage.getItem('tgp_admin_session');
-const HEADERS = { 'Authorization': 'Bearer ' + SESSION };
+const H = { 'Authorization': 'Bearer ' + SESSION };
 
-function logout() {
-  localStorage.removeItem('tgp_admin_session');
-  location.href = '/admin/login';
+function logout() { localStorage.removeItem('tgp_admin_session'); location.href = '/admin/login'; }
+
+/* ── Helpers ── */
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
-
-/* ════════════════════════════════════════════════════
-   Formatting helpers
-   ════════════════════════════════════════════════════ */
-
-function fmtMoney(cents) {
+function $m(cents) {
   const n = Math.round((cents || 0) / 100);
-  return '$' + n.toLocaleString('en-US');
+  if (n >= 1000000) return '$' + (n/1000000).toFixed(1) + 'M';
+  if (n >= 1000)    return '$' + (n/1000).toFixed(1) + 'k';
+  return '$' + n.toLocaleString();
 }
-function fmtMoneyShort(cents) {
-  const n = (cents || 0) / 100;
-  if (n >= 1000) return '$' + (n/1000).toFixed(1) + 'k';
-  return '$' + Math.round(n);
-}
-function fmtCount(n) { return (n || 0).toLocaleString('en-US'); }
-function fmtRelative(iso) {
-  const t = new Date(iso).getTime();
-  const ms = Date.now() - t;
+function $n(n) { return (n || 0).toLocaleString('en-US'); }
+function ago(iso) {
+  const ms = Date.now() - new Date(iso).getTime();
   const m = Math.floor(ms / 60000);
-  if (m < 1)    return 'just now';
-  if (m < 60)   return m + 'm';
+  if (m < 1)  return 'just now';
+  if (m < 60) return m + 'm ago';
   const h = Math.floor(m / 60);
-  if (h < 24)   return h + 'h';
-  const d = Math.floor(h / 24);
-  return d + 'd';
+  if (h < 24) return h + 'h ago';
+  return Math.floor(h / 24) + 'd ago';
 }
-function delta(today, yesterday) {
-  const diff = (today || 0) - (yesterday || 0);
-  if (diff === 0) return { txt: 'same as yesterday', cls: 'delta-neutral' };
-  const sign = diff > 0 ? '+' : '';
+function weekDelta(cur, prev) {
+  const diff = (cur || 0) - (prev || 0);
+  const sign = diff >= 0 ? '+' : '';
+  const cls  = diff > 0 ? 'up' : diff < 0 ? 'down' : 'neutral';
+  return '<span class="' + cls + '">' + sign + diff + ' vs prev week</span>';
+}
+function dayDelta(cur, prev) {
+  const diff = (cur || 0) - (prev || 0);
+  const sign = diff >= 0 ? '+' : '';
+  const cls  = diff > 0 ? 'up' : diff < 0 ? 'down' : 'neutral';
+  return '<span class="' + cls + '">' + sign + diff + ' vs yesterday</span>';
+}
+
+/* ── Chart defaults ── */
+Chart.defaults.color = '#666';
+Chart.defaults.font.family = 'Inter, sans-serif';
+Chart.defaults.font.size = 11;
+
+const chartOpts = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: { legend: { display: false }, tooltip: {
+    backgroundColor: '#111', borderColor: '#2a2a2a', borderWidth: 1,
+    titleColor: '#fff', bodyColor: '#ccc', padding: 10
+  }},
+  scales: {
+    x: { ticks: { color: '#555', maxTicksLimit: 10 }, grid: { display: false } },
+    y: { ticks: { color: '#555' }, grid: { color: '#1a1a1a' } }
+  }
+};
+
+/* ── Build 30-day label array ── */
+function last30Days() {
+  const days = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i); d.setHours(0,0,0,0);
+    days.push(d.toISOString().split('T')[0]);
+  }
+  return days;
+}
+
+/* ── Pivot trend data: [{day, source, n}] → per-source arrays aligned to days ── */
+function pivotTrend(trend, days) {
+  const map = {};
+  days.forEach(function(d) { map[d] = { cc: 0, recharge: 0, subi: 0 }; });
+  (trend || []).forEach(function(r) {
+    const day = (r.day || '').toString().split('T')[0];
+    if (map[day]) map[day][r.source] = (map[day][r.source] || 0) + r.n;
+  });
   return {
-    txt: sign + diff + ' vs yesterday',
-    cls: diff > 0 ? 'delta-up' : 'delta-down'
+    cc:       days.map(function(d) { return map[d].cc; }),
+    recharge: days.map(function(d) { return map[d].recharge; }),
+    subi:     days.map(function(d) { return map[d].subi; })
   };
 }
 
-/* ════════════════════════════════════════════════════
-   KPI rendering
-   ════════════════════════════════════════════════════ */
+/* ── KPI grid ── */
+function renderKpis(k) {
+  const netCls = k.netToday > 0 ? 'green-border' : k.netToday < 0 ? 'red-border' : '';
+  const netVal = (k.netToday > 0 ? '+' : '') + $n(k.netToday);
 
-function renderKpis(kpis) {
-  const newDelta    = delta(kpis.newToday, kpis.newYesterday);
-  const cancelDelta = delta(kpis.cancelsToday, kpis.cancelsYesterday);
-  /* For cancels, more = worse, so flip the colour intent */
-  const cancelCls = kpis.cancelsToday > kpis.cancelsYesterday ? 'delta-down'
-                  : kpis.cancelsToday < kpis.cancelsYesterday ? 'delta-up' : 'delta-neutral';
-
-  const row1 = [
-    { label: 'Active subscriptions', value: fmtCount(kpis.activeSubs),       sub: 'across CC + Recharge + Subi', cls: 'delta-neutral' },
-    { label: 'MRR',                  value: fmtMoney(kpis.mrrCents),         sub: 'sum of active sub prices',    cls: 'delta-neutral' },
-    { label: "Today's revenue",      value: fmtMoney(kpis.todayRevenueCents), sub: kpis.todayOrders + ' orders',  cls: 'delta-neutral' }
+  const cards = [
+    {
+      label: 'Active subscriptions',
+      value: $n(k.activeSubs),
+      sub: 'CC + Recharge + Subi',
+      subCls: 'neutral',
+      border: 'accent-border'
+    },
+    {
+      label: 'MRR',
+      value: $m(k.mrrCents),
+      sub: 'monthly recurring revenue',
+      subCls: 'neutral'
+    },
+    {
+      label: 'New today',
+      value: $n(k.newToday),
+      sub: dayDelta(k.newToday, k.newYesterday),
+      subCls: ''
+    },
+    {
+      label: 'Cancels today',
+      value: $n(k.cancelsToday),
+      sub: (function() {
+        const d = k.cancelsToday - k.cancelsYesterday;
+        const s = d >= 0 ? '+' : '';
+        const c = d > 0 ? 'down' : d < 0 ? 'up' : 'neutral';
+        return '<span class="' + c + '">' + s + d + ' vs yesterday</span>';
+      })(),
+      subCls: ''
+    },
+    {
+      label: 'Net today',
+      value: netVal,
+      sub: 'new minus cancelled',
+      subCls: k.netToday >= 0 ? 'up' : 'down',
+      border: netCls
+    },
+    {
+      label: "Tomorrow's forecast",
+      value: $m(k.tomorrowForecastCents),
+      sub: $n(k.tomorrowRebillCount) + ' rebills due',
+      subCls: 'neutral'
+    }
   ];
-  const row2 = [
-    { label: 'New subs today', value: fmtCount(kpis.newToday),        sub: newDelta.txt, cls: newDelta.cls },
-    { label: 'Cancels today',  value: fmtCount(kpis.cancelsToday),    sub: cancelDelta.txt + ' yesterday', cls: cancelCls },
-    { label: "Tomorrow's forecast", value: fmtMoney(kpis.tomorrowForecastCents), sub: kpis.tomorrowRebillCount + ' rebills due', cls: 'delta-neutral', highlight: true }
-  ];
 
-  document.getElementById('kpi-row-1').innerHTML = row1.map(kpiHtml).join('');
-  document.getElementById('kpi-row-2').innerHTML = row2.map(kpiHtml).join('');
+  document.getElementById('kpi-grid').innerHTML = cards.map(function(c) {
+    return '<div class="kpi' + (c.border ? ' ' + c.border : '') + '">' +
+      '<div class="kpi-label">' + c.label + '</div>' +
+      '<div class="kpi-value">' + c.value + '</div>' +
+      '<div class="kpi-sub ' + (c.subCls || '') + '">' + c.sub + '</div>' +
+    '</div>';
+  }).join('');
 }
 
-function kpiHtml(k) {
-  return '<div class="kpi' + (k.highlight ? ' highlight' : '') + '">' +
-    '<div class="kpi-label">' + k.label + '</div>' +
-    '<div class="kpi-value">' + k.value + '</div>' +
-    '<div class="kpi-delta ' + k.cls + '">' + k.sub + '</div>' +
-  '</div>';
+/* ── Source cards ── */
+function renderSourceCards(sources) {
+  const cfg = {
+    cc:       { label: 'CheckoutChamp', badge: 'badge-cc',   color: 'var(--cc-color)' },
+    recharge: { label: 'Recharge',      badge: 'badge-rc',   color: 'var(--rc-color)' },
+    subi:     { label: 'Subi',          badge: 'badge-subi', color: 'var(--subi-color)' }
+  };
+  const total = sources.reduce(function(a, s) { return a + s.n; }, 0);
+
+  /* Ensure all 3 sources appear even if 0 */
+  const bySource = { cc: { n: 0, mrr_cents: 0 }, recharge: { n: 0, mrr_cents: 0 }, subi: { n: 0, mrr_cents: 0 } };
+  sources.forEach(function(s) { if (bySource[s.source]) bySource[s.source] = s; });
+
+  document.getElementById('src-grid').innerHTML = Object.keys(cfg).map(function(src) {
+    const s   = bySource[src];
+    const c   = cfg[src];
+    const pct = total > 0 ? Math.round(s.n / total * 100) : 0;
+    return '<div class="src-card">' +
+      '<div class="src-card-head">' +
+        '<span class="src-name" style="color:' + c.color + '">' + c.label + '</span>' +
+        '<span class="src-badge ' + c.badge + '">' + pct + '% of total</span>' +
+      '</div>' +
+      '<div class="src-stats">' +
+        '<div>' +
+          '<div class="src-stat-val">' + $n(s.n) + '</div>' +
+          '<div class="src-stat-lbl">Active subs</div>' +
+        '</div>' +
+        '<div>' +
+          '<div class="src-stat-val">' + $m(Number(s.mrr_cents)) + '</div>' +
+          '<div class="src-stat-lbl">MRR</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="src-bar-wrap">' +
+        '<div class="src-bar-track">' +
+          '<div class="src-bar-fill" style="width:' + pct + '%;background:' + c.color + '"></div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
 }
 
-/* ════════════════════════════════════════════════════
-   Charts
-   ════════════════════════════════════════════════════ */
+/* ── Growth charts ── */
+let newSubsChart = null, cancelsChart = null, netChart = null;
 
+function renderGrowthCharts(newTrend, cancelTrend) {
+  const days    = last30Days();
+  const labels  = days.map(function(d) { return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); });
+  const newData = pivotTrend(newTrend, days);
+  const canData = pivotTrend(cancelTrend, days);
+
+  /* Stacked bar: new subs */
+  if (newSubsChart) newSubsChart.destroy();
+  newSubsChart = new Chart(document.getElementById('new-subs-chart'), {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        { label: 'CC',       data: newData.cc,       backgroundColor: 'rgba(59,130,246,.8)',  stack: 's' },
+        { label: 'Recharge', data: newData.recharge, backgroundColor: 'rgba(34,197,94,.8)',   stack: 's' },
+        { label: 'Subi',     data: newData.subi,     backgroundColor: 'rgba(168,85,247,.8)',  stack: 's' }
+      ]
+    },
+    options: Object.assign({}, chartOpts, {
+      plugins: Object.assign({}, chartOpts.plugins, {
+        legend: { display: false },
+        tooltip: Object.assign({}, chartOpts.plugins.tooltip, {
+          callbacks: { title: function(items) { return labels[items[0].dataIndex]; } }
+        })
+      }),
+      scales: {
+        x: { stacked: true, ticks: { color: '#555', maxTicksLimit: 10 }, grid: { display: false } },
+        y: { stacked: true, ticks: { color: '#555' }, grid: { color: '#1a1a1a' }, beginAtZero: true }
+      }
+    })
+  });
+
+  /* Stacked bar: cancels */
+  if (cancelsChart) cancelsChart.destroy();
+  cancelsChart = new Chart(document.getElementById('cancels-chart'), {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        { label: 'CC',       data: canData.cc,       backgroundColor: 'rgba(59,130,246,.7)',  stack: 's' },
+        { label: 'Recharge', data: canData.recharge, backgroundColor: 'rgba(34,197,94,.7)',   stack: 's' },
+        { label: 'Subi',     data: canData.subi,     backgroundColor: 'rgba(168,85,247,.7)',  stack: 's' }
+      ]
+    },
+    options: Object.assign({}, chartOpts, {
+      plugins: Object.assign({}, chartOpts.plugins, { legend: { display: false } }),
+      scales: {
+        x: { stacked: true, ticks: { color: '#555', maxTicksLimit: 10 }, grid: { display: false } },
+        y: { stacked: true, ticks: { color: '#555' }, grid: { color: '#1a1a1a' }, beginAtZero: true }
+      }
+    })
+  });
+
+  /* Net growth: (new - cancelled) per day */
+  const netData = days.map(function(d, i) {
+    const n = (newData.cc[i] + newData.recharge[i] + newData.subi[i]);
+    const c = (canData.cc[i] + canData.recharge[i] + canData.subi[i]);
+    return n - c;
+  });
+  const netTotal = netData.reduce(function(a, v) { return a + v; }, 0);
+  const netSign  = netTotal >= 0 ? '+' : '';
+  document.getElementById('net-growth-summary').textContent = netSign + netTotal + ' net this month';
+
+  if (netChart) netChart.destroy();
+  netChart = new Chart(document.getElementById('net-growth-chart'), {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        data: netData,
+        backgroundColor: netData.map(function(v) { return v >= 0 ? 'rgba(34,197,94,.7)' : 'rgba(239,68,68,.7)'; }),
+        borderRadius: 3
+      }]
+    },
+    options: Object.assign({}, chartOpts, {
+      plugins: Object.assign({}, chartOpts.plugins, {
+        legend: { display: false },
+        tooltip: Object.assign({}, chartOpts.plugins.tooltip, {
+          callbacks: { label: function(c) { return (c.parsed.y >= 0 ? '+' : '') + c.parsed.y + ' net'; } }
+        })
+      }),
+      scales: {
+        x: { ticks: { color: '#555', maxTicksLimit: 10 }, grid: { display: false } },
+        y: { ticks: { color: '#555' }, grid: { color: '#1a1a1a' } }
+      }
+    })
+  });
+}
+
+/* ── Revenue chart ── */
 let revChart = null;
-let forecastChart = null;
-
 function renderRevChart(trend) {
-  const labels = trend.map(function(r) { return new Date(r.day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); });
-  const data   = trend.map(function(r) { return Number(r.cents) / 100; });
-
+  const labels = (trend || []).map(function(r) { return new Date(r.day + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); });
+  const data   = (trend || []).map(function(r) { return Number(r.cents) / 100; });
   if (revChart) revChart.destroy();
   revChart = new Chart(document.getElementById('rev-chart'), {
     type: 'line',
     data: { labels: labels, datasets: [{
       data: data, borderColor: '#f04e00',
-      backgroundColor: 'rgba(240, 78, 0, 0.1)',
-      fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2
+      backgroundColor: 'rgba(240,78,0,.08)',
+      fill: true, tension: 0.4, pointRadius: 0, borderWidth: 2
     }]},
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: '#0d0d0d', borderColor: '#272727', borderWidth: 1,
-          titleColor: '#fff', bodyColor: '#ccc',
-          callbacks: { label: function(c) { return '$' + Math.round(c.parsed.y).toLocaleString(); } }
-        }
-      },
+    options: Object.assign({}, chartOpts, {
       scales: {
-        x: { ticks: { color: '#666', font: { size: 11 }, maxTicksLimit: 10 }, grid: { display: false } },
-        y: {
-          ticks: { color: '#666', font: { size: 11 }, callback: function(v) { return '$' + (v/1000).toFixed(1) + 'k'; } },
-          grid: { color: '#1f1f1f' }
-        }
+        x: { ticks: { color: '#555', maxTicksLimit: 10 }, grid: { display: false } },
+        y: { ticks: { color: '#555', callback: function(v) { return '$' + (v >= 1000 ? (v/1000).toFixed(1)+'k' : v); } }, grid: { color: '#1a1a1a' } }
       }
-    }
+    })
   });
 }
 
+/* ── Forecast chart ── */
+let fcastChart = null;
 function renderForecastChart(forecast) {
-  const labels = forecast.map(function(r) { return new Date(r.day).toLocaleDateString('en-US', { weekday: 'short' }); });
-  const data   = forecast.map(function(r) { return Number(r.cents) / 100; });
-
-  if (forecastChart) forecastChart.destroy();
-  forecastChart = new Chart(document.getElementById('forecast-chart'), {
+  const labels = (forecast || []).map(function(r) { return new Date(r.day + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); });
+  const data   = (forecast || []).map(function(r) { return Number(r.cents) / 100; });
+  if (fcastChart) fcastChart.destroy();
+  fcastChart = new Chart(document.getElementById('forecast-chart'), {
     type: 'bar',
-    data: { labels: labels, datasets: [{
-      data: data, backgroundColor: '#f04e00', borderRadius: 4
-    }]},
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: '#0d0d0d', borderColor: '#272727', borderWidth: 1,
-          titleColor: '#fff', bodyColor: '#ccc',
+    data: { labels: labels, datasets: [{ data: data, backgroundColor: 'rgba(240,78,0,.7)', borderRadius: 4 }]},
+    options: Object.assign({}, chartOpts, {
+      plugins: Object.assign({}, chartOpts.plugins, {
+        tooltip: Object.assign({}, chartOpts.plugins.tooltip, {
           callbacks: { label: function(c) {
             const r = forecast[c.dataIndex];
-            return r.n + ' rebills · $' + Math.round(c.parsed.y).toLocaleString();
+            return (r ? r.n + ' rebills · ' : '') + '$' + Math.round(c.parsed.y).toLocaleString();
           }}
-        }
-      },
+        })
+      }),
       scales: {
-        x: { ticks: { color: '#666', font: { size: 11 } }, grid: { display: false } },
-        y: {
-          ticks: { color: '#666', font: { size: 11 }, callback: function(v) { return '$' + (v/1000).toFixed(1) + 'k'; } },
-          grid: { color: '#1f1f1f' }
-        }
+        x: { ticks: { color: '#555' }, grid: { display: false } },
+        y: { ticks: { color: '#555', callback: function(v) { return '$' + (v >= 1000 ? (v/1000).toFixed(1)+'k' : v); } }, grid: { color: '#1a1a1a' } }
       }
-    }
+    })
   });
 }
 
-/* ════════════════════════════════════════════════════
-   Source breakdown — horizontal bars
-   ════════════════════════════════════════════════════ */
-
-function renderSourceBars(sources) {
-  if (!sources || !sources.length) {
-    document.getElementById('source-bars').innerHTML = '<div class="empty">No active subs yet</div>';
-    return;
-  }
-  const total = sources.reduce(function(a, s) { return a + s.n; }, 0);
-  const colors = { cc: '#3b82f6', recharge: '#22c55e', subi: '#a855f7' };
-  const labels = { cc: 'CheckoutChamp', recharge: 'Recharge', subi: 'Subi' };
-
-  document.getElementById('source-bars').innerHTML = sources.map(function(s) {
-    const pct = total > 0 ? Math.round(s.n / total * 100) : 0;
-    return '<div class="src-bar">' +
-      '<div class="src-bar-head">' +
-        '<span class="src-name">' + (labels[s.source] || s.source) + '</span>' +
-        '<span class="src-count">' + fmtCount(s.n) + ' subs · ' + fmtMoney(s.mrr_cents) + ' MRR · ' + pct + '%</span>' +
-      '</div>' +
-      '<div class="src-bar-track"><div class="src-bar-fill" style="width:' + pct + '%;background:' + (colors[s.source] || '#666') + '"></div></div>' +
-    '</div>';
-  }).join('');
-}
-
-/* ════════════════════════════════════════════════════
-   Activity feed
-   ════════════════════════════════════════════════════ */
-
-const KIND_LABELS = {
-  sub_created:    { label: 'New sub',       cls: 'success' },
-  sub_cancelled:  { label: 'Cancel',        cls: 'danger' },
-  rebill:         { label: 'Rebill',        cls: 'success' },
-  login:          { label: 'Login',         cls: 'info' },
-  failed_charge:  { label: 'Failed charge', cls: 'warning' }
+/* ── Activity feed ── */
+const KIND_META = {
+  sub_created:   { lbl: 'New sub',      cls: 'success' },
+  sub_cancelled: { lbl: 'Cancelled',    cls: 'danger' },
+  rebill:        { lbl: 'Rebill',       cls: 'success' },
+  login:         { lbl: 'Login',        cls: 'info' },
+  failed_charge: { lbl: 'Failed charge',cls: 'warning' }
 };
 
 function renderActivity(events) {
@@ -415,148 +699,132 @@ function renderActivity(events) {
     document.getElementById('activity-feed').innerHTML = '<div class="empty">No recent activity</div>';
     return;
   }
+  document.getElementById('activity-count').textContent = events.length + ' events';
   document.getElementById('activity-feed').innerHTML = events.map(function(e) {
-    const meta = KIND_LABELS[e.kind] || { label: e.kind, cls: 'info' };
-    const srcTag = e.source ? '<span class="src-tag src-' + (e.source === 'recharge' ? 'rc' : e.source) + '">' + e.source + '</span>' : '';
-    let detail = '';
-    if (e.kind === 'login') {
-      detail = e.email;
-    } else if (e.kind === 'rebill') {
-      detail = (e.payload && e.payload.amount ? '$' + e.payload.amount + ' · ' : '') + (e.payload && e.payload.product || e.email);
-    } else {
-      detail = (e.payload && e.payload.product ? e.payload.product + ' · ' : '') + e.email;
-    }
-    return '<div class="activity-item">' +
-      '<span class="dot ' + meta.cls + '"></span>' +
-      '<span class="activity-text">' + meta.label + ' — ' + escapeHtml(detail) + srcTag + '</span>' +
-      '<span class="activity-time">' + fmtRelative(e.ts) + '</span>' +
+    const m   = KIND_META[e.kind] || { lbl: e.kind, cls: 'info' };
+    const src = e.source ? '<span class="src-tag tag-' + (e.source === 'recharge' ? 'rc' : e.source) + '">' + e.source + '</span>' : '';
+    let detail = e.email || '';
+    if (e.kind === 'rebill' && e.payload && e.payload.amount) detail = '$' + e.payload.amount + ' — ' + (e.payload.product || e.email);
+    else if (e.payload && e.payload.product) detail = e.payload.product + ' — ' + (e.email || '');
+    return '<div class="feed-item">' +
+      '<span class="feed-dot ' + m.cls + '"></span>' +
+      '<span class="feed-text"><strong>' + m.lbl + '</strong> ' + esc(detail) + src + '</span>' +
+      '<span class="feed-time">' + ago(e.ts) + '</span>' +
     '</div>';
   }).join('');
 }
 
-/* ════════════════════════════════════════════════════
-   Cancellations + products
-   ════════════════════════════════════════════════════ */
-
+/* ── Recent cancels ── */
 function renderCancels(cancels) {
   if (!cancels || !cancels.length) {
     document.getElementById('cancels-list').innerHTML = '<div class="empty">No recent cancellations</div>';
     return;
   }
   document.getElementById('cancels-list').innerHTML = cancels.map(function(c) {
-    const reason = c.cancel_reason ? 'Reason: ' + c.cancel_reason : 'No reason given';
-    return '<div class="cancel-row">' +
+    const src = c.source ? '<span class="src-tag tag-' + (c.source === 'recharge' ? 'rc' : c.source) + '">' + c.source + '</span>' : '';
+    const when = c.cancelled_at ? ago(c.cancelled_at) : '';
+    return '<div class="cancel-item">' +
       '<div>' +
-        '<div class="cancel-name">' + escapeHtml(c.product || 'Subscription') + '</div>' +
-        '<div class="cancel-meta">' + escapeHtml(c.customer_email || '') + ' · ' + reason + '</div>' +
+        '<div class="cancel-name">' + esc(c.product || 'Subscription') + src + '</div>' +
+        '<div class="cancel-meta">' + esc(c.customer_email || '') + (when ? ' · ' + when : '') + '</div>' +
       '</div>' +
-      '<span class="cancel-mrr">-' + fmtMoney(c.price_cents) + '</span>' +
+      '<span class="cancel-amt">−' + $m(c.price_cents) + '</span>' +
     '</div>';
   }).join('');
 }
 
+/* ── Products ── */
 function renderProducts(products) {
-  if (!products || !products.length) {
-    document.getElementById('products-panel').innerHTML = '<div class="empty">No product data yet</div>';
-    return;
-  }
-  document.getElementById('products-panel').innerHTML =
-    '<div class="panel-title">Active subs by product</div>' +
+  const el = document.getElementById('products-panel');
+  if (!products || !products.length) { el.innerHTML = '<div class="empty">No product data yet</div>'; return; }
+  el.innerHTML = '<div class="panel-head"><span class="panel-title">Active subscriptions by product</span></div>' +
     products.map(function(p) {
-      return '<div class="product-row">' +
-        '<div>' + escapeHtml(p.product) + ' <span class="src-tag src-' + (p.source === 'recharge' ? 'rc' : p.source) + '">' + p.source + '</span></div>' +
-        '<span class="product-count">' + fmtCount(p.n) + ' · ' + fmtMoney(p.mrr_cents) + '/mo</span>' +
+      const src = p.source ? '<span class="src-tag tag-' + (p.source === 'recharge' ? 'rc' : p.source) + '">' + p.source + '</span>' : '';
+      return '<div class="prod-row">' +
+        '<div class="prod-name">' + esc(p.product) + src + '</div>' +
+        '<div class="prod-right">' +
+          '<span class="prod-count">' + $n(p.n) + ' subs</span>' +
+          '<span class="prod-mrr">' + $m(Number(p.mrr_cents)) + '/mo</span>' +
+        '</div>' +
       '</div>';
     }).join('');
 }
 
-function escapeHtml(s) {
-  return String(s == null ? '' : s)
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-}
-
-/* ════════════════════════════════════════════════════
-   Sync state
-   ════════════════════════════════════════════════════ */
-
+/* ── Sync state ── */
 async function loadSyncState() {
   try {
-    const r = await fetch('/admin/api/sync-state', { headers: HEADERS });
+    const r = await fetch('/admin/api/sync-state', { headers: H });
     if (!r.ok) return;
     const d = await r.json();
     const states = d.sync || [];
     const latest = states
       .map(function(s) { return s.last_delta_sync_at ? new Date(s.last_delta_sync_at) : null; })
-      .filter(Boolean)
-      .sort(function(a,b) { return b - a; })[0];
+      .filter(Boolean).sort(function(a,b) { return b - a; })[0];
     const errors = states.filter(function(s) { return s.last_error; });
-
-    let html = '';
-    if (latest) html += 'Last sync ' + fmtRelative(latest.toISOString());
-    else        html += 'Never synced';
-    if (errors.length) html += ' · <span class="err">' + errors.length + ' source error</span>';
-    else if (latest)   html += ' · <span class="ok">all sources ok</span>';
-
-    document.getElementById('sync-state').innerHTML = html;
-  } catch (err) { /* silent */ }
+    const dot = document.getElementById('sync-dot');
+    const txt = document.getElementById('sync-text');
+    if (errors.length) {
+      dot.className = 'sync-dot err';
+      txt.textContent = errors.length + ' source error' + (errors.length > 1 ? 's' : '');
+    } else if (latest) {
+      dot.className = 'sync-dot ok';
+      txt.textContent = 'Synced ' + ago(latest.toISOString());
+    } else {
+      dot.className = 'sync-dot';
+      txt.textContent = 'Never synced';
+    }
+  } catch(e) { /* silent */ }
 }
 
-/* ════════════════════════════════════════════════════
-   Main load
-   ════════════════════════════════════════════════════ */
-
-async function loadOverview() {
+/* ── Sync now ── */
+async function runSync() {
+  const btn = document.getElementById('sync-btn');
+  btn.disabled = true; btn.textContent = 'Syncing...';
   try {
-    const r = await fetch('/admin/api/overview', { headers: HEADERS });
+    const r = await fetch('/admin/sync/run', { method: 'POST', headers: H });
+    if (!r.ok) throw new Error('Sync failed');
+    setTimeout(function() {
+      loadData();
+      btn.disabled = false; btn.textContent = '↻ Sync now';
+    }, 12000);
+  } catch(e) {
+    alert(e.message);
+    btn.disabled = false; btn.textContent = '↻ Sync now';
+  }
+}
+
+/* ── Main load ── */
+async function loadData() {
+  try {
+    const r = await fetch('/admin/api/overview', { headers: H });
     if (r.status === 401) { logout(); return; }
-    if (!r.ok) throw new Error('Failed to load overview');
+    if (!r.ok) throw new Error('Failed to load data');
     const d = await r.json();
 
     renderKpis(d.kpis);
+    renderSourceCards(d.sourceBreakdown || []);
+    renderGrowthCharts(d.newSubsTrend, d.cancelsTrend);
     renderRevChart(d.revenueTrend);
     renderForecastChart(d.forecast7d);
-    renderSourceBars(d.sourceBreakdown);
     renderActivity(d.recentEvents);
     renderCancels(d.recentCancels);
     renderProducts(d.productBreakdown);
 
-    document.getElementById('loading').style.display = 'none';
+    document.getElementById('page-loading').style.display = 'none';
     document.getElementById('content').style.display = 'block';
 
     await loadSyncState();
-  } catch (err) {
-    document.getElementById('loading').innerHTML =
-      '<div style="color:#fca5a5;text-align:center">' +
-      '<p>' + escapeHtml(err.message) + '</p>' +
-      '<button class="btn" style="margin-top:16px" onclick="location.reload()">Retry</button>' +
+  } catch(err) {
+    document.getElementById('page-loading').innerHTML =
+      '<div style="text-align:center">' +
+      '<div style="color:var(--red);font-size:14px;margin-bottom:12px">' + esc(err.message) + '</div>' +
+      '<button class="btn" onclick="loadData()">Retry</button>' +
       '</div>';
   }
 }
 
-async function runSync() {
-  const btn = document.getElementById('sync-btn');
-  btn.disabled = true;
-  btn.textContent = 'Syncing...';
-  try {
-    const r = await fetch('/admin/sync/run', { method: 'POST', headers: HEADERS });
-    if (!r.ok) throw new Error('Sync failed to start');
-    /* Sync runs in background — give it ~10s then refresh */
-    setTimeout(function() {
-      loadOverview();
-      btn.disabled = false;
-      btn.textContent = 'Sync now';
-    }, 10000);
-  } catch (err) {
-    alert(err.message);
-    btn.disabled = false;
-    btn.textContent = 'Sync now';
-  }
-}
-
-/* Initial load + auto-refresh every 30s */
-loadOverview();
-//setInterval(loadOverview, 30000);
+loadData();
+setInterval(loadSyncState, 60000);
 </script>
 </body>
 </html>

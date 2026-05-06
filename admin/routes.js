@@ -112,6 +112,9 @@ router.get('/api/overview', async function(req, res) {
     const tomorrowEnd = new Date(todayStart); tomorrowEnd.setDate(tomorrowEnd.getDate() + 2);
     const tomorrowStart = new Date(todayStart); tomorrowStart.setDate(tomorrowStart.getDate() + 1);
 
+    const weekStart     = new Date(todayStart); weekStart.setDate(weekStart.getDate() - 7);
+    const twoWeeksAgo  = new Date(todayStart); twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+
     const [
       activeCount,
       mrrRow,
@@ -120,10 +123,16 @@ router.get('/api/overview', async function(req, res) {
       todayCancelRow,
       yesterdayNewRow,
       yesterdayCancelRow,
+      thisWeekNewRow,
+      lastWeekNewRow,
+      thisWeekCancelRow,
+      lastWeekCancelRow,
       tomorrowForecastRow,
       sourceBreakdown,
       revTrend,
       forecast7d,
+      newSubsTrend,
+      cancelsTrend,
       recentCancels,
       recentEvents,
       productBreakdown
@@ -137,12 +146,16 @@ router.get('/api/overview', async function(req, res) {
              [new Date(todayStart.getTime() - 24*60*60*1000), todayStart]),
       db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE cancelled_at >= $1 AND cancelled_at < $2`,
              [new Date(todayStart.getTime() - 24*60*60*1000), todayStart]),
+      db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE started_at >= $1`, [weekStart]),
+      db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE started_at >= $1 AND started_at < $2`, [twoWeeksAgo, weekStart]),
+      db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE cancelled_at >= $1`, [weekStart]),
+      db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE cancelled_at >= $1 AND cancelled_at < $2`, [twoWeeksAgo, weekStart]),
       db.one(`SELECT COALESCE(SUM(price_cents),0)::bigint AS cents, COUNT(*)::int AS n
               FROM subscriptions
               WHERE status = 'ACTIVE' AND next_bill_at >= $1 AND next_bill_at < $2`,
              [tomorrowStart, tomorrowEnd]),
       db.many(`SELECT source, COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS mrr_cents
-               FROM subscriptions WHERE status = 'ACTIVE' GROUP BY source`),
+               FROM subscriptions WHERE status = 'ACTIVE' GROUP BY source ORDER BY n DESC`),
       db.many(`SELECT DATE(created_at) AS day, COALESCE(SUM(amount_cents),0)::bigint AS cents
                FROM orders WHERE created_at >= $1
                GROUP BY DATE(created_at) ORDER BY day ASC`, [monthAgo]),
@@ -151,13 +164,19 @@ router.get('/api/overview', async function(req, res) {
                WHERE status = 'ACTIVE' AND next_bill_at >= $1 AND next_bill_at < $2
                GROUP BY DATE(next_bill_at) ORDER BY day ASC`,
               [todayStart, new Date(todayStart.getTime() + 8 * 24 * 60 * 60 * 1000)]),
+      db.many(`SELECT DATE(started_at) AS day, source, COUNT(*)::int AS n
+               FROM subscriptions WHERE started_at >= $1
+               GROUP BY DATE(started_at), source ORDER BY day ASC`, [monthAgo]),
+      db.many(`SELECT DATE(cancelled_at) AS day, source, COUNT(*)::int AS n
+               FROM subscriptions WHERE cancelled_at >= $1
+               GROUP BY DATE(cancelled_at), source ORDER BY day ASC`, [monthAgo]),
       db.many(`SELECT id, customer_email, product, source, price_cents, cancelled_at, cancel_reason
                FROM subscriptions WHERE cancelled_at IS NOT NULL
                ORDER BY cancelled_at DESC LIMIT 10`),
-      db.many(`SELECT kind, source, email, payload, ts FROM events ORDER BY ts DESC LIMIT 25`),
+      db.many(`SELECT kind, source, email, payload, ts FROM events ORDER BY ts DESC LIMIT 30`),
       db.many(`SELECT product, source, COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS mrr_cents
                FROM subscriptions WHERE status = 'ACTIVE' AND product IS NOT NULL
-               GROUP BY product, source ORDER BY n DESC LIMIT 10`)
+               GROUP BY product, source ORDER BY n DESC LIMIT 15`)
     ]);
 
     res.json({
@@ -169,8 +188,13 @@ router.get('/api/overview', async function(req, res) {
         todayOrders:       todayRevRow.n,
         newToday:          todayNewRow.n,
         cancelsToday:      todayCancelRow.n,
+        netToday:          todayNewRow.n - todayCancelRow.n,
         newYesterday:      yesterdayNewRow.n,
         cancelsYesterday:  yesterdayCancelRow.n,
+        newThisWeek:       thisWeekNewRow.n,
+        newLastWeek:       lastWeekNewRow.n,
+        cancelsThisWeek:   thisWeekCancelRow.n,
+        cancelsLastWeek:   lastWeekCancelRow.n,
         tomorrowForecastCents: Number(tomorrowForecastRow.cents),
         tomorrowRebillCount:   tomorrowForecastRow.n
       },
@@ -178,6 +202,8 @@ router.get('/api/overview', async function(req, res) {
       productBreakdown:  productBreakdown,
       revenueTrend:      revTrend,
       forecast7d:        forecast7d,
+      newSubsTrend:      newSubsTrend,
+      cancelsTrend:      cancelsTrend,
       recentCancels:     recentCancels,
       recentEvents:      recentEvents
     });
