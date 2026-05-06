@@ -558,12 +558,35 @@ var TT = { backgroundColor: '#111', borderColor: '#2a2a2a', borderWidth: 1, titl
 var GRID = '#1a1a1a';
 var TICK = '#555';
 
+/* ── Robust day parser — handles Date objects, ISO strings, locale strings ── */
+function parseDay(raw) {
+  if (!raw) return new Date(NaN);
+  /* pg may return DATE as a JS Date object or a string depending on version/datestyle */
+  var iso;
+  if (raw instanceof Date) {
+    iso = raw.toISOString();            /* "2026-05-06T00:00:00.000Z" */
+  } else {
+    iso = String(raw);
+  }
+  /* Extract YYYY-MM-DD regardless of what follows */
+  var m = iso.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return new Date(m[1] + '-' + m[2] + '-' + m[3] + 'T12:00:00Z');
+  /* Fallback: MM/DD/YYYY (non-ISO datestyle) */
+  m = iso.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) return new Date(m[3] + '-' + m[1].padStart(2,'0') + '-' + m[2].padStart(2,'0') + 'T12:00:00Z');
+  return new Date(NaN);
+}
+
 /* ── Pivot trend [{day,source,n}] → per-source arrays ── */
 function pivotTrend(trend, days) {
   var map = {};
   days.forEach(function(d) { map[d] = { cc: 0, recharge: 0, subi: 0 }; });
   (trend || []).forEach(function(r) {
-    var day = (r.day || '').toString().split('T')[0];
+    /* Normalise the day key to YYYY-MM-DD regardless of pg return type */
+    var raw = r.day;
+    var iso  = raw instanceof Date ? raw.toISOString() : String(raw || '');
+    var m    = iso.match(/(\d{4})-(\d{2})-(\d{2})/);
+    var day  = m ? (m[1] + '-' + m[2] + '-' + m[3]) : iso.split('T')[0];
     if (map[day]) map[day][r.source] = (map[day][r.source] || 0) + r.n;
   });
   return {
@@ -672,7 +695,7 @@ function renderSourceCards(sources) {
 var newSubsChart = null, cancelsChart = null, netChart = null;
 function renderGrowthCharts(newTrend, cancelTrend) {
   var days   = lastNDays();
-  var labels = days.map(function(d) { return new Date(d+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}); });
+  var labels = days.map(function(d) { return parseDay(d).toLocaleDateString('en-US',{month:'short',day:'numeric'}); });
   var nd = pivotTrend(newTrend, days);
   var cd = pivotTrend(cancelTrend, days);
   var maxTicks = currentDays <= 14 ? currentDays : currentDays <= 60 ? 12 : 8;
@@ -726,7 +749,7 @@ function renderGrowthCharts(newTrend, cancelTrend) {
 /* ── Revenue chart ── */
 var revChart = null;
 function renderRevChart(trend) {
-  var labels = (trend||[]).map(function(r){ return new Date(r.day+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}); });
+  var labels = (trend||[]).map(function(r){ return parseDay(r.day).toLocaleDateString('en-US',{month:'short',day:'numeric'}); });
   var data   = (trend||[]).map(function(r){ return Number(r.cents)/100; });
   var total  = data.reduce(function(a,v){return a+v;},0);
   document.getElementById('rev-total').textContent = '$'+Math.round(total).toLocaleString()+' total';
@@ -748,7 +771,7 @@ function renderRevChart(trend) {
 /* ── Forecast chart ── */
 var fcastChart = null;
 function renderForecastChart(forecast) {
-  var labels = (forecast||[]).map(function(r){ return new Date(r.day+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}); });
+  var labels = (forecast||[]).map(function(r){ return parseDay(r.day).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}); });
   var data   = (forecast||[]).map(function(r){ return Number(r.cents)/100; });
   if (fcastChart) fcastChart.destroy();
   fcastChart = new Chart(document.getElementById('forecast-chart'), {

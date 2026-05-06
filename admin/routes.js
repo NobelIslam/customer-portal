@@ -106,15 +106,14 @@ router.use('/sync', auth.requireAdmin);
 router.get('/api/overview', async function(req, res) {
   try {
     const now    = new Date();
-    const todayStart = new Date(now); todayStart.setHours(0,0,0,0);
-    const weekAgo    = new Date(now); weekAgo.setDate(weekAgo.getDate() - 7);
+    /* Use UTC midnight so counts match PostgreSQL UTC-stored timestamps */
+    const todayStart = new Date(now); todayStart.setUTCHours(0, 0, 0, 0);
     const periodDays = Math.min(Math.max(parseInt(req.query.days || '30', 10), 1), 365);
-    const periodAgo  = new Date(todayStart); periodAgo.setDate(periodAgo.getDate() - periodDays);
-    const tomorrowEnd = new Date(todayStart); tomorrowEnd.setDate(tomorrowEnd.getDate() + 2);
-    const tomorrowStart = new Date(todayStart); tomorrowStart.setDate(tomorrowStart.getDate() + 1);
-
-    const weekStart     = new Date(todayStart); weekStart.setDate(weekStart.getDate() - 7);
-    const twoWeeksAgo  = new Date(todayStart); twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+    const periodAgo  = new Date(todayStart); periodAgo.setUTCDate(periodAgo.getUTCDate() - periodDays);
+    const tomorrowEnd   = new Date(todayStart); tomorrowEnd.setUTCDate(tomorrowEnd.getUTCDate() + 2);
+    const tomorrowStart = new Date(todayStart); tomorrowStart.setUTCDate(tomorrowStart.getUTCDate() + 1);
+    const weekStart    = new Date(todayStart); weekStart.setUTCDate(weekStart.getUTCDate() - 7);
+    const twoWeeksAgo  = new Date(todayStart); twoWeeksAgo.setUTCDate(twoWeeksAgo.getUTCDate() - 14);
 
     const [
       activeCount,
@@ -157,24 +156,24 @@ router.get('/api/overview', async function(req, res) {
              [tomorrowStart, tomorrowEnd]),
       db.many(`SELECT source, COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS mrr_cents
                FROM subscriptions WHERE status = 'ACTIVE' GROUP BY source ORDER BY n DESC`),
-      db.many(`SELECT DATE(created_at) AS day, COALESCE(SUM(amount_cents),0)::bigint AS cents
+      db.many(`SELECT TO_CHAR(DATE(created_at), 'YYYY-MM-DD') AS day, COALESCE(SUM(amount_cents),0)::bigint AS cents
                FROM orders WHERE created_at >= $1
-               GROUP BY DATE(created_at) ORDER BY day ASC`, [periodAgo]),
-      db.many(`SELECT DATE(next_bill_at) AS day, COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS cents
+               GROUP BY TO_CHAR(DATE(created_at), 'YYYY-MM-DD') ORDER BY day ASC`, [periodAgo]),
+      db.many(`SELECT TO_CHAR(DATE(next_bill_at), 'YYYY-MM-DD') AS day, COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS cents
                FROM subscriptions
                WHERE status = 'ACTIVE' AND next_bill_at >= $1 AND next_bill_at < $2
-               GROUP BY DATE(next_bill_at) ORDER BY day ASC`,
+               GROUP BY TO_CHAR(DATE(next_bill_at), 'YYYY-MM-DD') ORDER BY day ASC`,
               [todayStart, new Date(todayStart.getTime() + 8 * 24 * 60 * 60 * 1000)]),
-      db.many(`SELECT DATE(started_at) AS day, source, COUNT(*)::int AS n
+      db.many(`SELECT TO_CHAR(DATE(started_at), 'YYYY-MM-DD') AS day, source, COUNT(*)::int AS n
                FROM subscriptions WHERE started_at >= $1
-               GROUP BY DATE(started_at), source ORDER BY day ASC`, [periodAgo]),
-      db.many(`SELECT DATE(cancelled_at) AS day, source, COUNT(*)::int AS n
+               GROUP BY TO_CHAR(DATE(started_at), 'YYYY-MM-DD'), source ORDER BY day ASC`, [periodAgo]),
+      db.many(`SELECT TO_CHAR(DATE(cancelled_at), 'YYYY-MM-DD') AS day, source, COUNT(*)::int AS n
                FROM subscriptions WHERE cancelled_at >= $1
-               GROUP BY DATE(cancelled_at), source ORDER BY day ASC`, [periodAgo]),
+               GROUP BY TO_CHAR(DATE(cancelled_at), 'YYYY-MM-DD'), source ORDER BY day ASC`, [periodAgo]),
       db.many(`SELECT id, customer_email, product, source, price_cents, cancelled_at, cancel_reason
                FROM subscriptions WHERE cancelled_at IS NOT NULL
                ORDER BY cancelled_at DESC LIMIT 10`),
-      db.many(`SELECT kind, source, email, payload, ts FROM events ORDER BY ts DESC LIMIT 30`),
+      db.many(`SELECT kind, source, email, payload, ts FROM events ORDER BY ts DESC LIMIT 50`),
       db.many(`SELECT product, source, COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS mrr_cents
                FROM subscriptions WHERE status = 'ACTIVE' AND product IS NOT NULL
                GROUP BY product, source ORDER BY n DESC LIMIT 15`)

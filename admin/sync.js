@@ -74,9 +74,12 @@ async function syncCC(opts) {
   const today    = new Date();
   const lookback = new Date();
   lookback.setDate(lookback.getDate() - (isFull ? 365 * 2 : 30));
+  /* Use tomorrow as endDate so today's records are never excluded by an exclusive boundary */
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
 
   const startDate = ccDate(lookback);
-  const endDate   = ccDate(today);
+  const endDate   = ccDate(tomorrow);
 
   console.log('[sync:cc] window:', startDate, '→', endDate, '| full:', isFull);
 
