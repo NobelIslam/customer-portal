@@ -879,10 +879,11 @@ function renderTomorrowRebills(list) {
   el.innerHTML = list.map(function(r) {
     var src     = r.source ? '<span class="src-tag tag-' + (r.source==='recharge'?'rc':r.source) + '">' + r.source + '</span>' : '';
     var billAt  = r.next_bill_at ? new Date(r.next_bill_at).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',timeZoneName:'short'}) : '';
+    var price = r.price_cents ? '$' + (r.price_cents / 100).toFixed(2) : '—';
     return '<div class="cancel-row">' +
       '<div><div class="cancel-name">' + esc(r.product || 'Subscription') + src + '</div>' +
       '<div class="cancel-meta">' + esc(r.customer_email || '') + (billAt ? ' · ' + billAt : '') + '</div></div>' +
-      '<span class="cancel-amt">' + $m(r.price_cents) + '</span>' +
+      '<span class="cancel-amt">' + price + '</span>' +
     '</div>';
   }).join('');
 }
