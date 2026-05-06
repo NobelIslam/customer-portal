@@ -371,15 +371,17 @@ router.get('/api/cc/purchases/summary', async function(req, res) {
     const startDate = req.query.startDate || '01/01/2015';
     const endDate   = req.query.endDate   || ccFmtDate(tomorrow);
 
-    /* Page through all results (up to 10 pages = 2000 records) */
+    /* Page through ALL results — capture totalCount from first response */
     const limit    = 200;
     let page       = 1;
     let allRows    = [];
+    let ccTotalCount = null;
 
-    while (page <= 10) {
+    while (page <= 100) {
       const url = 'https://api.checkoutchamp.com/purchase/query/?' + ccTestParams({ startDate, endDate, resultsPerPage: limit, page });
       const r   = await fetch(url, { method: 'POST' });
       const d   = await r.json();
+      if (page === 1) ccTotalCount = (d.message && d.message.totalCount) || null;
       const rows = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
       allRows = allRows.concat(rows);
       if (rows.length < limit) break;
@@ -388,36 +390,33 @@ router.get('/api/cc/purchases/summary', async function(req, res) {
 
     /* Count by status */
     const byStatus = {};
-    let totalPriceCents = 0;
+    let activeMRRCents = 0;
     allRows.forEach(function(p) {
       const s = String(p.status || 'UNKNOWN');
       byStatus[s] = (byStatus[s] || 0) + 1;
-      /* Try to sum price for whatever status 'active' looks like */
-      const price = parseFloat(p.price || p.recurringPrice || p.billingAmount || 0);
-      if (!isNaN(price)) totalPriceCents += Math.round(price * 100);
-    });
-
-    /* Detect which status value likely means "active" */
-    const activeGuess = Object.keys(byStatus).filter(function(s){
-      return /^(active|1|true|running|enabled)$/i.test(s.trim());
+      if (s === 'ACTIVE') {
+        const price = parseFloat(p.price || p.recurringPrice || p.billingAmount || 0);
+        if (!isNaN(price)) activeMRRCents += Math.round(price * 100);
+      }
     });
 
     res.json({
       _meta: {
         params: { startDate, endDate },
-        totalRecordsFetched: allRows.length
+        ccReportedTotal:   ccTotalCount,
+        totalRecordsFetched: allRows.length,
+        note: ccTotalCount && allRows.length < ccTotalCount
+          ? 'WARNING: fetched ' + allRows.length + ' but CC reports ' + ccTotalCount + ' total — some records may be missing'
+          : 'All records fetched'
       },
-      countByStatus:    byStatus,
-      likelyActiveKey:  activeGuess,
-      totalMRRCents:    totalPriceCents,
-      totalMRRDollars:  (totalPriceCents / 100).toFixed(2),
-      priceFieldSample: allRows.slice(0,3).map(function(p){ return {
-        purchaseId: p.purchaseId,
-        status:     p.status,
-        price:      p.price,
-        recurringPrice: p.recurringPrice,
-        billingAmount:  p.billingAmount,
-        productName:    p.productName
+      countByStatus:   byStatus,
+      activeMRRCents:  activeMRRCents,
+      activeMRRDollars: (activeMRRCents / 100).toFixed(2),
+      priceFieldSample: allRows.filter(function(p){ return p.status === 'ACTIVE'; }).slice(0,3).map(function(p){ return {
+        purchaseId:  p.purchaseId,
+        status:      p.status,
+        price:       p.price,
+        productName: p.productName
       }; })
     });
   } catch (err) {
