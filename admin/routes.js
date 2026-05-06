@@ -228,6 +228,28 @@ router.get('/api/overview', async function(req, res) {
   }
 });
 
+/* ── /admin/api/cc/missing-gateway — CC active subs with no merchant set ── */
+
+router.get('/api/cc/missing-gateway', async function(req, res) {
+  try {
+    const rows = await db.many(`
+      SELECT native_id, customer_email, product, price_cents, next_bill_at, started_at,
+             raw->>'merchantId' AS merchant_id,
+             raw->>'campaignId' AS campaign_id,
+             raw->>'sourceTitle' AS source_title
+      FROM subscriptions
+      WHERE source = 'cc'
+        AND status = 'ACTIVE'
+        AND next_bill_at >= NOW()
+        AND COALESCE(NULLIF(TRIM(raw->>'merchant'), ''), '') = ''
+      ORDER BY price_cents DESC
+    `);
+    res.json({ total: rows.length, subscriptions: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* ── /admin/api/subscriptions — list with filters ── */
 
 router.get('/api/subscriptions', async function(req, res) {
