@@ -135,7 +135,8 @@ router.get('/api/overview', async function(req, res) {
       cancelsTrend,
       recentCancels,
       recentEvents,
-      productBreakdown
+      productBreakdown,
+      tomorrowRebillsList
     ] = await Promise.all([
       db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW()`),
       db.one(`SELECT COALESCE(SUM(price_cents),0)::bigint AS cents FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW()`),
@@ -176,7 +177,12 @@ router.get('/api/overview', async function(req, res) {
       db.many(`SELECT kind, source, email, payload, ts FROM events ORDER BY ts DESC LIMIT 50`),
       db.many(`SELECT product, source, COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS mrr_cents
                FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW() AND product IS NOT NULL
-               GROUP BY product, source ORDER BY n DESC LIMIT 15`)
+               GROUP BY product, source ORDER BY n DESC LIMIT 15`),
+      db.many(`SELECT customer_email, product, source, price_cents, next_bill_at
+               FROM subscriptions
+               WHERE status = 'ACTIVE' AND next_bill_at >= $1 AND next_bill_at < $2
+               ORDER BY source, price_cents DESC`,
+              [tomorrowStart, tomorrowEnd])
     ]);
 
     res.json({
@@ -205,8 +211,9 @@ router.get('/api/overview', async function(req, res) {
       forecast7d:        forecast7d,
       newSubsTrend:      newSubsTrend,
       cancelsTrend:      cancelsTrend,
-      recentCancels:     recentCancels,
-      recentEvents:      recentEvents
+      recentCancels:      recentCancels,
+      recentEvents:       recentEvents,
+      tomorrowRebillsList: tomorrowRebillsList
     });
   } catch (err) {
     console.error('[admin/api/overview]', err);

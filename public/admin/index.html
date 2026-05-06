@@ -401,6 +401,16 @@
         </div>
       </div>
 
+      <!-- Tomorrow rebills -->
+      <div class="section-label" id="s-tomorrow">Tomorrow's scheduled orders</div>
+      <div class="panel mb10">
+        <div class="panel-head">
+          <span class="panel-title">All sources — CC + Recharge + Subi</span>
+          <span id="tomorrow-count" style="font-size:11px;color:var(--muted2);margin-left:auto"></span>
+        </div>
+        <div id="tomorrow-list"></div>
+      </div>
+
       <!-- Products -->
       <div class="section-label" id="s-products">Top products</div>
       <div class="panel mb10" id="products-panel"></div>
@@ -847,6 +857,36 @@ function renderCancelsList(cancels) {
   }).join('');
 }
 
+/* ── Tomorrow rebills ── */
+function renderTomorrowRebills(list) {
+  var el    = document.getElementById('tomorrow-list');
+  var count = document.getElementById('tomorrow-count');
+  if (!list || !list.length) {
+    el.innerHTML = '<div class="empty">No scheduled orders for tomorrow</div>';
+    if (count) count.textContent = '';
+    return;
+  }
+  /* group totals by source */
+  var totals = {};
+  list.forEach(function(r) {
+    totals[r.source] = (totals[r.source] || 0) + Number(r.price_cents);
+  });
+  var summary = Object.keys(totals).map(function(s) {
+    return s + ': ' + $m(totals[s]);
+  }).join(' · ');
+  if (count) count.textContent = list.length + ' orders · ' + summary;
+
+  el.innerHTML = list.map(function(r) {
+    var src     = r.source ? '<span class="src-tag tag-' + (r.source==='recharge'?'rc':r.source) + '">' + r.source + '</span>' : '';
+    var billAt  = r.next_bill_at ? new Date(r.next_bill_at).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',timeZoneName:'short'}) : '';
+    return '<div class="cancel-row">' +
+      '<div><div class="cancel-name">' + esc(r.product || 'Subscription') + src + '</div>' +
+      '<div class="cancel-meta">' + esc(r.customer_email || '') + (billAt ? ' · ' + billAt : '') + '</div></div>' +
+      '<span class="cancel-amt">' + $m(r.price_cents) + '</span>' +
+    '</div>';
+  }).join('');
+}
+
 /* ── Products ── */
 function renderProducts(products) {
   var el = document.getElementById('products-panel');
@@ -917,6 +957,7 @@ async function loadData() {
     renderGrowthCharts(d.newSubsTrend, d.cancelsTrend);
     renderActivity(d.recentEvents);
     renderCancels(d.recentCancels);
+    renderTomorrowRebills(d.tomorrowRebillsList);
     renderProducts(d.productBreakdown);
     updateSubtitle();
 
