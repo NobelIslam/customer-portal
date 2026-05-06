@@ -234,9 +234,15 @@ router.get('/api/cc/missing-gateway', async function(req, res) {
   try {
     const rows = await db.many(`
       SELECT native_id, customer_email, product, price_cents, next_bill_at, started_at,
-             raw->>'merchantId' AS merchant_id,
-             raw->>'campaignId' AS campaign_id,
-             raw->>'sourceTitle' AS source_title
+             raw->>'merchantId'                                          AS merchant_id,
+             raw->>'merchant'                                            AS merchant,
+             raw->>'descriptor'                                          AS descriptor,
+             raw->>'campaignId'                                          AS campaign_id,
+             raw->>'sourceTitle'                                         AS source_title,
+             raw->'transactions'->0->>'paySource'                       AS pay_source,
+             raw->'transactions'->0->>'merchant'                        AS txn_merchant,
+             raw->'transactions'->0->>'descriptor'                      AS txn_descriptor,
+             raw->'transactions'->0->>'responseType'                    AS txn_response
       FROM subscriptions
       WHERE source = 'cc'
         AND status = 'ACTIVE'
@@ -244,7 +250,15 @@ router.get('/api/cc/missing-gateway', async function(req, res) {
         AND COALESCE(NULLIF(TRIM(raw->>'merchant'), ''), '') = ''
       ORDER BY price_cents DESC
     `);
-    res.json({ total: rows.length, subscriptions: rows });
+
+    /* group by paySource so user can see the breakdown */
+    const byPaySource = {};
+    rows.forEach(function(r) {
+      const k = r.pay_source || 'Unknown';
+      byPaySource[k] = (byPaySource[k] || 0) + 1;
+    });
+
+    res.json({ total: rows.length, byPaySource: byPaySource, subscriptions: rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
