@@ -182,13 +182,47 @@ router.get('/api/overview', async function(req, res) {
       db.many(`SELECT COALESCE(raw->>'merchant', 'Unknown') AS gateway,
                COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS mrr_cents
                FROM subscriptions
-               WHERE source = 'cc' AND status = 'ACTIVE' AND next_bill_at >= NOW()
+               WHERE source = 'cc' AND status = 'ACTIVE'
                GROUP BY raw->>'merchant' ORDER BY n DESC`),
-      db.many(`SELECT customer_email, product, source, price_cents, next_bill_at
-               FROM subscriptions
-               WHERE status = 'ACTIVE' AND next_bill_at >= $1 AND next_bill_at < $2
-               ORDER BY source, price_cents DESC`,
-              [tomorrowStart, tomorrowEnd])
+      (async function fetchTomorrowRebills() {
+        try {
+          const fmt = function(d) {
+            return (d.getMonth()+1).toString().padStart(2,'0') + '/' +
+                    d.getDate().toString().padStart(2,'0') + '/' + d.getFullYear();
+          };
+          const tmrDate = new Date(tomorrowStart);
+          const url = 'https://api.checkoutchamp.com/purchase/query/?' + new URLSearchParams({
+            loginId:        process.env.CC_LOGIN_ID,
+            password:       process.env.CC_API_PASSWORD,
+            nextBillDateFrom: fmt(tmrDate),
+            nextBillDateTo:   fmt(tmrDate),
+            resultsPerPage: 200,
+            page: 1
+          }).toString();
+          const r   = await fetch(url, { method: 'POST' });
+          const d   = await r.json();
+          const rows = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+          /* also pull from DB for recharge + subi */
+          const dbRows = await db.many(
+            `SELECT customer_email, product, source, price_cents, next_bill_at
+             FROM subscriptions
+             WHERE source != 'cc' AND status = 'ACTIVE' AND next_bill_at >= $1 AND next_bill_at < $2
+             ORDER BY price_cents DESC`,
+            [tomorrowStart, tomorrowEnd]
+          );
+          const ccRows = rows.map(function(p) { return {
+            customer_email: p.emailAddress,
+            product:        p.productName,
+            source:         'cc',
+            price_cents:    Math.round(parseFloat(p.price || 0) * 100),
+            next_bill_at:   p.nextBillDate
+          }; });
+          return ccRows.concat(dbRows);
+        } catch(e) {
+          console.error('[overview] tomorrow rebills CC fetch failed:', e.message);
+          return [];
+        }
+      })()
     ]);
 
     res.json({
