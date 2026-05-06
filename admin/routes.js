@@ -108,7 +108,8 @@ router.get('/api/overview', async function(req, res) {
     const now    = new Date();
     const todayStart = new Date(now); todayStart.setHours(0,0,0,0);
     const weekAgo    = new Date(now); weekAgo.setDate(weekAgo.getDate() - 7);
-    const monthAgo   = new Date(now); monthAgo.setDate(monthAgo.getDate() - 30);
+    const periodDays = Math.min(Math.max(parseInt(req.query.days || '30', 10), 1), 365);
+    const periodAgo  = new Date(todayStart); periodAgo.setDate(periodAgo.getDate() - periodDays);
     const tomorrowEnd = new Date(todayStart); tomorrowEnd.setDate(tomorrowEnd.getDate() + 2);
     const tomorrowStart = new Date(todayStart); tomorrowStart.setDate(tomorrowStart.getDate() + 1);
 
@@ -158,7 +159,7 @@ router.get('/api/overview', async function(req, res) {
                FROM subscriptions WHERE status = 'ACTIVE' GROUP BY source ORDER BY n DESC`),
       db.many(`SELECT DATE(created_at) AS day, COALESCE(SUM(amount_cents),0)::bigint AS cents
                FROM orders WHERE created_at >= $1
-               GROUP BY DATE(created_at) ORDER BY day ASC`, [monthAgo]),
+               GROUP BY DATE(created_at) ORDER BY day ASC`, [periodAgo]),
       db.many(`SELECT DATE(next_bill_at) AS day, COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS cents
                FROM subscriptions
                WHERE status = 'ACTIVE' AND next_bill_at >= $1 AND next_bill_at < $2
@@ -166,10 +167,10 @@ router.get('/api/overview', async function(req, res) {
               [todayStart, new Date(todayStart.getTime() + 8 * 24 * 60 * 60 * 1000)]),
       db.many(`SELECT DATE(started_at) AS day, source, COUNT(*)::int AS n
                FROM subscriptions WHERE started_at >= $1
-               GROUP BY DATE(started_at), source ORDER BY day ASC`, [monthAgo]),
+               GROUP BY DATE(started_at), source ORDER BY day ASC`, [periodAgo]),
       db.many(`SELECT DATE(cancelled_at) AS day, source, COUNT(*)::int AS n
                FROM subscriptions WHERE cancelled_at >= $1
-               GROUP BY DATE(cancelled_at), source ORDER BY day ASC`, [monthAgo]),
+               GROUP BY DATE(cancelled_at), source ORDER BY day ASC`, [periodAgo]),
       db.many(`SELECT id, customer_email, product, source, price_cents, cancelled_at, cancel_reason
                FROM subscriptions WHERE cancelled_at IS NOT NULL
                ORDER BY cancelled_at DESC LIMIT 10`),
@@ -181,6 +182,7 @@ router.get('/api/overview', async function(req, res) {
 
     res.json({
       generatedAt: now.toISOString(),
+      periodDays:  periodDays,
       kpis: {
         activeSubs:        activeCount.n,
         mrrCents:          Number(mrrRow.cents),

@@ -6,109 +6,191 @@
   <title>TGP Admin — Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --page-bg:   #faf9f4;
-      --card-bg:   #ffffff;
-      --card-bg2:  #f5f4ee;
-      --card-bg3:  #ece9df;
-      --border:    rgba(0,0,0,0.09);
-      --border2:   rgba(0,0,0,0.17);
-      --text:      #1d1d1b;
-      --muted:     #6b6b67;
-      --muted2:    #999996;
-      --accent:    #D85A30;
-      --cc:        #378ADD;
-      --rc:        #1D9E75;
-      --subi:      #7F77DD;
-      --green:     #1D9E75;
-      --red:       #E24B4A;
-      --radius-md: 8px;
-      --radius-lg: 12px;
+      --bg:      #0a0a0a;
+      --bg2:     #111111;
+      --bg3:     #181818;
+      --border:  #222222;
+      --border2: #2a2a2a;
+      --text:    #e8e8e8;
+      --muted:   #666;
+      --muted2:  #999;
+      --accent:  #f04e00;
+      --accent2: #ff6b35;
+      --green:   #22c55e;
+      --red:     #ef4444;
+      --yellow:  #f59e0b;
+      --blue:    #3b82f6;
+      --purple:  #a855f7;
+      --cc:      #3b82f6;
+      --rc:      #22c55e;
+      --subi:    #a855f7;
     }
 
-    html, body { background: var(--page-bg); font-family: 'Inter', -apple-system, system-ui, sans-serif; color: var(--text); font-size: 13px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+    html, body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, system-ui, sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
 
     /* ── Topbar ── */
-    .topbar { position: sticky; top: 0; z-index: 100; display: flex; align-items: center; gap: 10px; padding: 0 16px; height: 50px; background: var(--card-bg); border-bottom: 0.5px solid var(--border); }
-    .brand { font-weight: 600; font-size: 15px; flex-shrink: 0; color: var(--text); }
-    .brand .accent { color: var(--accent); }
-    .search-box { flex: 1; max-width: 240px; background: var(--card-bg2); border: 0.5px solid var(--border); border-radius: var(--radius-md); padding: 6px 10px; font-size: 12px; color: var(--muted2); }
-    .date-range { display: flex; gap: 3px; background: var(--card-bg2); border-radius: var(--radius-md); padding: 3px; }
-    .dr-pill { font-size: 11px; padding: 3px 8px; border-radius: 5px; color: var(--muted); cursor: pointer; white-space: nowrap; }
-    .dr-pill.on { background: var(--card-bg); color: var(--text); border: 0.5px solid var(--border); }
-    .topbar-right { display: flex; align-items: center; gap: 8px; margin-left: auto; font-size: 11px; }
-    .live-pill { display: inline-flex; align-items: center; gap: 4px; background: #e1f5ee; color: #0f6e56; padding: 3px 8px; border-radius: 999px; font-size: 10px; font-weight: 500; }
-    .sync-info { color: var(--muted); display: flex; align-items: center; gap: 4px; }
-    #sync-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--muted2); vertical-align: middle; }
-    #sync-dot.ok  { background: #1D9E75; }
-    #sync-dot.err { background: #E24B4A; }
-    .btn-sm { font-size: 11px; padding: 5px 10px; border: 0.5px solid var(--border); border-radius: var(--radius-md); background: var(--card-bg); color: var(--text); cursor: pointer; font-family: inherit; }
-    .btn-sm:hover { border-color: var(--border2); }
-    .btn-sm.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-    .btn-sm.primary:hover { background: #c24e28; }
-    .btn-sm:disabled { opacity: 0.45; cursor: not-allowed; }
+    .topbar {
+      position: sticky; top: 0; z-index: 100;
+      display: flex; align-items: center; gap: 10px;
+      padding: 0 16px; height: 52px;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+    }
+    .brand {
+      font-family: 'Oswald', sans-serif; font-size: 17px; font-weight: 600;
+      letter-spacing: 0.06em; text-transform: uppercase; color: #fff; flex-shrink: 0;
+    }
+    .brand .dot { color: var(--accent); }
+
+    /* Search */
+    .search-wrap { position: relative; flex: 1; max-width: 260px; }
+    .search-wrap svg { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); opacity: 0.4; pointer-events: none; }
+    .search-input {
+      width: 100%; background: var(--bg3);
+      border: 1px solid var(--border); border-radius: 7px;
+      padding: 7px 10px 7px 30px;
+      font-size: 12px; color: var(--text); font-family: inherit;
+      outline: none; transition: border-color 0.15s;
+    }
+    .search-input::placeholder { color: var(--muted); }
+    .search-input:focus { border-color: var(--border2); }
+    .search-clear {
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      font-size: 14px; color: var(--muted); cursor: pointer; display: none; line-height: 1;
+    }
+    .search-clear.visible { display: block; }
+
+    /* Date pills */
+    .date-range {
+      display: flex; gap: 2px;
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 7px; padding: 3px;
+    }
+    .dr-pill {
+      font-size: 11px; padding: 4px 9px;
+      border-radius: 5px; color: var(--muted);
+      cursor: pointer; white-space: nowrap; transition: all 0.12s;
+    }
+    .dr-pill:hover { color: var(--text); }
+    .dr-pill.on { background: var(--accent); color: #fff; font-weight: 500; }
+
+    /* Right controls */
+    .topbar-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+    .live-pill {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: rgba(34,197,94,.12); color: var(--green);
+      padding: 3px 9px; border-radius: 999px; font-size: 10px; font-weight: 500;
+    }
+    .live-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .sync-info { color: var(--muted); font-size: 11px; display: flex; align-items: center; gap: 5px; }
+    #sync-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+    #sync-dot.ok  { background: var(--green); box-shadow: 0 0 5px rgba(34,197,94,.4); }
+    #sync-dot.err { background: var(--red); }
+    .btn {
+      background: var(--bg3); border: 1px solid var(--border2); color: var(--muted2);
+      padding: 6px 12px; border-radius: 6px; cursor: pointer;
+      font-family: inherit; font-size: 12px; font-weight: 500; transition: all 0.15s;
+    }
+    .btn:hover { border-color: var(--accent); color: #fff; }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn.primary:hover { background: var(--accent2); }
+    .btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
     /* ── Layout ── */
-    .layout { display: flex; min-height: calc(100vh - 50px); }
-    .sidebar { width: 168px; flex-shrink: 0; background: var(--card-bg); border-right: 0.5px solid var(--border); padding: 10px 8px; position: sticky; top: 50px; height: calc(100vh - 50px); overflow-y: auto; }
-    .main { flex: 1; min-width: 0; padding: 16px 20px; background: var(--page-bg); }
+    .layout { display: flex; min-height: calc(100vh - 52px); }
 
-    /* ── Sidebar nav ── */
-    .nav-section { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted2); margin: 14px 10px 5px; }
+    /* Sidebar */
+    .sidebar {
+      width: 170px; flex-shrink: 0;
+      background: var(--bg2); border-right: 1px solid var(--border);
+      padding: 10px 8px;
+      position: sticky; top: 52px; height: calc(100vh - 52px); overflow-y: auto;
+    }
+    .nav-section {
+      font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--muted); margin: 14px 10px 5px;
+    }
     .nav-section:first-child { margin-top: 4px; }
-    .nav-item { display: flex; align-items: center; gap: 7px; padding: 6px 10px; border-radius: 6px; font-size: 12px; color: var(--muted); cursor: pointer; margin-bottom: 1px; text-decoration: none; }
-    .nav-item:hover { background: var(--card-bg2); color: var(--text); }
-    .nav-item.on { background: var(--card-bg2); color: var(--text); font-weight: 500; }
-    .nav-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: 0.4; flex-shrink: 0; }
+    .nav-item {
+      display: flex; align-items: center; gap: 7px;
+      padding: 6px 10px; border-radius: 6px; font-size: 12px;
+      color: var(--muted); cursor: pointer; margin-bottom: 1px;
+      text-decoration: none; transition: all 0.1s;
+    }
+    .nav-item:hover { background: var(--bg3); color: var(--text); }
+    .nav-item.on { background: var(--bg3); color: var(--text); font-weight: 500; }
+    .nav-dot { width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: 0.5; flex-shrink: 0; }
+
+    /* Main content */
+    .main { flex: 1; min-width: 0; padding: 16px 20px; }
 
     /* ── Page head ── */
     .page-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
-    .page-title { font-size: 20px; font-weight: 500; margin: 0 0 2px; }
+    .page-title { font-family: 'Oswald', sans-serif; font-size: 22px; font-weight: 500; letter-spacing: 0.03em; text-transform: uppercase; margin: 0 0 2px; color: #fff; }
     .page-sub { font-size: 11px; color: var(--muted); }
 
     /* ── Section labels ── */
-    .section-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 18px 0 8px; font-weight: 500; }
+    .section-label {
+      font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em;
+      color: var(--muted); margin: 20px 0 10px; font-weight: 600;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .section-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 
-    /* ── Grid helpers ── */
-    .grid-4   { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-bottom: 8px; }
-    .grid-3   { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-bottom: 8px; }
-    .row-2    { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-bottom: 8px; }
-    .row-2-eq { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
-    .mb8 { margin-bottom: 8px; }
+    /* ── Grids ── */
+    .grid-4   { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 10px; }
+    .grid-3   { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 10px; }
+    .row-2    { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-bottom: 10px; }
+    .row-2-eq { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 10px; }
+    .mb10 { margin-bottom: 10px; }
 
     /* ── KPI cards ── */
-    .kpi { background: var(--card-bg2); border-radius: var(--radius-md); padding: 12px 14px; }
-    .kpi-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
-    .kpi-value { font-size: 22px; font-weight: 500; line-height: 1.1; color: var(--text); }
-    .kpi-delta { font-size: 10px; color: var(--muted); margin-top: 3px; min-height: 14px; }
-    .kpi-spark { height: 26px; margin-top: 6px; position: relative; }
-    .kpi.forecast { background: #faece7; }
-    .kpi.forecast .kpi-label { color: #712b13; }
-    .kpi.forecast .kpi-value { color: #4a1b0c; }
-    .kpi.forecast .kpi-delta { color: #993c1d; }
-    .up      { color: #0f6e56; }
-    .down    { color: #a32d2d; }
+    .kpi { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+    .kpi-label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 8px; font-weight: 600; }
+    .kpi-value { font-family: 'Oswald', sans-serif; font-size: 28px; font-weight: 500; color: #fff; line-height: 1; }
+    .kpi-delta { font-size: 10px; margin-top: 5px; min-height: 14px; color: var(--muted); }
+    .kpi-spark { height: 26px; margin-top: 8px; }
+    .kpi.accent { border-color: rgba(240,78,0,.35); }
+    .kpi.accent .kpi-value { color: var(--accent); }
+    .kpi.pos { border-color: rgba(34,197,94,.25); }
+    .kpi.pos .kpi-value { color: var(--green); }
+    .kpi.neg { border-color: rgba(239,68,68,.25); }
+    .kpi.neg .kpi-value { color: var(--red); }
+    .up   { color: var(--green); }
+    .down { color: var(--red); }
     .neutral { color: var(--muted); }
 
     /* ── Source cards ── */
-    .src-card { background: var(--card-bg); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px; }
-    .src-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-    .src-name { font-size: 13px; font-weight: 600; }
-    .src-pct { font-size: 10px; padding: 2px 7px; border-radius: 10px; background: var(--card-bg2); color: var(--muted); font-weight: 500; }
+    .src-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+    .src-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .src-name { font-family: 'Oswald', sans-serif; font-size: 13px; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; }
+    .src-badge { font-size: 9px; padding: 2px 7px; border-radius: 20px; font-weight: 600; letter-spacing: 0.04em; }
+    .badge-cc   { background: rgba(59,130,246,.12); color: #93c5fd; border: 1px solid rgba(59,130,246,.25); }
+    .badge-rc   { background: rgba(34,197,94,.12);  color: #86efac; border: 1px solid rgba(34,197,94,.25); }
+    .badge-subi { background: rgba(168,85,247,.12); color: #d8b4fe; border: 1px solid rgba(168,85,247,.25); }
     .src-stats { display: flex; gap: 20px; margin-bottom: 10px; }
-    .src-stat-val { font-size: 22px; font-weight: 500; line-height: 1.1; }
-    .src-stat-lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 3px; }
-    .src-bar { height: 3px; background: var(--card-bg3); border-radius: 2px; overflow: hidden; }
-    .src-bar-fill { height: 100%; border-radius: 2px; }
+    .src-val { font-family: 'Oswald', sans-serif; font-size: 24px; font-weight: 500; color: #fff; line-height: 1; }
+    .src-lbl { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 3px; }
+    .src-bar { height: 3px; background: var(--border2); border-radius: 2px; overflow: hidden; }
+    .src-fill { height: 100%; border-radius: 2px; transition: width 0.5s ease; }
 
     /* ── Panels ── */
-    .panel { background: var(--card-bg); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px; }
-    .panel-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
-    .panel-title { font-size: 13px; font-weight: 500; color: var(--text); }
+    .panel { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .panel-title { font-family: 'Oswald', sans-serif; font-size: 11px; font-weight: 500; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted2); }
     .panel-meta { font-size: 11px; color: var(--muted); }
     .chart-wrap { position: relative; width: 100%; }
     .h240 { height: 240px; }
@@ -117,70 +199,86 @@
     .legend-item { display: flex; align-items: center; gap: 4px; font-size: 10px; color: var(--muted); }
     .legend-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
 
-    /* ── Filter tabs ── */
-    .filter-bar { display: flex; gap: 4px; margin-bottom: 8px; flex-wrap: wrap; }
-    .filter { font-size: 10px; padding: 4px 8px; border-radius: 5px; background: var(--card-bg2); color: var(--muted); border: 0.5px solid var(--border); cursor: pointer; }
-    .filter.on { background: var(--card-bg); color: var(--text); border-color: var(--border2); }
-    .filter:hover:not(.on) { color: var(--text); }
+    /* ── Activity filters ── */
+    .filter-bar { display: flex; gap: 4px; margin-bottom: 10px; flex-wrap: wrap; }
+    .filter { font-size: 10px; padding: 4px 9px; border-radius: 5px; background: var(--bg3); color: var(--muted); border: 1px solid var(--border); cursor: pointer; font-weight: 500; letter-spacing: 0.03em; transition: all 0.1s; }
+    .filter:hover { color: var(--text); }
+    .filter.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 
     /* ── Activity feed ── */
-    .a-row { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 0.5px solid var(--border); font-size: 12px; }
+    .a-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
     .a-row:last-child { border-bottom: none; }
-    .a-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-    .a-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .a-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .a-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted2); }
     .a-strong { font-weight: 500; color: var(--text); }
     .a-time { font-size: 10px; color: var(--muted); flex-shrink: 0; }
 
     /* ── Source tags ── */
-    .src-tag { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 9px; font-weight: 500; margin-left: 4px; letter-spacing: 0.02em; }
-    .tag-cc   { background: #e6f1fb; color: #0c447c; }
-    .tag-rc   { background: #e1f5ee; color: #0f6e56; }
-    .tag-subi { background: #eeedfe; color: #3c3489; }
+    .src-tag { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 9px; font-weight: 600; margin-left: 3px; letter-spacing: 0.04em; text-transform: uppercase; }
+    .tag-cc   { background: rgba(59,130,246,.15); color: #93c5fd; }
+    .tag-rc   { background: rgba(34,197,94,.15);  color: #86efac; }
+    .tag-subi { background: rgba(168,85,247,.15); color: #d8b4fe; }
 
-    /* ── Cancel list ── */
-    .cancel-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 0.5px solid var(--border); gap: 10px; font-size: 12px; }
+    /* ── Cancels list ── */
+    .cancel-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); gap: 10px; font-size: 12px; }
     .cancel-row:last-child { border-bottom: none; }
     .cancel-name { font-weight: 500; color: var(--text); }
     .cancel-meta { font-size: 10px; color: var(--muted); margin-top: 2px; }
-    .cancel-amt { color: #a32d2d; font-weight: 500; font-size: 13px; flex-shrink: 0; }
+    .cancel-amt { color: var(--red); font-size: 13px; font-weight: 600; font-family: 'Oswald', sans-serif; flex-shrink: 0; }
 
-    /* ── Products ── */
-    .prod-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 0.5px solid var(--border); gap: 10px; }
+    /* ── Products table ── */
+    .prod-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); gap: 10px; }
     .prod-row:last-child { border-bottom: none; }
-    .prod-name { font-size: 12px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .prod-name { font-size: 12px; color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .prod-right { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
-    .prod-count { font-size: 12px; color: var(--muted); }
-    .prod-mrr { font-size: 13px; font-weight: 500; min-width: 64px; text-align: right; }
+    .prod-count { font-family: 'Oswald', sans-serif; font-size: 14px; color: var(--muted2); }
+    .prod-mrr { font-family: 'Oswald', sans-serif; font-size: 14px; color: var(--text); min-width: 68px; text-align: right; }
+
+    /* ── Search results badge ── */
+    .search-badge { font-size: 10px; color: var(--accent); margin-bottom: 6px; display: none; }
+    .search-badge.visible { display: block; }
 
     /* ── Loading ── */
     .page-loading { display: flex; align-items: center; justify-content: center; min-height: 60vh; }
-    .spinner { width: 32px; height: 32px; border: 2.5px solid var(--card-bg3); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+    .spinner { width: 36px; height: 36px; border: 3px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.75s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .empty { padding: 24px; text-align: center; color: var(--muted); font-size: 12px; }
+    .empty { padding: 28px; text-align: center; color: var(--muted); font-size: 12px; }
   </style>
 </head>
 <body>
 
+<!-- ── Topbar ── -->
 <div class="topbar">
-  <div class="brand">TGP <span class="accent">Admin</span></div>
-  <div class="search-box">⌕ Search by email, sub ID...</div>
-  <div class="date-range">
-    <span class="dr-pill">Today</span>
-    <span class="dr-pill">7d</span>
-    <span class="dr-pill on">30d</span>
-    <span class="dr-pill">90d</span>
-    <span class="dr-pill">YTD</span>
+  <div class="brand">TGP <span class="dot">·</span> Admin</div>
+
+  <!-- Search -->
+  <div class="search-wrap">
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="6.5" cy="6.5" r="5" stroke="#888" stroke-width="1.5"/><path d="M11 11l3 3" stroke="#888" stroke-width="1.5" stroke-linecap="round"/></svg>
+    <input type="text" class="search-input" id="search-input" placeholder="Search email, product, event..." autocomplete="off"/>
+    <span class="search-clear" id="search-clear" onclick="clearSearch()">✕</span>
   </div>
+
+  <!-- Date range -->
+  <div class="date-range" id="date-range">
+    <span class="dr-pill" data-days="1">Today</span>
+    <span class="dr-pill" data-days="7">7d</span>
+    <span class="dr-pill on" data-days="30">30d</span>
+    <span class="dr-pill" data-days="90">90d</span>
+    <span class="dr-pill" data-days="ytd">YTD</span>
+  </div>
+
   <div class="topbar-right">
-    <span class="live-pill">● Live</span>
-    <span class="sync-info"><span id="sync-dot"></span><span id="sync-text">Loading...</span></span>
-    <button class="btn-sm primary" id="sync-btn" onclick="runSync()">↻ Sync</button>
-    <button class="btn-sm" onclick="logout()">Sign out</button>
+    <span class="live-pill"><span class="live-dot"></span> Live</span>
+    <span class="sync-info"><span id="sync-dot"></span><span id="sync-text">Loading…</span></span>
+    <button class="btn primary" id="sync-btn" onclick="runSync()">↻ Sync now</button>
+    <button class="btn" onclick="logout()">Sign out</button>
   </div>
 </div>
 
+<!-- ── Layout ── -->
 <div class="layout">
 
+  <!-- Sidebar -->
   <nav class="sidebar">
     <div class="nav-section">Analytics</div>
     <a href="#s-overview"  class="nav-item on"><span class="nav-dot"></span>Overview</a>
@@ -200,10 +298,12 @@
     <a href="/admin/login" class="nav-item" onclick="logout();return false;"><span class="nav-dot"></span>Sign out</a>
   </nav>
 
+  <!-- Main -->
   <div class="main">
     <div id="page-loading" class="page-loading"><div class="spinner"></div></div>
     <div id="content" style="display:none">
 
+      <!-- Page head -->
       <div class="page-head" id="s-overview">
         <div>
           <h1 class="page-title">Overview</h1>
@@ -211,7 +311,7 @@
         </div>
       </div>
 
-      <!-- KPI row 1 — sparklines -->
+      <!-- KPI row 1 — with sparklines -->
       <div class="grid-4" id="kpi-row1"></div>
 
       <!-- KPI row 2 — supporting stats -->
@@ -226,40 +326,40 @@
       <div class="row-2">
         <div class="panel">
           <div class="panel-head">
-            <div class="panel-title">Daily revenue, last 30 days</div>
-            <div class="panel-meta" id="rev-total"></div>
+            <span class="panel-title">Daily revenue</span>
+            <span class="panel-meta" id="rev-total"></span>
           </div>
           <div class="chart-wrap h200"><canvas id="rev-chart"></canvas></div>
         </div>
         <div class="panel">
           <div class="panel-head">
-            <div class="panel-title">Upcoming rebills — next 7 days</div>
+            <span class="panel-title">Upcoming rebills — next 7 days</span>
           </div>
           <div class="chart-wrap h200"><canvas id="forecast-chart"></canvas></div>
         </div>
       </div>
 
-      <!-- Growth charts -->
-      <div class="section-label" id="s-growth">Subscription growth — last 30 days</div>
+      <!-- Growth -->
+      <div class="section-label" id="s-growth">Subscription growth</div>
       <div class="row-2-eq">
         <div class="panel">
           <div class="panel-head">
-            <div class="panel-title">Daily new subscriptions</div>
+            <span class="panel-title">New subscriptions</span>
             <div class="legend">
-              <span class="legend-item"><span class="legend-dot" style="background:#378ADD"></span>CC</span>
-              <span class="legend-item"><span class="legend-dot" style="background:#1D9E75"></span>Recharge</span>
-              <span class="legend-item"><span class="legend-dot" style="background:#7F77DD"></span>Subi</span>
+              <span class="legend-item"><span class="legend-dot" style="background:var(--cc)"></span>CC</span>
+              <span class="legend-item"><span class="legend-dot" style="background:var(--rc)"></span>Recharge</span>
+              <span class="legend-item"><span class="legend-dot" style="background:var(--subi)"></span>Subi</span>
             </div>
           </div>
           <div class="chart-wrap h240"><canvas id="new-subs-chart"></canvas></div>
         </div>
         <div class="panel">
           <div class="panel-head">
-            <div class="panel-title">Daily cancellations</div>
+            <span class="panel-title">Cancellations</span>
             <div class="legend">
-              <span class="legend-item"><span class="legend-dot" style="background:#378ADD"></span>CC</span>
-              <span class="legend-item"><span class="legend-dot" style="background:#1D9E75"></span>Recharge</span>
-              <span class="legend-item"><span class="legend-dot" style="background:#7F77DD"></span>Subi</span>
+              <span class="legend-item"><span class="legend-dot" style="background:var(--cc)"></span>CC</span>
+              <span class="legend-item"><span class="legend-dot" style="background:var(--rc)"></span>Recharge</span>
+              <span class="legend-item"><span class="legend-dot" style="background:var(--subi)"></span>Subi</span>
             </div>
           </div>
           <div class="chart-wrap h240"><canvas id="cancels-chart"></canvas></div>
@@ -267,10 +367,10 @@
       </div>
 
       <!-- Net growth -->
-      <div class="panel mb8">
+      <div class="panel mb10">
         <div class="panel-head">
-          <div class="panel-title">Net growth per day (new − cancelled)</div>
-          <div class="panel-meta" id="net-growth-summary"></div>
+          <span class="panel-title">Net growth (new − cancelled)</span>
+          <span class="panel-meta" id="net-growth-summary"></span>
         </div>
         <div class="chart-wrap h200"><canvas id="net-growth-chart"></canvas></div>
       </div>
@@ -280,32 +380,34 @@
       <div class="row-2-eq">
         <div class="panel">
           <div class="panel-head">
-            <div class="panel-title">Activity feed</div>
-            <div class="panel-meta" id="activity-count"></div>
+            <span class="panel-title">Activity feed</span>
+            <span class="panel-meta" id="activity-count"></span>
           </div>
-          <div class="filter-bar" id="activity-filters">
-            <span class="filter on" data-kind="">All</span>
+          <div class="filter-bar" id="kind-filters">
+            <span class="filter on"  data-kind="">All</span>
             <span class="filter" data-kind="sub_created">New</span>
             <span class="filter" data-kind="sub_cancelled">Cancels</span>
             <span class="filter" data-kind="rebill">Rebills</span>
             <span class="filter" data-kind="login">Logins</span>
             <span class="filter" data-kind="failed_charge">Failed</span>
           </div>
+          <div class="search-badge" id="feed-search-badge"></div>
           <div id="activity-feed"></div>
         </div>
         <div class="panel" id="s-cancels">
-          <div class="panel-head"><div class="panel-title">Recent cancellations</div></div>
+          <div class="panel-head"><span class="panel-title">Recent cancellations</span></div>
+          <div class="search-badge" id="cancels-search-badge"></div>
           <div id="cancels-list"></div>
         </div>
       </div>
 
       <!-- Products -->
       <div class="section-label" id="s-products">Top products</div>
-      <div class="panel mb8" id="products-panel"></div>
+      <div class="panel mb10" id="products-panel"></div>
 
-    </div>
-  </div>
-</div>
+    </div><!-- /#content -->
+  </div><!-- /.main -->
+</div><!-- /.layout -->
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
@@ -320,7 +422,6 @@
 
 var SESSION = localStorage.getItem('tgp_admin_session');
 var H = { 'Authorization': 'Bearer ' + SESSION };
-
 function logout() { localStorage.removeItem('tgp_admin_session'); location.href = '/admin/login'; }
 
 /* ── Helpers ── */
@@ -346,43 +447,116 @@ function ago(iso) {
   return Math.floor(h / 24) + 'd ago';
 }
 function weekDelta(cur, prev) {
-  var diff = (cur || 0) - (prev || 0);
-  var sign = diff >= 0 ? '+' : '';
-  var cls  = diff > 0 ? 'up' : diff < 0 ? 'down' : 'neutral';
+  var diff = (cur||0) - (prev||0), sign = diff >= 0 ? '+' : '', cls = diff > 0 ? 'up' : diff < 0 ? 'down' : 'neutral';
   return '<span class="' + cls + '">' + sign + diff + ' vs prev week</span>';
 }
 function dayDelta(cur, prev) {
-  var diff = (cur || 0) - (prev || 0);
-  var sign = diff >= 0 ? '+' : '';
-  var cls  = diff > 0 ? 'up' : diff < 0 ? 'down' : 'neutral';
+  var diff = (cur||0) - (prev||0), sign = diff >= 0 ? '+' : '', cls = diff > 0 ? 'up' : diff < 0 ? 'down' : 'neutral';
   return '<span class="' + cls + '">' + sign + diff + ' vs yesterday</span>';
 }
 
-/* ── Chart defaults (light theme) ── */
-Chart.defaults.color = '#999996';
-Chart.defaults.font.family = 'Inter, sans-serif';
-Chart.defaults.font.size = 11;
+/* ── Date range state ── */
+var currentDays = 30;
 
-var TT = {
-  backgroundColor: '#ffffff',
-  borderColor: 'rgba(0,0,0,0.12)',
-  borderWidth: 1,
-  titleColor: '#1d1d1b',
-  bodyColor: '#6b6b67',
-  padding: 10
-};
-var GRID = 'rgba(0,0,0,0.05)';
-var TICK = '#999996';
+function getYTDDays() {
+  var now = new Date(), jan1 = new Date(now.getFullYear(), 0, 1);
+  return Math.max(1, Math.ceil((now - jan1) / 86400000));
+}
 
-/* ── 30-day label array ── */
-function last30Days() {
-  var days = [];
-  for (var i = 29; i >= 0; i--) {
-    var d = new Date(); d.setDate(d.getDate() - i); d.setHours(0,0,0,0);
+function lastNDays() {
+  var n = currentDays, days = [];
+  for (var i = n - 1; i >= 0; i--) {
+    var d = new Date(); d.setDate(d.getDate() - i); d.setHours(0, 0, 0, 0);
     days.push(d.toISOString().split('T')[0]);
   }
   return days;
 }
+
+/* Date pill click handler */
+document.getElementById('date-range').addEventListener('click', function(e) {
+  var pill = e.target.closest('.dr-pill');
+  if (!pill) return;
+  var dVal = pill.dataset.days;
+  currentDays = dVal === 'ytd' ? getYTDDays() : parseInt(dVal, 10);
+  document.querySelectorAll('.dr-pill').forEach(function(p) { p.classList.toggle('on', p === pill); });
+  loadData();
+});
+
+/* ── Search state ── */
+var searchTerm = '';
+var searchTimeout = null;
+var allEvents = [];
+var allCancels = [];
+var currentKind = '';
+
+var searchInput = document.getElementById('search-input');
+var searchClear = document.getElementById('search-clear');
+
+searchInput.addEventListener('input', function() {
+  clearTimeout(searchTimeout);
+  var val = searchInput.value;
+  searchClear.classList.toggle('visible', val.length > 0);
+  searchTimeout = setTimeout(function() {
+    searchTerm = val.trim().toLowerCase();
+    applyFeedFilter();
+    applyCancelsFilter();
+  }, 250);
+});
+
+function clearSearch() {
+  searchInput.value = '';
+  searchClear.classList.remove('visible');
+  searchTerm = '';
+  applyFeedFilter();
+  applyCancelsFilter();
+}
+
+function applyFeedFilter() {
+  var filtered = currentKind ? allEvents.filter(function(e) { return e.kind === currentKind; }) : allEvents.slice();
+  if (searchTerm) {
+    filtered = filtered.filter(function(e) {
+      return (e.email || '').toLowerCase().indexOf(searchTerm) !== -1 ||
+             (e.kind  || '').toLowerCase().indexOf(searchTerm) !== -1 ||
+             (e.payload && (e.payload.product || '').toLowerCase().indexOf(searchTerm) !== -1);
+    });
+  }
+  var badge = document.getElementById('feed-search-badge');
+  if (searchTerm) { badge.textContent = filtered.length + ' result' + (filtered.length !== 1 ? 's' : '') + ' for "' + esc(searchTerm) + '"'; badge.classList.add('visible'); }
+  else { badge.classList.remove('visible'); }
+  renderFeedList(filtered);
+}
+
+function applyCancelsFilter() {
+  var filtered = allCancels.slice();
+  if (searchTerm) {
+    filtered = filtered.filter(function(c) {
+      return (c.customer_email || '').toLowerCase().indexOf(searchTerm) !== -1 ||
+             (c.product || '').toLowerCase().indexOf(searchTerm) !== -1;
+    });
+  }
+  var badge = document.getElementById('cancels-search-badge');
+  if (searchTerm) { badge.textContent = filtered.length + ' result' + (filtered.length !== 1 ? 's' : '') + ' for "' + esc(searchTerm) + '"'; badge.classList.add('visible'); }
+  else { badge.classList.remove('visible'); }
+  renderCancelsList(filtered);
+}
+
+/* Kind filter tabs */
+document.getElementById('kind-filters').addEventListener('click', function(e) {
+  var btn = e.target.closest('.filter');
+  if (!btn) return;
+  currentKind = btn.dataset.kind;
+  document.querySelectorAll('#kind-filters .filter').forEach(function(f) { f.classList.toggle('on', f === btn); });
+  applyFeedFilter();
+});
+
+/* ── Chart defaults ── */
+Chart.defaults.color = '#555';
+Chart.defaults.font.family = 'Inter, sans-serif';
+Chart.defaults.font.size = 11;
+
+var TT = { backgroundColor: '#111', borderColor: '#2a2a2a', borderWidth: 1, titleColor: '#fff', bodyColor: '#ccc', padding: 10 };
+var GRID = '#1a1a1a';
+var TICK = '#555';
 
 /* ── Pivot trend [{day,source,n}] → per-source arrays ── */
 function pivotTrend(trend, days) {
@@ -401,17 +575,17 @@ function pivotTrend(trend, days) {
 
 /* ── KPI grid ── */
 function renderKpis(k) {
-  var row1 = [
-    { label: 'MRR',                  value: $m(k.mrrCents),    delta: 'monthly recurring revenue', sparkId: 'sp-mrr',     sparkColor: '#D85A30' },
-    { label: 'Active subscriptions', value: $n(k.activeSubs),  delta: 'CC + Recharge + Subi',      sparkId: 'sp-subs',    sparkColor: '#378ADD' },
-    { label: 'New today',            value: $n(k.newToday),    delta: dayDelta(k.newToday, k.newYesterday), sparkId: 'sp-new', sparkColor: '#1D9E75' },
-    { label: 'Cancels today',        value: $n(k.cancelsToday),delta: (function() {
-        var d = (k.cancelsToday||0) - (k.cancelsYesterday||0), s = d >= 0 ? '+' : '', c = d > 0 ? 'down' : d < 0 ? 'up' : 'neutral';
-        return '<span class="' + c + '">' + s + d + ' vs yesterday</span>';
-      })(), sparkId: 'sp-cancels', sparkColor: '#E24B4A' }
-  ];
-  document.getElementById('kpi-row1').innerHTML = row1.map(function(c) {
-    return '<div class="kpi">' +
+  /* Row 1: primary metrics with sparklines */
+  document.getElementById('kpi-row1').innerHTML = [
+    { label: 'MRR',                  value: $m(k.mrrCents),    delta: 'monthly recurring revenue', cls: 'accent', sparkId: 'sp-mrr',     sparkColor: '#f04e00' },
+    { label: 'Active subscriptions', value: $n(k.activeSubs),  delta: 'CC + Recharge + Subi',      cls: '',       sparkId: 'sp-subs',    sparkColor: '#3b82f6' },
+    { label: 'New today',            value: $n(k.newToday),    delta: dayDelta(k.newToday, k.newYesterday),         sparkId: 'sp-new',     sparkColor: '#22c55e' },
+    { label: 'Cancels today',        value: $n(k.cancelsToday), delta: (function() {
+        var d=(k.cancelsToday||0)-(k.cancelsYesterday||0), s=d>=0?'+':'', c=d>0?'down':d<0?'up':'neutral';
+        return '<span class="'+c+'">'+s+d+' vs yesterday</span>';
+      })(), cls: '', sparkId: 'sp-cancels', sparkColor: '#ef4444' }
+  ].map(function(c) {
+    return '<div class="kpi' + (c.cls ? ' ' + c.cls : '') + '">' +
       '<div class="kpi-label">' + c.label + '</div>' +
       '<div class="kpi-value">' + c.value + '</div>' +
       '<div class="kpi-delta">' + c.delta + '</div>' +
@@ -419,17 +593,17 @@ function renderKpis(k) {
     '</div>';
   }).join('');
 
-  var netSign = (k.netToday || 0) >= 0 ? '+' : '';
-  var row2 = [
-    { label: 'Net today',           value: netSign + $n(k.netToday), delta: 'new minus cancelled',    cls: '' },
-    { label: "Tomorrow's rebills",  value: $m(k.tomorrowForecastCents), delta: $n(k.tomorrowRebillCount) + ' subscriptions due', cls: 'forecast' },
-    { label: 'New this week',       value: $n(k.newThisWeek),  delta: weekDelta(k.newThisWeek, k.newLastWeek),   cls: '' },
-    { label: 'Cancels this week',   value: $n(k.cancelsThisWeek), delta: (function() {
-        var d = (k.cancelsThisWeek||0) - (k.cancelsLastWeek||0), s = d >= 0 ? '+' : '', c = d > 0 ? 'down' : d < 0 ? 'up' : 'neutral';
-        return '<span class="' + c + '">' + s + d + ' vs prev week</span>';
+  /* Row 2: supporting stats */
+  var net = k.netToday || 0;
+  document.getElementById('kpi-row2').innerHTML = [
+    { label: 'Net today',          value: (net >= 0 ? '+' : '') + $n(net), delta: 'new minus cancelled',  cls: net > 0 ? 'pos' : net < 0 ? 'neg' : '' },
+    { label: "Tomorrow's rebills", value: $m(k.tomorrowForecastCents),     delta: $n(k.tomorrowRebillCount) + ' subscriptions due', cls: 'accent' },
+    { label: 'New this week',      value: $n(k.newThisWeek),               delta: weekDelta(k.newThisWeek, k.newLastWeek), cls: '' },
+    { label: 'Cancels this week',  value: $n(k.cancelsThisWeek),           delta: (function() {
+        var d=(k.cancelsThisWeek||0)-(k.cancelsLastWeek||0), s=d>=0?'+':'', c=d>0?'down':d<0?'up':'neutral';
+        return '<span class="'+c+'">'+s+d+' vs prev week</span>';
       })(), cls: '' }
-  ];
-  document.getElementById('kpi-row2').innerHTML = row2.map(function(c) {
+  ].map(function(c) {
     return '<div class="kpi' + (c.cls ? ' ' + c.cls : '') + '">' +
       '<div class="kpi-label">' + c.label + '</div>' +
       '<div class="kpi-value">' + c.value + '</div>' +
@@ -440,16 +614,14 @@ function renderKpis(k) {
 
 /* ── Sparklines ── */
 function renderSparklines(newTrend, cancelTrend, revTrend) {
-  var days30 = last30Days();
+  var days30 = lastNDays();
   var np = pivotTrend(newTrend, days30);
   var cp = pivotTrend(cancelTrend, days30);
 
   var newTotals = days30.map(function(d, i) { return (np.cc[i]||0)+(np.recharge[i]||0)+(np.subi[i]||0); }).slice(-20);
   var canTotals = days30.map(function(d, i) { return (cp.cc[i]||0)+(cp.recharge[i]||0)+(cp.subi[i]||0); }).slice(-20);
   var revTotals = (revTrend||[]).slice(-20).map(function(r) { return Number(r.cents)/100; });
-
-  var cum = 0;
-  var subsTrend = days30.map(function(d, i) {
+  var cum = 0, subsTrend = days30.map(function(d, i) {
     cum += ((np.cc[i]||0)+(np.recharge[i]||0)+(np.subi[i]||0)) - ((cp.cc[i]||0)+(cp.recharge[i]||0)+(cp.subi[i]||0));
     return cum;
   }).slice(-20);
@@ -459,43 +631,39 @@ function renderSparklines(newTrend, cancelTrend, revTrend) {
     if (!el || !data.length) return;
     new Chart(el, {
       type: 'line',
-      data: { labels: Array(data.length).fill(''), datasets: [{ data: data, borderColor: color, borderWidth: 1.5, fill: false, tension: 0.35, pointRadius: 0 }] },
-      options: {
-        responsive: true, maintainAspectRatio: false,
+      data: { labels: Array(data.length).fill(''), datasets: [{ data: data, borderColor: color, borderWidth: 1.5, fill: false, tension: 0.4, pointRadius: 0 }] },
+      options: { responsive: true, maintainAspectRatio: false, animation: { duration: 0 },
         plugins: { legend: { display: false }, tooltip: { enabled: false } },
-        scales: { x: { display: false }, y: { display: false } },
-        animation: { duration: 0 }
+        scales: { x: { display: false }, y: { display: false } }
       }
     });
   }
-
-  spark('sp-mrr',     '#D85A30', revTotals);
-  spark('sp-subs',    '#378ADD', subsTrend);
-  spark('sp-new',     '#1D9E75', newTotals);
-  spark('sp-cancels', '#E24B4A', canTotals);
+  spark('sp-mrr',     '#f04e00', revTotals);
+  spark('sp-subs',    '#3b82f6', subsTrend);
+  spark('sp-new',     '#22c55e', newTotals);
+  spark('sp-cancels', '#ef4444', canTotals);
 }
 
 /* ── Source cards ── */
 function renderSourceCards(sources) {
   var cfg = {
-    cc:       { label: 'CheckoutChamp', color: '#378ADD' },
-    recharge: { label: 'Recharge',      color: '#1D9E75' },
-    subi:     { label: 'Subi',          color: '#7F77DD' }
+    cc:       { label: 'CheckoutChamp', badge: 'badge-cc',   color: '#3b82f6' },
+    recharge: { label: 'Recharge',      badge: 'badge-rc',   color: '#22c55e' },
+    subi:     { label: 'Subi',          badge: 'badge-subi', color: '#a855f7' }
   };
-  var total = sources.reduce(function(a, s) { return a + s.n; }, 0);
-  var by = { cc: { n: 0, mrr_cents: 0 }, recharge: { n: 0, mrr_cents: 0 }, subi: { n: 0, mrr_cents: 0 } };
+  var total = sources.reduce(function(a,s) { return a+s.n; }, 0);
+  var by = { cc: { n:0, mrr_cents:0 }, recharge: { n:0, mrr_cents:0 }, subi: { n:0, mrr_cents:0 } };
   sources.forEach(function(s) { if (by[s.source]) by[s.source] = s; });
 
-  document.getElementById('src-grid').innerHTML = Object.keys(cfg).map(function(src) {
-    var s = by[src], c = cfg[src];
-    var pct = total > 0 ? Math.round(s.n / total * 100) : 0;
+  document.getElementById('src-grid').innerHTML = ['cc','recharge','subi'].map(function(src) {
+    var s = by[src], c = cfg[src], pct = total > 0 ? Math.round(s.n / total * 100) : 0;
     return '<div class="src-card">' +
-      '<div class="src-card-head"><span class="src-name" style="color:' + c.color + '">' + c.label + '</span><span class="src-pct">' + pct + '%</span></div>' +
+      '<div class="src-head"><span class="src-name" style="color:'+c.color+'">'+c.label+'</span><span class="src-badge '+c.badge+'">'+pct+'% of total</span></div>' +
       '<div class="src-stats">' +
-        '<div><div class="src-stat-val">' + $n(s.n) + '</div><div class="src-stat-lbl">Active subs</div></div>' +
-        '<div><div class="src-stat-val">' + $m(Number(s.mrr_cents)) + '</div><div class="src-stat-lbl">MRR</div></div>' +
+        '<div><div class="src-val">'+$n(s.n)+'</div><div class="src-lbl">Active subs</div></div>' +
+        '<div><div class="src-val">'+$m(Number(s.mrr_cents))+'</div><div class="src-lbl">MRR</div></div>' +
       '</div>' +
-      '<div class="src-bar"><div class="src-bar-fill" style="width:' + pct + '%;background:' + c.color + '"></div></div>' +
+      '<div class="src-bar"><div class="src-fill" style="width:'+pct+'%;background:'+c.color+'"></div></div>' +
     '</div>';
   }).join('');
 }
@@ -503,13 +671,13 @@ function renderSourceCards(sources) {
 /* ── Growth charts ── */
 var newSubsChart = null, cancelsChart = null, netChart = null;
 function renderGrowthCharts(newTrend, cancelTrend) {
-  var days   = last30Days();
-  var labels = days.map(function(d) { return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); });
+  var days   = lastNDays();
+  var labels = days.map(function(d) { return new Date(d+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}); });
   var nd = pivotTrend(newTrend, days);
   var cd = pivotTrend(cancelTrend, days);
-
+  var maxTicks = currentDays <= 14 ? currentDays : currentDays <= 60 ? 12 : 8;
   var stackedScales = {
-    x: { stacked: true, ticks: { color: TICK, maxTicksLimit: 10 }, grid: { display: false } },
+    x: { stacked: true, ticks: { color: TICK, maxTicksLimit: maxTicks }, grid: { display: false } },
     y: { stacked: true, ticks: { color: TICK }, grid: { color: GRID }, beginAtZero: true }
   };
 
@@ -517,9 +685,9 @@ function renderGrowthCharts(newTrend, cancelTrend) {
   newSubsChart = new Chart(document.getElementById('new-subs-chart'), {
     type: 'bar',
     data: { labels: labels, datasets: [
-      { label: 'CC',       data: nd.cc,       backgroundColor: '#378ADD', stack: 's' },
-      { label: 'Recharge', data: nd.recharge, backgroundColor: '#1D9E75', stack: 's' },
-      { label: 'Subi',     data: nd.subi,     backgroundColor: '#7F77DD', stack: 's' }
+      { label: 'CC',       data: nd.cc,       backgroundColor: 'rgba(59,130,246,.8)',  stack: 's' },
+      { label: 'Recharge', data: nd.recharge, backgroundColor: 'rgba(34,197,94,.8)',   stack: 's' },
+      { label: 'Subi',     data: nd.subi,     backgroundColor: 'rgba(168,85,247,.8)',  stack: 's' }
     ]},
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: TT }, scales: stackedScales }
   });
@@ -528,9 +696,9 @@ function renderGrowthCharts(newTrend, cancelTrend) {
   cancelsChart = new Chart(document.getElementById('cancels-chart'), {
     type: 'bar',
     data: { labels: labels, datasets: [
-      { label: 'CC',       data: cd.cc,       backgroundColor: 'rgba(55,138,221,0.6)',  stack: 's' },
-      { label: 'Recharge', data: cd.recharge, backgroundColor: 'rgba(29,158,117,0.6)',  stack: 's' },
-      { label: 'Subi',     data: cd.subi,     backgroundColor: 'rgba(127,119,221,0.6)', stack: 's' }
+      { label: 'CC',       data: cd.cc,       backgroundColor: 'rgba(59,130,246,.65)', stack: 's' },
+      { label: 'Recharge', data: cd.recharge, backgroundColor: 'rgba(34,197,94,.65)',  stack: 's' },
+      { label: 'Subi',     data: cd.subi,     backgroundColor: 'rgba(168,85,247,.65)', stack: 's' }
     ]},
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: TT }, scales: stackedScales }
   });
@@ -538,19 +706,19 @@ function renderGrowthCharts(newTrend, cancelTrend) {
   var netData = days.map(function(d, i) {
     return (nd.cc[i]+nd.recharge[i]+nd.subi[i]) - (cd.cc[i]+cd.recharge[i]+cd.subi[i]);
   });
-  var netTotal = netData.reduce(function(a,v) { return a+v; }, 0);
-  document.getElementById('net-growth-summary').textContent = (netTotal >= 0 ? '+' : '') + netTotal + ' net this month';
+  var netTotal = netData.reduce(function(a,v){return a+v;},0);
+  document.getElementById('net-growth-summary').textContent = (netTotal >= 0 ? '+' : '') + netTotal + ' net this period';
 
   if (netChart) netChart.destroy();
   netChart = new Chart(document.getElementById('net-growth-chart'), {
     type: 'bar',
     data: { labels: labels, datasets: [{ data: netData, borderRadius: 3,
-      backgroundColor: netData.map(function(v) { return v >= 0 ? 'rgba(29,158,117,0.75)' : 'rgba(226,75,74,0.75)'; })
+      backgroundColor: netData.map(function(v) { return v >= 0 ? 'rgba(34,197,94,.7)' : 'rgba(239,68,68,.7)'; })
     }]},
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false }, tooltip: Object.assign({}, TT, { callbacks: { label: function(c) { return (c.parsed.y >= 0 ? '+' : '') + c.parsed.y + ' net'; } } }) },
-      scales: { x: { ticks: { color: TICK, maxTicksLimit: 10 }, grid: { display: false } }, y: { ticks: { color: TICK }, grid: { color: GRID } } }
+      scales: { x: { ticks: { color: TICK, maxTicksLimit: maxTicks }, grid: { display: false } }, y: { ticks: { color: TICK }, grid: { color: GRID } } }
     }
   });
 }
@@ -558,20 +726,20 @@ function renderGrowthCharts(newTrend, cancelTrend) {
 /* ── Revenue chart ── */
 var revChart = null;
 function renderRevChart(trend) {
-  var labels = (trend||[]).map(function(r) { return new Date(r.day+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}); });
-  var data   = (trend||[]).map(function(r) { return Number(r.cents)/100; });
+  var labels = (trend||[]).map(function(r){ return new Date(r.day+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}); });
+  var data   = (trend||[]).map(function(r){ return Number(r.cents)/100; });
   var total  = data.reduce(function(a,v){return a+v;},0);
-  document.getElementById('rev-total').textContent = '$' + Math.round(total).toLocaleString() + ' total';
+  document.getElementById('rev-total').textContent = '$'+Math.round(total).toLocaleString()+' total';
   if (revChart) revChart.destroy();
   revChart = new Chart(document.getElementById('rev-chart'), {
     type: 'line',
-    data: { labels: labels, datasets: [{ data: data, borderColor: '#D85A30', backgroundColor: 'rgba(216,90,48,0.07)', fill: true, tension: 0.4, pointRadius: 0, borderWidth: 2 }]},
+    data: { labels: labels, datasets: [{ data: data, borderColor: '#f04e00', backgroundColor: 'rgba(240,78,0,.07)', fill: true, tension: 0.4, pointRadius: 0, borderWidth: 2 }]},
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false }, tooltip: TT },
       scales: {
         x: { ticks: { color: TICK, maxTicksLimit: 10 }, grid: { display: false } },
-        y: { ticks: { color: TICK, callback: function(v) { return '$'+(v>=1000?(v/1000).toFixed(1)+'k':v); } }, grid: { color: GRID } }
+        y: { ticks: { color: TICK, callback: function(v){ return '$'+(v>=1000?(v/1000).toFixed(1)+'k':v); } }, grid: { color: GRID } }
       }
     }
   });
@@ -580,21 +748,21 @@ function renderRevChart(trend) {
 /* ── Forecast chart ── */
 var fcastChart = null;
 function renderForecastChart(forecast) {
-  var labels = (forecast||[]).map(function(r) { return new Date(r.day+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}); });
-  var data   = (forecast||[]).map(function(r) { return Number(r.cents)/100; });
+  var labels = (forecast||[]).map(function(r){ return new Date(r.day+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}); });
+  var data   = (forecast||[]).map(function(r){ return Number(r.cents)/100; });
   if (fcastChart) fcastChart.destroy();
   fcastChart = new Chart(document.getElementById('forecast-chart'), {
     type: 'bar',
-    data: { labels: labels, datasets: [{ data: data, backgroundColor: 'rgba(216,90,48,0.75)', borderRadius: 4 }]},
+    data: { labels: labels, datasets: [{ data: data, backgroundColor: 'rgba(240,78,0,.7)', borderRadius: 4 }]},
     options: {
       responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false }, tooltip: Object.assign({}, TT, { callbacks: { label: function(c) {
+      plugins: { legend: { display: false }, tooltip: Object.assign({}, TT, { callbacks: { label: function(c){
         var r = forecast[c.dataIndex];
-        return (r ? r.n + ' rebills · ' : '') + '$' + Math.round(c.parsed.y).toLocaleString();
+        return (r ? r.n+' rebills · ' : '')+'$'+Math.round(c.parsed.y).toLocaleString();
       }}}) },
       scales: {
         x: { ticks: { color: TICK }, grid: { display: false } },
-        y: { ticks: { color: TICK, callback: function(v) { return '$'+(v>=1000?(v/1000).toFixed(1)+'k':v); } }, grid: { color: GRID } }
+        y: { ticks: { color: TICK, callback: function(v){ return '$'+(v>=1000?(v/1000).toFixed(1)+'k':v); } }, grid: { color: GRID } }
       }
     }
   });
@@ -602,34 +770,26 @@ function renderForecastChart(forecast) {
 
 /* ── Activity feed ── */
 var KIND_META = {
-  sub_created:   { lbl: 'New sub',       color: '#1D9E75' },
-  sub_cancelled: { lbl: 'Cancelled',     color: '#E24B4A' },
-  rebill:        { lbl: 'Rebill',        color: '#1D9E75' },
-  login:         { lbl: 'Login',         color: '#378ADD' },
-  failed_charge: { lbl: 'Failed charge', color: '#EF9F27' }
+  sub_created:   { lbl: 'New sub',       color: '#22c55e' },
+  sub_cancelled: { lbl: 'Cancelled',     color: '#ef4444' },
+  rebill:        { lbl: 'Rebill',        color: '#22c55e' },
+  login:         { lbl: 'Login',         color: '#3b82f6' },
+  failed_charge: { lbl: 'Failed charge', color: '#f59e0b' }
 };
-var allEvents = [], currentFilter = '';
 
 function renderActivity(events) {
   allEvents = events || [];
   document.getElementById('activity-count').textContent = allEvents.length + ' events';
-  renderActivityList(allEvents);
-  document.querySelectorAll('#activity-filters .filter').forEach(function(el) {
-    el.addEventListener('click', function() {
-      currentFilter = el.dataset.kind;
-      document.querySelectorAll('#activity-filters .filter').forEach(function(f) { f.classList.toggle('on', f.dataset.kind === currentFilter); });
-      renderActivityList(currentFilter ? allEvents.filter(function(e) { return e.kind === currentFilter; }) : allEvents);
-    });
-  });
+  applyFeedFilter();
 }
 
-function renderActivityList(events) {
+function renderFeedList(events) {
   if (!events || !events.length) {
-    document.getElementById('activity-feed').innerHTML = '<div class="empty">No recent activity</div>';
+    document.getElementById('activity-feed').innerHTML = '<div class="empty">No matching events</div>';
     return;
   }
   document.getElementById('activity-feed').innerHTML = events.map(function(e) {
-    var m   = KIND_META[e.kind] || { lbl: e.kind, color: '#999996' };
+    var m   = KIND_META[e.kind] || { lbl: e.kind, color: '#999' };
     var src = e.source ? '<span class="src-tag tag-' + (e.source==='recharge'?'rc':e.source) + '">' + e.source + '</span>' : '';
     var detail = e.email || '';
     if (e.kind === 'rebill' && e.payload && e.payload.amount) detail = '$' + e.payload.amount + ' — ' + (e.payload.product || e.email);
@@ -642,14 +802,23 @@ function renderActivityList(events) {
   }).join('');
 }
 
-/* ── Recent cancels ── */
+/* ── Cancels ── */
 function renderCancels(cancels) {
-  if (!cancels || !cancels.length) { document.getElementById('cancels-list').innerHTML = '<div class="empty">No recent cancellations</div>'; return; }
+  allCancels = cancels || [];
+  applyCancelsFilter();
+}
+
+function renderCancelsList(cancels) {
+  if (!cancels || !cancels.length) {
+    document.getElementById('cancels-list').innerHTML = '<div class="empty">No recent cancellations</div>';
+    return;
+  }
   document.getElementById('cancels-list').innerHTML = cancels.map(function(c) {
     var src  = c.source ? '<span class="src-tag tag-' + (c.source==='recharge'?'rc':c.source) + '">' + c.source + '</span>' : '';
     var when = c.cancelled_at ? ago(c.cancelled_at) : '';
     return '<div class="cancel-row">' +
-      '<div><div class="cancel-name">' + esc(c.product||'Subscription') + src + '</div><div class="cancel-meta">' + esc(c.customer_email||'') + (when?' · '+when:'') + '</div></div>' +
+      '<div><div class="cancel-name">' + esc(c.product||'Subscription') + src + '</div>' +
+      '<div class="cancel-meta">' + esc(c.customer_email||'') + (when?' · '+when:'') + '</div></div>' +
       '<span class="cancel-amt">−' + $m(c.price_cents) + '</span>' +
     '</div>';
   }).join('');
@@ -659,7 +828,7 @@ function renderCancels(cancels) {
 function renderProducts(products) {
   var el = document.getElementById('products-panel');
   if (!products || !products.length) { el.innerHTML = '<div class="empty">No product data yet</div>'; return; }
-  el.innerHTML = '<div class="panel-head"><div class="panel-title">Active subscriptions by product</div></div>' +
+  el.innerHTML = '<div class="panel-head"><span class="panel-title">Active subscriptions by product</span></div>' +
     products.map(function(p) {
       var src = p.source ? '<span class="src-tag tag-' + (p.source==='recharge'?'rc':p.source) + '">' + p.source + '</span>' : '';
       return '<div class="prod-row">' +
@@ -669,6 +838,18 @@ function renderProducts(products) {
     }).join('');
 }
 
+/* ── Page subtitle ── */
+function updateSubtitle() {
+  var now = new Date(), from = new Date(now);
+  from.setDate(from.getDate() - currentDays);
+  var activePill = document.querySelector('.dr-pill.on');
+  var label = activePill ? activePill.textContent : currentDays + 'd';
+  document.getElementById('page-sub').textContent =
+    'All sources · ' + label + ' · ' +
+    from.toLocaleDateString('en-US',{month:'short',day:'numeric'}) +
+    ' — ' + now.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+}
+
 /* ── Sync state ── */
 async function loadSyncState() {
   try {
@@ -676,37 +857,31 @@ async function loadSyncState() {
     if (!r.ok) return;
     var d = await r.json();
     var states = d.sync || [];
-    var latest = states.map(function(s) { return s.last_delta_sync_at ? new Date(s.last_delta_sync_at) : null; }).filter(Boolean).sort(function(a,b){return b-a;})[0];
-    var errors = states.filter(function(s) { return s.last_error; });
+    var latest = states.map(function(s){ return s.last_delta_sync_at ? new Date(s.last_delta_sync_at) : null; }).filter(Boolean).sort(function(a,b){return b-a;})[0];
+    var errors = states.filter(function(s){ return s.last_error; });
     var dot = document.getElementById('sync-dot'), txt = document.getElementById('sync-text');
-    if (errors.length) {
-      dot.className = 'err'; txt.textContent = errors.length + ' source error' + (errors.length > 1 ? 's' : '');
-    } else if (latest) {
-      dot.className = 'ok'; txt.textContent = 'Synced ' + ago(latest.toISOString());
-    } else {
-      dot.className = ''; txt.textContent = 'Never synced';
-    }
-  } catch(e) { /* silent */ }
+    if (errors.length)  { dot.className='err'; txt.textContent=errors.length+' source error'+(errors.length>1?'s':''); }
+    else if (latest)    { dot.className='ok';  txt.textContent='Synced '+ago(latest.toISOString()); }
+    else                { dot.className='';    txt.textContent='Never synced'; }
+  } catch(e) {}
 }
 
 /* ── Sync now ── */
 async function runSync() {
   var btn = document.getElementById('sync-btn');
-  btn.disabled = true; btn.textContent = 'Syncing...';
+  btn.disabled = true; btn.textContent = 'Syncing…';
   try {
     var r = await fetch('/admin/sync/run', { method: 'POST', headers: H });
     if (!r.ok) throw new Error('Sync failed');
-    setTimeout(function() { loadData(); btn.disabled = false; btn.textContent = '↻ Sync'; }, 12000);
-  } catch(e) {
-    alert(e.message);
-    btn.disabled = false; btn.textContent = '↻ Sync';
-  }
+    setTimeout(function() { loadData(); btn.disabled=false; btn.textContent='↻ Sync now'; }, 12000);
+  } catch(e) { alert(e.message); btn.disabled=false; btn.textContent='↻ Sync now'; }
 }
 
-/* ── Main load ── */
+/* ── Main data load ── */
 async function loadData() {
   try {
-    var r = await fetch('/admin/api/overview', { headers: H });
+    var url = '/admin/api/overview?days=' + currentDays;
+    var r = await fetch(url, { headers: H });
     if (r.status === 401) { logout(); return; }
     if (!r.ok) throw new Error('Failed to load data');
     var d = await r.json();
@@ -720,11 +895,7 @@ async function loadData() {
     renderActivity(d.recentEvents);
     renderCancels(d.recentCancels);
     renderProducts(d.productBreakdown);
-
-    var now = new Date(), ago30 = new Date(now); ago30.setDate(ago30.getDate()-30);
-    document.getElementById('page-sub').textContent = 'All sources · 30 days · ' +
-      ago30.toLocaleDateString('en-US',{month:'short',day:'numeric'}) + ' — ' +
-      now.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    updateSubtitle();
 
     document.getElementById('page-loading').style.display = 'none';
     document.getElementById('content').style.display = 'block';
@@ -732,8 +903,8 @@ async function loadData() {
   } catch(err) {
     document.getElementById('page-loading').innerHTML =
       '<div style="text-align:center">' +
-      '<div style="color:#E24B4A;font-size:14px;margin-bottom:12px">' + esc(err.message) + '</div>' +
-      '<button class="btn-sm" onclick="loadData()">Retry</button>' +
+      '<div style="color:var(--red);font-size:14px;margin-bottom:12px">' + esc(err.message) + '</div>' +
+      '<button class="btn" onclick="loadData()">Retry</button>' +
       '</div>';
   }
 }
