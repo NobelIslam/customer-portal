@@ -317,10 +317,10 @@ function ccFmtDate(d) {
 router.get('/api/cc/purchases', async function(req, res) {
   try {
     const today    = new Date();
-    const ago30    = new Date(); ago30.setDate(ago30.getDate() - 30);
+    const ago2yr   = new Date(); ago2yr.setFullYear(ago2yr.getFullYear() - 2);
     const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const startDate = req.query.startDate || ccFmtDate(ago30);
+    const startDate = req.query.startDate || ccFmtDate(ago2yr);
     const endDate   = req.query.endDate   || ccFmtDate(tomorrow);
     const page      = parseInt(req.query.page  || '1',  10);
     const limit     = Math.min(parseInt(req.query.limit || '25', 10), 200);
@@ -369,10 +369,10 @@ router.get('/api/cc/purchases', async function(req, res) {
 router.get('/api/cc/purchases/summary', async function(req, res) {
   try {
     const today    = new Date();
-    const ago30    = new Date(); ago30.setDate(ago30.getDate() - 30);
+    const ago2yr   = new Date(); ago2yr.setFullYear(ago2yr.getFullYear() - 2);
     const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const startDate = req.query.startDate || ccFmtDate(ago30);
+    const startDate = req.query.startDate || ccFmtDate(ago2yr);
     const endDate   = req.query.endDate   || ccFmtDate(tomorrow);
 
     /* Page through all results (up to 10 pages = 2000 records) */
