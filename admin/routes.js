@@ -316,11 +316,9 @@ function ccFmtDate(d) {
    ────────────────────────────────────────────────── */
 router.get('/api/cc/purchases', async function(req, res) {
   try {
-    const today    = new Date();
-    const ago2yr   = new Date(); ago2yr.setFullYear(ago2yr.getFullYear() - 2);
     const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const startDate = req.query.startDate || ccFmtDate(ago2yr);
+    const startDate = req.query.startDate || '01/01/2015';
     const endDate   = req.query.endDate   || ccFmtDate(tomorrow);
     const page      = parseInt(req.query.page  || '1',  10);
     const limit     = Math.min(parseInt(req.query.limit || '25', 10), 200);
@@ -368,11 +366,9 @@ router.get('/api/cc/purchases', async function(req, res) {
    ────────────────────────────────────────────────── */
 router.get('/api/cc/purchases/summary', async function(req, res) {
   try {
-    const today    = new Date();
-    const ago2yr   = new Date(); ago2yr.setFullYear(ago2yr.getFullYear() - 2);
     const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const startDate = req.query.startDate || ccFmtDate(ago2yr);
+    const startDate = req.query.startDate || '01/01/2015';
     const endDate   = req.query.endDate   || ccFmtDate(tomorrow);
 
     /* Page through all results (up to 10 pages = 2000 records) */
@@ -500,10 +496,9 @@ router.get('/api/cc/db-vs-cc', async function(req, res) {
     const r30  = await fetch(url30, { method: 'POST' });
     const d30  = await r30.json();
 
-    /* CC API — last 2 years */
-    const ago2yr = new Date(); ago2yr.setFullYear(ago2yr.getFullYear() - 2);
+    /* CC API — all time (from 2015 epoch) */
     const url2y  = 'https://api.checkoutchamp.com/purchase/query/?' + ccTestParams({
-      startDate: ccFmtDate(ago2yr), endDate: ccFmtDate(tomorrow), resultsPerPage: 1, page: 1
+      startDate: '01/01/2015', endDate: ccFmtDate(tomorrow), resultsPerPage: 1, page: 1
     });
     const r2y  = await fetch(url2y, { method: 'POST' });
     const d2y  = await r2y.json();

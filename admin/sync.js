@@ -72,13 +72,12 @@ async function syncCC(opts) {
   }
 
   const today    = new Date();
-  const lookback = new Date();
-  lookback.setDate(lookback.getDate() - (isFull ? 365 * 2 : 30));
+  /* Full sync: fixed epoch so ALL-TIME subscriptions are captured regardless of age.
+     Delta sync: 30-day rolling window for recent changes only. */
+  const startDate = isFull ? '01/01/2015' : ccDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 30));
   /* Use tomorrow as endDate so today's records are never excluded by an exclusive boundary */
-  const tomorrow = new Date(today);
+  const tomorrow  = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
-
-  const startDate = ccDate(lookback);
   const endDate   = ccDate(tomorrow);
 
   console.log('[sync:cc] window:', startDate, '→', endDate, '| full:', isFull);
