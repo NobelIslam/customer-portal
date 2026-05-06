@@ -179,11 +179,6 @@ router.get('/api/overview', async function(req, res) {
       db.many(`SELECT product, source, COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS mrr_cents
                FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW() AND product IS NOT NULL
                GROUP BY product, source ORDER BY n DESC LIMIT 15`),
-      db.many(`SELECT COALESCE(raw->>'merchant', 'Unknown') AS gateway,
-               COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS mrr_cents
-               FROM subscriptions
-               WHERE source = 'cc' AND status = 'ACTIVE'
-               GROUP BY raw->>'merchant' ORDER BY n DESC`),
       (async function fetchTomorrowRebills() {
         try {
           const fmt = function(d) {
@@ -222,7 +217,12 @@ router.get('/api/overview', async function(req, res) {
           console.error('[overview] tomorrow rebills CC fetch failed:', e.message);
           return [];
         }
-      })()
+      })(),
+      db.many(`SELECT COALESCE(raw->>'merchant', 'Unknown') AS gateway,
+               COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS mrr_cents
+               FROM subscriptions
+               WHERE source = 'cc' AND status = 'ACTIVE'
+               GROUP BY raw->>'merchant' ORDER BY n DESC`)
     ]);
 
     res.json({
