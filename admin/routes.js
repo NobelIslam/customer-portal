@@ -138,8 +138,8 @@ router.get('/api/overview', async function(req, res) {
       productBreakdown,
       tomorrowRebillsList
     ] = await Promise.all([
-      db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW()`),
-      db.one(`SELECT COALESCE(SUM(price_cents),0)::bigint AS cents FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW()`),
+      db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE status = 'ACTIVE'`),
+      db.one(`SELECT COALESCE(SUM(price_cents),0)::bigint AS cents FROM subscriptions WHERE status = 'ACTIVE'`),
       db.one(`SELECT COALESCE(SUM(amount_cents),0)::bigint AS cents, COUNT(*)::int AS n FROM orders WHERE created_at >= $1`, [todayStart]),
       db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE started_at >= $1`, [todayStart]),
       db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE cancelled_at >= $1`, [todayStart]),
@@ -156,7 +156,7 @@ router.get('/api/overview', async function(req, res) {
               WHERE status = 'ACTIVE' AND next_bill_at >= $1 AND next_bill_at < $2`,
              [tomorrowStart, tomorrowEnd]),
       db.many(`SELECT source, COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS mrr_cents
-               FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW() GROUP BY source ORDER BY n DESC`),
+               FROM subscriptions WHERE status = 'ACTIVE' GROUP BY source ORDER BY n DESC`),
       db.many(`SELECT TO_CHAR(DATE(created_at), 'YYYY-MM-DD') AS day, COALESCE(SUM(amount_cents),0)::bigint AS cents
                FROM orders WHERE created_at >= $1
                GROUP BY TO_CHAR(DATE(created_at), 'YYYY-MM-DD') ORDER BY day ASC`, [periodAgo]),
@@ -176,7 +176,7 @@ router.get('/api/overview', async function(req, res) {
                ORDER BY cancelled_at DESC LIMIT 10`),
       db.many(`SELECT kind, source, email, payload, ts FROM events ORDER BY ts DESC LIMIT 50`),
       db.many(`SELECT product, source, COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS mrr_cents
-               FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW() AND product IS NOT NULL
+               FROM subscriptions WHERE status = 'ACTIVE' AND product IS NOT NULL
                GROUP BY product, source ORDER BY n DESC LIMIT 15`),
       db.many(`SELECT customer_email, product, source, price_cents, next_bill_at
                FROM subscriptions
