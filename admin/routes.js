@@ -184,11 +184,11 @@ router.get('/api/overview', async function(req, res) {
                WHERE status = 'ACTIVE' AND next_bill_at >= $1 AND next_bill_at < $2
                ORDER BY source, price_cents DESC`,
               [tomorrowStart, tomorrowEnd]),
-      db.many(`SELECT COALESCE(raw->>'merchant', 'Unknown') AS gateway,
+      db.many(`SELECT COALESCE(NULLIF(TRIM(raw->>'merchant'), ''), 'Unknown / Not Set') AS gateway,
                COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS mrr_cents
                FROM subscriptions
                WHERE source = 'cc' AND status = 'ACTIVE' AND next_bill_at >= NOW()
-               GROUP BY raw->>'merchant' ORDER BY n DESC`)
+               GROUP BY COALESCE(NULLIF(TRIM(raw->>'merchant'), ''), 'Unknown / Not Set') ORDER BY n DESC`)
     ]);
 
     res.json({
