@@ -455,8 +455,8 @@
       <div class="panel mb10" id="products-panel"></div>
 
       <!-- Today + Tomorrow side by side -->
-      <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:10px;">
-        <div style="flex:1;min-width:0;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;margin-bottom:10px;">
+        <div>
           <div class="section-label" id="s-today">Today's scheduled orders</div>
           <div class="panel">
             <div class="panel-head">
@@ -466,7 +466,7 @@
             <div id="today-orders-wrap"><div class="empty">Loading…</div></div>
           </div>
         </div>
-        <div style="flex:1;min-width:0;">
+        <div>
           <div class="section-label" id="s-tomorrow">Tomorrow's scheduled orders</div>
           <div class="panel">
             <div class="panel-head">
