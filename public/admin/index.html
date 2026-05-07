@@ -279,6 +279,8 @@
     .ship-shipped   { background: rgba(59,130,246,.12); color: #93c5fd; border: 1px solid rgba(59,130,246,.2); }
     .ship-processing{ background: rgba(234,179,8,.12);  color: #fde047; border: 1px solid rgba(234,179,8,.2); }
     .ship-pending   { background: rgba(156,163,175,.1); color: #9ca3af; border: 1px solid rgba(156,163,175,.2); }
+    .ship-failed    { background: rgba(239,68,68,.12);  color: #fca5a5; border: 1px solid rgba(239,68,68,.25); }
+    .ship-refunded  { background: rgba(251,146,60,.12); color: #fdba74; border: 1px solid rgba(251,146,60,.25); }
     .ship-none      { color: var(--muted); font-size: 11px; }
     .track-chip { font-size: 10px; color: var(--muted); margin-top: 3px; display: block; font-family: monospace; }
     .tod-action { display: flex; gap: 5px; align-items: center; flex-wrap: nowrap; }
@@ -1343,7 +1345,26 @@ function autoCheckShipping(idx, email) {
         return;
       }
 
-      var order    = todayAny.sort(function(a,b){ return new Date(b.dateCreated||0)-new Date(a.dateCreated||0); })[0];
+      var order      = todayAny.sort(function(a,b){ return new Date(b.dateCreated||0)-new Date(a.dateCreated||0); })[0];
+      var orderStatus   = (order.status       || '').toUpperCase();
+      var responseType  = (order.responseType || order.response_type || '').toUpperCase();
+      var declineReason = order.declineReason || order.decline_reason || order.errorMessage || '';
+
+      /* Surface payment / order issues first */
+      var FAILED_STATUSES   = ['DECLINED','FAILED','ERROR','VOID','CHARGEBACK','DISPUTE'];
+      var REFUNDED_STATUSES = ['REFUNDED','PARTIAL_REFUND'];
+
+      if (FAILED_STATUSES.indexOf(orderStatus) !== -1 || FAILED_STATUSES.indexOf(responseType) !== -1) {
+        cell.innerHTML = '<span class="ship-badge ship-failed">' + esc(orderStatus || responseType) + '</span>' +
+          (declineReason ? '<span class="track-chip">' + esc(declineReason) + '</span>' : '');
+        return;
+      }
+      if (REFUNDED_STATUSES.indexOf(orderStatus) !== -1) {
+        cell.innerHTML = '<span class="ship-badge ship-refunded">' + esc(orderStatus) + '</span>';
+        return;
+      }
+
+      /* Normal fulfillment status */
       var status   = order.shippingStatus || 'PENDING';
       var cls      = { DELIVERED:'ship-delivered', SHIPPED:'ship-shipped', PROCESSING:'ship-processing' }[status] || 'ship-pending';
       var tracking = order.trackingNumber || '';
