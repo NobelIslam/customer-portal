@@ -455,10 +455,10 @@
       <div class="panel mb10" id="products-panel"></div>
 
       <!-- Today + Tomorrow side by side -->
-      <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:10px;">
-        <div style="flex:1;min-width:0;">
+      <div style="display:flex;gap:16px;align-items:stretch;margin-bottom:10px;">
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;">
           <div class="section-label" id="s-today">Today's scheduled orders</div>
-          <div class="panel">
+          <div class="panel" style="flex:1;">
             <div class="panel-head">
               <span class="panel-title">Subscriptions billing today — CC · Recharge · Subi</span>
               <span id="today-count" style="font-size:11px;color:var(--muted2);margin-left:auto"></span>
@@ -466,9 +466,9 @@
             <div id="today-orders-wrap"><div class="empty">Loading…</div></div>
           </div>
         </div>
-        <div style="flex:1;min-width:0;">
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;">
           <div class="section-label" id="s-tomorrow">Tomorrow's scheduled orders</div>
-          <div class="panel">
+          <div class="panel" style="flex:1;">
             <div class="panel-head">
               <span class="panel-title">All sources — CC + Recharge + Subi</span>
               <span id="tomorrow-count" style="font-size:11px;color:var(--muted2);margin-left:auto"></span>
@@ -1004,36 +1004,65 @@ function renderTomorrowPage() {
     return;
   }
 
-  var totals = {};
-  allTomorrow.forEach(function(r) { totals[r.source] = (totals[r.source] || 0) + Number(r.price_cents); });
-  var summary = Object.keys(totals).map(function(s) { return s + ': ' + $m(totals[s]); }).join(' · ');
-  if (count) count.textContent = total + ' orders · ' + summary;
+  if (count) count.textContent = total + ' orders';
 
-  var html = slice.map(function(r) {
-    var src    = r.source ? '<span class="src-tag tag-' + (r.source==='recharge'?'rc':r.source) + '">' + r.source + '</span>' : '';
-    var billAt = r.next_bill_at ? new Date(r.next_bill_at).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',timeZoneName:'short'}) : '';
-    var price  = r.price_cents ? '$' + (r.price_cents / 100).toFixed(2) : '—';
-    return '<div class="cancel-row">' +
-      '<div><div class="cancel-name">' + esc(r.product || 'Subscription') + src + '</div>' +
-      '<div class="cancel-meta">' + esc(r.customer_email || '') + (billAt ? ' · ' + billAt : '') + '</div></div>' +
-      '<span class="cancel-amt">' + price + '</span>' +
-    '</div>';
+  var rows = slice.map(function(r, idx) {
+    var globalIdx = (pageTomorrow - 1) * PAGE_SIZE_TOMORROW + idx;
+    var srcTag = r.source === 'cc'       ? '<span class="src-tag tag-cc">CC</span>'
+               : r.source === 'recharge' ? '<span class="src-tag tag-rc">RC</span>'
+               : '<span class="src-tag tag-subi">Subi</span>';
+    var price = r.price_cents ? '$' + (r.price_cents / 100).toFixed(2) : '—';
+    return '<tr>' +
+      '<td><span class="tod-email">' + esc(r.customer_email || '') + '</span></td>' +
+      '<td><span class="tod-product">' + esc(r.product || 'Subscription') + '</span></td>' +
+      '<td>' + srcTag + '</td>' +
+      '<td class="tod-amt">' + price + '</td>' +
+      '<td class="tod-action">' +
+        '<button class="mini-btn manage" onclick="manageTomorrow(' + globalIdx + ',this)">Manage →</button>' +
+      '</td>' +
+    '</tr>';
   }).join('');
 
-  if (pages > 1) {
-    html += '<div class="pag-bar">' +
-      '<button class="pag-btn" onclick="tomorrowPage(' + (pageTomorrow-1) + ')" ' + (pageTomorrow <= 1 ? 'disabled' : '') + '>← Prev</button>' +
-      '<span class="pag-info">Page ' + pageTomorrow + ' of ' + pages + ' · ' + total + ' orders</span>' +
-      '<button class="pag-btn" onclick="tomorrowPage(' + (pageTomorrow+1) + ')" ' + (pageTomorrow >= pages ? 'disabled' : '') + '>Next →</button>' +
-    '</div>';
-  }
+  var pagBar = pages > 1
+    ? '<div class="pag-bar">' +
+        '<button class="pag-btn" onclick="tomorrowPage(' + (pageTomorrow-1) + ')" ' + (pageTomorrow <= 1 ? 'disabled' : '') + '>← Prev</button>' +
+        '<span class="pag-info">Page ' + pageTomorrow + ' of ' + pages + ' · ' + total + ' orders</span>' +
+        '<button class="pag-btn" onclick="tomorrowPage(' + (pageTomorrow+1) + ')" ' + (pageTomorrow >= pages ? 'disabled' : '') + '>Next →</button>' +
+      '</div>'
+    : '';
 
-  el.innerHTML = html;
+  el.innerHTML =
+    '<table class="tod-table"><thead><tr>' +
+      '<th>Customer</th><th>Product</th><th>Source</th><th>Amount</th><th>Actions</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table>' + pagBar;
 }
 
 function tomorrowPage(p) {
   pageTomorrow = p;
   renderTomorrowPage();
+}
+
+function manageTomorrow(idx, btn) {
+  var order = allTomorrow[idx];
+  if (!order) return;
+  btn.disabled = true;
+  btn.textContent = '…';
+  fetch('/admin/api/magic-link', {
+    method: 'POST',
+    headers: Object.assign({ 'Content-Type': 'application/json' }, H),
+    body: JSON.stringify({ email: order.customer_email })
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      btn.disabled = false;
+      btn.textContent = 'Manage →';
+      if (d.link) { window.open(d.link, '_blank'); }
+      else { alert('Could not generate link: ' + (d.error || 'unknown error')); }
+    })
+    .catch(function() {
+      btn.disabled = false;
+      btn.textContent = 'Manage →';
+    });
 }
 
 /* ── Products ── */
