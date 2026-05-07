@@ -653,7 +653,11 @@ router.get('/api/today-orders', async function(req, res) {
              c.first_name, c.last_name
       FROM subscriptions s
       LEFT JOIN customers c ON s.customer_id = c.id
-      WHERE s.status = 'ACTIVE' AND s.next_bill_at >= $1 AND s.next_bill_at < $2
+      WHERE s.status = 'ACTIVE'
+      AND (
+        (s.next_bill_at >= $1 AND s.next_bill_at < $2)
+        OR (s.last_billed_at >= $1 AND s.last_billed_at < $2)
+      )
       AND NOT (s.source = 'cc' AND s.raw->>'merchant' ILIKE '%paypal%')
       ORDER BY s.source, s.price_cents DESC
     `, [todayStart, todayEnd]);

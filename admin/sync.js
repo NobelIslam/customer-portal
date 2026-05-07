@@ -175,7 +175,14 @@ async function upsertCCPurchase(p) {
       next_bill_at   = EXCLUDED.next_bill_at,
       cancelled_at   = EXCLUDED.cancelled_at,
       raw            = EXCLUDED.raw,
-      last_synced_at = NOW()
+      last_synced_at = NOW(),
+      last_billed_at = CASE
+        WHEN subscriptions.next_bill_at IS NOT NULL
+             AND subscriptions.next_bill_at < NOW()
+             AND EXCLUDED.next_bill_at > subscriptions.next_bill_at
+        THEN NOW()
+        ELSE subscriptions.last_billed_at
+      END
   `, [
     id, String(p.purchaseId), customerId, email,
     p.productName || null, p.productId ? String(p.productId) : null,
@@ -330,7 +337,14 @@ async function upsertRechargeSub(s) {
       next_bill_at   = EXCLUDED.next_bill_at,
       cancelled_at   = EXCLUDED.cancelled_at,
       raw            = EXCLUDED.raw,
-      last_synced_at = NOW()
+      last_synced_at = NOW(),
+      last_billed_at = CASE
+        WHEN subscriptions.next_bill_at IS NOT NULL
+             AND subscriptions.next_bill_at < NOW()
+             AND EXCLUDED.next_bill_at > subscriptions.next_bill_at
+        THEN NOW()
+        ELSE subscriptions.last_billed_at
+      END
   `, [
     id, String(s.id), customerId, email,
     s.product_title || null, status, priceCents, frequency,
@@ -484,7 +498,14 @@ async function upsertSubiContract(c) {
       next_bill_at   = EXCLUDED.next_bill_at,
       cancelled_at   = EXCLUDED.cancelled_at,
       raw            = EXCLUDED.raw,
-      last_synced_at = NOW()
+      last_synced_at = NOW(),
+      last_billed_at = CASE
+        WHEN subscriptions.next_bill_at IS NOT NULL
+             AND subscriptions.next_bill_at < NOW()
+             AND EXCLUDED.next_bill_at > subscriptions.next_bill_at
+        THEN NOW()
+        ELSE subscriptions.last_billed_at
+      END
   `, [
     id, String(c.id), customerId, email,
     product, status, priceCents,
