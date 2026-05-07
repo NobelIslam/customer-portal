@@ -450,8 +450,22 @@
         </div>
       </div>
 
-      <!-- Tomorrow + Products side by side -->
+      <!-- Top products — full width -->
+      <div class="section-label" id="s-products">Top products</div>
+      <div class="panel mb10" id="products-panel"></div>
+
+      <!-- Today + Tomorrow side by side -->
       <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:10px;">
+        <div style="flex:1;min-width:0;">
+          <div class="section-label" id="s-today">Today's scheduled orders</div>
+          <div class="panel">
+            <div class="panel-head">
+              <span class="panel-title">Subscriptions billing today — CC · Recharge · Subi</span>
+              <span id="today-count" style="font-size:11px;color:var(--muted2);margin-left:auto"></span>
+            </div>
+            <div id="today-orders-wrap"><div class="empty">Loading…</div></div>
+          </div>
+        </div>
         <div style="flex:1;min-width:0;">
           <div class="section-label" id="s-tomorrow">Tomorrow's scheduled orders</div>
           <div class="panel">
@@ -462,25 +476,9 @@
             <div id="tomorrow-list"></div>
           </div>
         </div>
-        <div style="flex:1;min-width:0;">
-          <div class="section-label" id="s-products">Top products</div>
-          <div class="panel" id="products-panel"></div>
-        </div>
       </div>
 
-      <!-- Today's Scheduled Orders -->
-      <div class="section-label" id="s-today">Today's scheduled orders</div>
-      <div class="panel mb10">
-        <div class="panel-head">
-          <span class="panel-title">Subscriptions billing today — CC · Recharge · Subi</span>
-          <span id="today-count" style="font-size:11px;color:var(--muted2);margin-left:auto"></span>
-        </div>
-        <div id="today-orders-wrap">
-          <div class="empty">Loading…</div>
-        </div>
-      </div>
-
-      <!-- Gateway breakdown -->
+      <!-- Gateway breakdown — full width -->
       <div class="section-label" id="s-gateway">Active subscriptions by gateway</div>
       <div class="panel mb10" id="gateway-panel"></div>
 
