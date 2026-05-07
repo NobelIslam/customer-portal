@@ -422,19 +422,23 @@
         </div>
       </div>
 
-      <!-- Tomorrow rebills -->
-      <div class="section-label" id="s-tomorrow">Tomorrow's scheduled orders</div>
-      <div class="panel mb10">
-        <div class="panel-head">
-          <span class="panel-title">All sources — CC + Recharge + Subi</span>
-          <span id="tomorrow-count" style="font-size:11px;color:var(--muted2);margin-left:auto"></span>
+      <!-- Tomorrow + Products side by side -->
+      <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:10px;">
+        <div style="flex:1;min-width:0;">
+          <div class="section-label" id="s-tomorrow">Tomorrow's scheduled orders</div>
+          <div class="panel">
+            <div class="panel-head">
+              <span class="panel-title">All sources — CC + Recharge + Subi</span>
+              <span id="tomorrow-count" style="font-size:11px;color:var(--muted2);margin-left:auto"></span>
+            </div>
+            <div id="tomorrow-list"></div>
+          </div>
         </div>
-        <div id="tomorrow-list"></div>
+        <div style="flex:1;min-width:0;">
+          <div class="section-label" id="s-products">Top products</div>
+          <div class="panel" id="products-panel"></div>
+        </div>
       </div>
-
-      <!-- Products -->
-      <div class="section-label" id="s-products">Top products</div>
-      <div class="panel mb10" id="products-panel"></div>
 
       <!-- Gateway breakdown -->
       <div class="section-label" id="s-gateway">Active subscriptions by gateway</div>
