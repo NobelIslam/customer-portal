@@ -1237,8 +1237,10 @@ setInterval(loadSyncState, 60000);
 var PAGE_SIZE_TODAY = 10;
 var pageTodayOrders = 1;
 var allTodayOrders  = [];
+var shippingCache   = {}; /* email → rendered HTML, persists across pagination */
 
 function loadTodayOrders() {
+  shippingCache = {}; /* clear on fresh data load only */
   fetch('/admin/api/today-orders', { headers: H })
     .then(function(r) { return r.json(); })
     .then(function(d) {
@@ -1317,63 +1319,63 @@ function renderTodayOrders() {
 
 function todayPage(p) { pageTodayOrders = p; renderTodayOrders(); }
 
+function buildShippingHtml(orders) {
+  var todayStr  = new Date().toLocaleDateString('en-CA');
+  var todaySubs = orders.filter(function(o) {
+    var isToday = o.dateCreated && new Date(o.dateCreated).toLocaleDateString('en-CA') === todayStr;
+    var isSub   = o.recurringFlag === '1' || o.orderType === 'RECURRING' || !!o.parentOrderId;
+    return isToday && isSub;
+  });
+  var todayAny = todaySubs.length ? todaySubs : orders.filter(function(o) {
+    return o.dateCreated && new Date(o.dateCreated).toLocaleDateString('en-CA') === todayStr;
+  });
+  if (!todayAny.length) return '<span class="ship-badge ship-pending">Scheduled</span>';
+
+  var order        = todayAny.sort(function(a,b){ return new Date(b.dateCreated||0)-new Date(a.dateCreated||0); })[0];
+  var orderStatus  = (order.status       || '').toUpperCase();
+  var responseType = (order.responseType || order.response_type || '').toUpperCase();
+  var declineMsg   = order.declineReason || order.decline_reason || order.errorMessage || '';
+  var FAILED   = ['DECLINED','FAILED','ERROR','VOID','CHARGEBACK','DISPUTE'];
+  var REFUNDED = ['REFUNDED','PARTIAL_REFUND'];
+
+  if (FAILED.indexOf(orderStatus) !== -1 || FAILED.indexOf(responseType) !== -1) {
+    return '<span class="ship-badge ship-failed">' + esc(orderStatus || responseType) + '</span>' +
+      (declineMsg ? '<span class="track-chip">' + esc(declineMsg) + '</span>' : '');
+  }
+  if (REFUNDED.indexOf(orderStatus) !== -1) {
+    return '<span class="ship-badge ship-refunded">' + esc(orderStatus) + '</span>';
+  }
+  var status   = order.shippingStatus || 'PENDING';
+  var cls      = { DELIVERED:'ship-delivered', SHIPPED:'ship-shipped', PROCESSING:'ship-processing' }[status] || 'ship-pending';
+  var tracking = order.trackingNumber || '';
+  return '<span class="ship-badge ' + cls + '">' + esc(status) + '</span>' +
+    (tracking ? '<span class="track-chip">' + esc(tracking) + '</span>' : '');
+}
+
 function autoCheckShipping(idx, email) {
+  var cell = document.getElementById('ship-cell-' + idx);
+  if (!cell) return;
+
+  /* Serve from cache instantly — no re-fetch on pagination */
+  if (Object.prototype.hasOwnProperty.call(shippingCache, email)) {
+    cell.innerHTML = shippingCache[email];
+    return;
+  }
+
+  /* Mark in-flight to prevent duplicate requests for same email */
+  shippingCache[email] = '<span style="opacity:.4;font-size:11px">Loading…</span>';
+
   fetch('/cc/orders?email=' + encodeURIComponent(email), { headers: H })
     .then(function(r) { return r.json(); })
     .then(function(d) {
-      var cell = document.getElementById('ship-cell-' + idx);
-      if (!cell) return;
-
-      var todayStr = new Date().toLocaleDateString('en-CA'); /* YYYY-MM-DD in local time */
-      var allOrders = d.orders || [];
-
-      /* Keep only subscription (recurring) orders billed today */
-      var todaySubs = allOrders.filter(function(o) {
-        var isToday = o.dateCreated && new Date(o.dateCreated).toLocaleDateString('en-CA') === todayStr;
-        var isSub   = o.recurringFlag === '1' || o.orderType === 'RECURRING' || !!o.parentOrderId;
-        return isToday && isSub;
-      });
-
-      /* Fall back to any order today if no subscription match yet */
-      var todayAny = todaySubs.length ? todaySubs
-        : allOrders.filter(function(o) {
-            return o.dateCreated && new Date(o.dateCreated).toLocaleDateString('en-CA') === todayStr;
-          });
-
-      if (!todayAny.length) {
-        cell.innerHTML = '<span class="ship-badge ship-pending">Scheduled</span>';
-        return;
-      }
-
-      var order      = todayAny.sort(function(a,b){ return new Date(b.dateCreated||0)-new Date(a.dateCreated||0); })[0];
-      var orderStatus   = (order.status       || '').toUpperCase();
-      var responseType  = (order.responseType || order.response_type || '').toUpperCase();
-      var declineReason = order.declineReason || order.decline_reason || order.errorMessage || '';
-
-      /* Surface payment / order issues first */
-      var FAILED_STATUSES   = ['DECLINED','FAILED','ERROR','VOID','CHARGEBACK','DISPUTE'];
-      var REFUNDED_STATUSES = ['REFUNDED','PARTIAL_REFUND'];
-
-      if (FAILED_STATUSES.indexOf(orderStatus) !== -1 || FAILED_STATUSES.indexOf(responseType) !== -1) {
-        cell.innerHTML = '<span class="ship-badge ship-failed">' + esc(orderStatus || responseType) + '</span>' +
-          (declineReason ? '<span class="track-chip">' + esc(declineReason) + '</span>' : '');
-        return;
-      }
-      if (REFUNDED_STATUSES.indexOf(orderStatus) !== -1) {
-        cell.innerHTML = '<span class="ship-badge ship-refunded">' + esc(orderStatus) + '</span>';
-        return;
-      }
-
-      /* Normal fulfillment status */
-      var status   = order.shippingStatus || 'PENDING';
-      var cls      = { DELIVERED:'ship-delivered', SHIPPED:'ship-shipped', PROCESSING:'ship-processing' }[status] || 'ship-pending';
-      var tracking = order.trackingNumber || '';
-      cell.innerHTML = '<span class="ship-badge ' + cls + '">' + esc(status) + '</span>' +
-        (tracking ? '<span class="track-chip">' + esc(tracking) + '</span>' : '');
+      shippingCache[email] = buildShippingHtml(d.orders || []);
+      var c = document.getElementById('ship-cell-' + idx);
+      if (c) c.innerHTML = shippingCache[email];
     })
     .catch(function() {
-      var cell = document.getElementById('ship-cell-' + idx);
-      if (cell) cell.innerHTML = '<span class="ship-none">—</span>';
+      shippingCache[email] = '<span class="ship-none">—</span>';
+      var c = document.getElementById('ship-cell-' + idx);
+      if (c) c.innerHTML = shippingCache[email];
     });
 }
 
