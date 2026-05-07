@@ -1247,9 +1247,8 @@ function renderTodayOrders() {
     var name = (o.first_name || o.last_name) ? esc((o.first_name || '') + ' ' + (o.last_name || '')).trim() : '';
     var globalIdx = (pageTodayOrders - 1) * PAGE_SIZE_TODAY + idx;
     var shipCell = o.source === 'cc'
-      ? '<span class="ship-none">—</span><br>' +
-        '<button class="mini-btn" onclick="checkShipping(' + globalIdx + ',this)" style="margin-top:3px">Check shipping</button>'
-      : '<span class="ship-none" title="Shipping data only available for CC orders">N/A</span>';
+      ? '<span class="ship-none" id="ship-cell-' + globalIdx + '"><span style="opacity:.4;font-size:11px">Loading…</span></span>'
+      : '<span class="ship-none">N/A</span>';
     return '<tr>' +
       '<td><span class="tod-email">' + esc(o.customer_email) + '</span>' +
            (name ? '<span class="tod-name">' + name + '</span>' : '') + '</td>' +
@@ -1279,25 +1278,26 @@ function renderTodayOrders() {
       '</tr></thead>' +
       '<tbody>' + rows + '</tbody>' +
     '</table>' + pagBar;
+
+  /* Auto-fetch shipping for every CC row on this page */
+  slice.forEach(function(o, idx) {
+    if (o.source !== 'cc') return;
+    var globalIdx = (pageTodayOrders - 1) * PAGE_SIZE_TODAY + idx;
+    autoCheckShipping(globalIdx, o.customer_email);
+  });
 }
 
 function todayPage(p) { pageTodayOrders = p; renderTodayOrders(); }
 
-function checkShipping(idx, btn) {
-  var order = allTodayOrders[idx];
-  if (!order) return;
-  btn.disabled = true;
-  btn.textContent = '…';
-  fetch('/cc/orders?email=' + encodeURIComponent(order.customer_email), { headers: H })
+function autoCheckShipping(idx, email) {
+  fetch('/cc/orders?email=' + encodeURIComponent(email), { headers: H })
     .then(function(r) { return r.json(); })
     .then(function(d) {
+      var cell = document.getElementById('ship-cell-' + idx);
+      if (!cell) return;
       var orders  = (d.orders || []).sort(function(a,b){ return new Date(b.dateCreated||0) - new Date(a.dateCreated||0); });
       var latest  = orders[0];
-      var cell    = btn.closest('td');
-      if (!latest) {
-        cell.innerHTML = '<span class="ship-badge ship-pending">No orders</span>';
-        return;
-      }
+      if (!latest) { cell.innerHTML = '<span class="ship-badge ship-pending">No orders</span>'; return; }
       var status   = latest.shippingStatus || 'PENDING';
       var cls      = { DELIVERED:'ship-delivered', SHIPPED:'ship-shipped', PROCESSING:'ship-processing' }[status] || 'ship-pending';
       var tracking = latest.trackingNumber || '';
@@ -1305,8 +1305,8 @@ function checkShipping(idx, btn) {
         (tracking ? '<span class="track-chip">' + esc(tracking) + '</span>' : '');
     })
     .catch(function() {
-      btn.disabled = false;
-      btn.textContent = 'Check shipping';
+      var cell = document.getElementById('ship-cell-' + idx);
+      if (cell) cell.innerHTML = '<span class="ship-none">—</span>';
     });
 }
 
