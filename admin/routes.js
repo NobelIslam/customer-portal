@@ -5,11 +5,25 @@
 
 const express = require('express');
 const path    = require('path');
+const crypto  = require('crypto');
 const db      = require('./db');
 const auth    = require('./auth');
 const sync    = require('./sync');
 
 const router = express.Router();
+
+const TOKEN_SECRET  = process.env.TOKEN_SECRET || 'tgp-portal-secret-2026';
+const ADMIN_BASE_URL = process.env.BASE_URL || 'https://try.thegreatproject.com';
+const CC_API_BASE    = 'https://api.checkoutchamp.com';
+const RC_API_BASE    = 'https://api.rechargeapps.com';
+const SUBI_API_BASE  = 'https://api.subi.co/public/v1.0';
+
+function adminCreateToken(payload) {
+  payload.expires = Date.now() + 24 * 60 * 60 * 1000;
+  var data = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  var sig  = crypto.createHmac('sha256', TOKEN_SECRET).update(data).digest('base64url');
+  return data + '.' + sig;
+}
 
 /* ════════════════════════════════════════════════════
    PUBLIC ENDPOINTS (no auth)
@@ -571,6 +585,107 @@ router.get('/api/cc/db-vs-cc', async function(req, res) {
           : 'Record counts look close — check status field mapping'
       }
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ── GET /admin/api/today-orders — subscriptions due today ── */
+
+router.get('/api/today-orders', async function(req, res) {
+  try {
+    const now        = new Date();
+    const todayStart = new Date(now); todayStart.setUTCHours(0, 0, 0, 0);
+    const todayEnd   = new Date(todayStart); todayEnd.setUTCDate(todayEnd.getUTCDate() + 1);
+
+    const rows = await db.many(`
+      SELECT s.id, s.source, s.native_id, s.customer_email, s.product,
+             s.status, s.price_cents, s.next_bill_at, s.frequency,
+             c.first_name, c.last_name
+      FROM subscriptions s
+      LEFT JOIN customers c ON s.customer_id = c.id
+      WHERE s.status = 'ACTIVE' AND s.next_bill_at >= $1 AND s.next_bill_at < $2
+      ORDER BY s.source, s.price_cents DESC
+    `, [todayStart, todayEnd]);
+
+    res.json({ orders: rows, count: rows.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ── POST /admin/api/magic-link — generate portal link for a customer (no email sent) ── */
+
+router.post('/api/magic-link', async function(req, res) {
+  try {
+    const email = (req.body.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ error: 'email required' });
+
+    const CC_LOGIN_ID = process.env.CC_LOGIN_ID  || '';
+    const CC_API_PASS = process.env.CC_API_PASSWORD || '';
+    const CC_CLUB_ID  = process.env.CC_CLUB_ID || '12';
+
+    let ccMember = null;
+    let foundIn  = [];
+
+    /* Check CC */
+    try {
+      const today   = new Date();
+      const endDate = (today.getMonth()+1).toString().padStart(2,'0') + '/' +
+                      today.getDate().toString().padStart(2,'0') + '/' + today.getFullYear();
+      const params  = new URLSearchParams({
+        clubId: CC_CLUB_ID, loginId: CC_LOGIN_ID, password: CC_API_PASS,
+        emailAddress: email, startDate: '01/01/2016', endDate, resultsPerPage: 200
+      });
+      const r = await fetch(CC_API_BASE + '/members/query/?' + params.toString(), { method: 'POST' });
+      const d = await r.json();
+      if (d.result === 'SUCCESS' && d.message && d.message.data && d.message.data.length > 0) {
+        const records = d.message.data;
+        records.sort(function(a, b) { return new Date(b.dateCreated) - new Date(a.dateCreated); });
+        ccMember = records[0];
+        foundIn.push('checkoutchamp');
+      }
+    } catch(e) { console.error('[admin/magic-link] CC error:', e.message); }
+
+    /* Check Recharge */
+    try {
+      const r = await fetch(RC_API_BASE + '/customers?email=' + encodeURIComponent(email), {
+        headers: { 'X-Recharge-Access-Token': process.env.RECHARGE_API_KEY || '', 'Content-Type': 'application/json' }
+      });
+      const d = await r.json();
+      if (d.customers && d.customers.length > 0) foundIn.push('recharge');
+    } catch(e) { console.error('[admin/magic-link] RC error:', e.message); }
+
+    /* Check Subi */
+    try {
+      const r = await fetch(SUBI_API_BASE + '/subscribers/?email=' + encodeURIComponent(email), {
+        headers: { 'Authorization': 'Bearer ' + (process.env.SUBI_API_KEY || ''), 'Content-Type': 'application/json' }
+      });
+      const d = await r.json();
+      if (d.results && d.results.length > 0) foundIn.push('subi');
+    } catch(e) { console.error('[admin/magic-link] Subi error:', e.message); }
+
+    if (foundIn.length === 0) return res.status(404).json({ error: 'No subscription found for this email' });
+
+    let token;
+    const primaryType = foundIn.includes('checkoutchamp') ? 'checkoutchamp'
+                      : foundIn.includes('recharge')      ? 'recharge'
+                      : 'subi';
+
+    if (primaryType === 'checkoutchamp') {
+      token = adminCreateToken({
+        email, type: 'checkoutchamp', loginType: 'club',
+        memberId:     ccMember ? (ccMember.memberId     || null) : null,
+        clubUsername: ccMember ? (ccMember.clubUsername || null) : null,
+        password:     ccMember ? (ccMember.clubPassword || null) : null,
+        foundIn
+      });
+    } else {
+      token = adminCreateToken({ email, type: primaryType, foundIn });
+    }
+
+    const link = ADMIN_BASE_URL + '/dashboard?token=' + token;
+    res.json({ link, email, primaryType, foundIn });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

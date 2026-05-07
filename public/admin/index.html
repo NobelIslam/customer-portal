@@ -264,6 +264,29 @@
     .feed-scroll::-webkit-scrollbar { width: 4px; }
     .feed-scroll::-webkit-scrollbar-track { background: transparent; }
     .feed-scroll::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+    /* ── Today's orders table ── */
+    .tod-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .tod-table th { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; padding: 0 10px 8px 0; border-bottom: 1px solid var(--border); text-align: left; }
+    .tod-table td { padding: 9px 10px 9px 0; border-bottom: 1px solid var(--border); color: var(--muted2); vertical-align: middle; }
+    .tod-table tr:last-child td { border-bottom: none; }
+    .tod-email { font-weight: 500; color: var(--text); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+    .tod-name  { font-size: 10px; color: var(--muted); }
+    .tod-product { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tod-amt { font-family: 'Oswald', sans-serif; font-size: 13px; color: var(--text); white-space: nowrap; }
+    .ship-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
+    .ship-delivered { background: rgba(34,197,94,.12); color: #86efac; border: 1px solid rgba(34,197,94,.2); }
+    .ship-shipped   { background: rgba(59,130,246,.12); color: #93c5fd; border: 1px solid rgba(59,130,246,.2); }
+    .ship-processing{ background: rgba(234,179,8,.12);  color: #fde047; border: 1px solid rgba(234,179,8,.2); }
+    .ship-pending   { background: rgba(156,163,175,.1); color: #9ca3af; border: 1px solid rgba(156,163,175,.2); }
+    .ship-none      { color: var(--muted); font-size: 11px; }
+    .track-chip { font-size: 10px; color: var(--muted); margin-top: 3px; display: block; font-family: monospace; }
+    .tod-action { display: flex; gap: 5px; align-items: center; flex-wrap: nowrap; }
+    .mini-btn { font-size: 10px; padding: 3px 8px; border-radius: 4px; border: 1px solid var(--border2); background: var(--bg3); color: var(--muted2); cursor: pointer; font-family: inherit; font-weight: 500; transition: all 0.12s; white-space: nowrap; }
+    .mini-btn:hover:not(:disabled) { border-color: var(--accent); color: #fff; }
+    .mini-btn.manage { background: rgba(245,158,11,.1); border-color: rgba(245,158,11,.3); color: #fbbf24; }
+    .mini-btn.manage:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .mini-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   </style>
 </head>
 <body>
@@ -313,6 +336,11 @@
 
     <div class="nav-section">Catalog</div>
     <a href="#s-products"  class="nav-item"><span class="nav-dot"></span>Products</a>
+
+    <div class="nav-section">Orders</div>
+    <a href="#s-today"     class="nav-item"><span class="nav-dot"></span>Today's orders</a>
+    <a href="#s-tomorrow"  class="nav-item"><span class="nav-dot"></span>Tomorrow</a>
+    <a href="#s-gateway"   class="nav-item"><span class="nav-dot"></span>By gateway</a>
 
     <div class="nav-section">System</div>
     <a href="#" class="nav-item" onclick="runSync();return false;"><span class="nav-dot"></span>Sync now</a>
@@ -437,6 +465,18 @@
         <div style="flex:1;min-width:0;">
           <div class="section-label" id="s-products">Top products</div>
           <div class="panel" id="products-panel"></div>
+        </div>
+      </div>
+
+      <!-- Today's Scheduled Orders -->
+      <div class="section-label" id="s-today">Today's scheduled orders</div>
+      <div class="panel mb10">
+        <div class="panel-head">
+          <span class="panel-title">Subscriptions billing today — CC · Recharge · Subi</span>
+          <span id="today-count" style="font-size:11px;color:var(--muted2);margin-left:auto"></span>
+        </div>
+        <div id="today-orders-wrap">
+          <div class="empty">Loading…</div>
         </div>
       </div>
 
@@ -1163,6 +1203,143 @@ async function loadData() {
 
 loadData();
 setInterval(loadSyncState, 60000);
+
+/* ════════════════════════════════════════════════════
+   TODAY'S SCHEDULED ORDERS
+   ════════════════════════════════════════════════════ */
+
+var PAGE_SIZE_TODAY = 10;
+var pageTodayOrders = 1;
+var allTodayOrders  = [];
+
+function loadTodayOrders() {
+  fetch('/admin/api/today-orders', { headers: H })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      allTodayOrders  = d.orders || [];
+      pageTodayOrders = 1;
+      renderTodayOrders();
+    })
+    .catch(function(e) {
+      document.getElementById('today-orders-wrap').innerHTML =
+        '<div class="empty">Failed to load: ' + esc(e.message) + '</div>';
+    });
+}
+
+function renderTodayOrders() {
+  var wrap  = document.getElementById('today-orders-wrap');
+  var count = document.getElementById('today-count');
+  var total = allTodayOrders.length;
+
+  if (total === 0) {
+    wrap.innerHTML  = '<div class="empty">No subscriptions scheduled for today</div>';
+    count.textContent = '';
+    return;
+  }
+
+  count.textContent = total + ' orders';
+  var pages = Math.ceil(total / PAGE_SIZE_TODAY);
+  pageTodayOrders = Math.min(pageTodayOrders, pages);
+  var slice = allTodayOrders.slice((pageTodayOrders - 1) * PAGE_SIZE_TODAY, pageTodayOrders * PAGE_SIZE_TODAY);
+
+  var rows = slice.map(function(o, idx) {
+    var srcTag = o.source === 'cc'      ? '<span class="src-tag tag-cc">CC</span>'
+               : o.source === 'recharge' ? '<span class="src-tag tag-rc">RC</span>'
+               : '<span class="src-tag tag-subi">Subi</span>';
+    var name = (o.first_name || o.last_name) ? esc((o.first_name || '') + ' ' + (o.last_name || '')).trim() : '';
+    var globalIdx = (pageTodayOrders - 1) * PAGE_SIZE_TODAY + idx;
+    var shipCell = o.source === 'cc'
+      ? '<span class="ship-none">—</span><br>' +
+        '<button class="mini-btn" onclick="checkShipping(' + globalIdx + ',this)" style="margin-top:3px">Check shipping</button>'
+      : '<span class="ship-none" title="Shipping data only available for CC orders">N/A</span>';
+    return '<tr>' +
+      '<td><span class="tod-email">' + esc(o.customer_email) + '</span>' +
+           (name ? '<span class="tod-name">' + name + '</span>' : '') + '</td>' +
+      '<td><span class="tod-product">' + esc(o.product || '—') + '</span></td>' +
+      '<td>' + srcTag + '</td>' +
+      '<td class="tod-amt">$' + (o.price_cents / 100).toFixed(2) + '</td>' +
+      '<td>' + shipCell + '</td>' +
+      '<td class="tod-action">' +
+        '<button class="mini-btn manage" onclick="manageCustomer(' + globalIdx + ',this)">Manage →</button>' +
+      '</td>' +
+    '</tr>';
+  }).join('');
+
+  var pagBar = pages > 1
+    ? '<div class="pag-bar">' +
+        '<button class="pag-btn" onclick="todayPage(' + (pageTodayOrders-1) + ')" ' + (pageTodayOrders <= 1 ? 'disabled' : '') + '>← Prev</button>' +
+        '<span class="pag-info">Page ' + pageTodayOrders + ' of ' + pages + ' · ' + total + ' orders</span>' +
+        '<button class="pag-btn" onclick="todayPage(' + (pageTodayOrders+1) + ')" ' + (pageTodayOrders >= pages ? 'disabled' : '') + '>Next →</button>' +
+      '</div>'
+    : '';
+
+  wrap.innerHTML =
+    '<table class="tod-table">' +
+      '<thead><tr>' +
+        '<th>Customer</th><th>Product</th><th>Source</th>' +
+        '<th>Amount</th><th>Shipping</th><th>Actions</th>' +
+      '</tr></thead>' +
+      '<tbody>' + rows + '</tbody>' +
+    '</table>' + pagBar;
+}
+
+function todayPage(p) { pageTodayOrders = p; renderTodayOrders(); }
+
+function checkShipping(idx, btn) {
+  var order = allTodayOrders[idx];
+  if (!order) return;
+  btn.disabled = true;
+  btn.textContent = '…';
+  fetch('/cc/orders?email=' + encodeURIComponent(order.customer_email), { headers: H })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var orders  = (d.orders || []).sort(function(a,b){ return new Date(b.dateCreated||0) - new Date(a.dateCreated||0); });
+      var latest  = orders[0];
+      var cell    = btn.closest('td');
+      if (!latest) {
+        cell.innerHTML = '<span class="ship-badge ship-pending">No orders</span>';
+        return;
+      }
+      var status   = latest.shippingStatus || 'PENDING';
+      var cls      = { DELIVERED:'ship-delivered', SHIPPED:'ship-shipped', PROCESSING:'ship-processing' }[status] || 'ship-pending';
+      var tracking = latest.trackingNumber || '';
+      cell.innerHTML = '<span class="ship-badge ' + cls + '">' + esc(status) + '</span>' +
+        (tracking ? '<span class="track-chip">' + esc(tracking) + '</span>' : '');
+    })
+    .catch(function() {
+      btn.disabled = false;
+      btn.textContent = 'Check shipping';
+    });
+}
+
+function manageCustomer(idx, btn) {
+  var order = allTodayOrders[idx];
+  if (!order) return;
+  btn.disabled = true;
+  btn.textContent = '…';
+  fetch('/admin/api/magic-link', {
+    method: 'POST',
+    headers: Object.assign({ 'Content-Type': 'application/json' }, H),
+    body: JSON.stringify({ email: order.customer_email })
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      btn.disabled = false;
+      btn.textContent = 'Manage →';
+      if (d.link) {
+        window.open(d.link, '_blank');
+      } else {
+        alert('Could not generate link: ' + (d.error || 'unknown error'));
+      }
+    })
+    .catch(function() {
+      btn.disabled = false;
+      btn.textContent = 'Manage →';
+      alert('Request failed — please try again');
+    });
+}
+
+loadTodayOrders();
 </script>
 </body>
 </html>
