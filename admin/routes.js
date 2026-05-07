@@ -129,6 +129,9 @@ router.get('/api/overview', async function(req, res) {
     const weekStart    = new Date(todayStart); weekStart.setUTCDate(weekStart.getUTCDate() - 7);
     const twoWeeksAgo  = new Date(todayStart); twoWeeksAgo.setUTCDate(twoWeeksAgo.getUTCDate() - 14);
 
+    /* Exclude PayPal Commerce from all subscription metrics */
+    const NO_PAYPAL = `AND NOT (source = 'cc' AND raw->>'merchant' ILIKE '%paypal%')`;
+
     const [
       activeCount,
       mrrRow,
@@ -153,55 +156,56 @@ router.get('/api/overview', async function(req, res) {
       tomorrowRebillsList,
       gatewayBreakdown
     ] = await Promise.all([
-      db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW()`),
-      db.one(`SELECT COALESCE(SUM(price_cents),0)::bigint AS cents FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW()`),
+      db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW() ${NO_PAYPAL}`),
+      db.one(`SELECT COALESCE(SUM(price_cents),0)::bigint AS cents FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW() ${NO_PAYPAL}`),
       db.one(`SELECT COALESCE(SUM(amount_cents),0)::bigint AS cents, COUNT(*)::int AS n FROM orders WHERE created_at >= $1`, [todayStart]),
-      db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE started_at >= $1`, [todayStart]),
-      db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE cancelled_at >= $1`, [todayStart]),
-      db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE started_at >= $1 AND started_at < $2`,
+      db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE started_at >= $1 ${NO_PAYPAL}`, [todayStart]),
+      db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE cancelled_at >= $1 ${NO_PAYPAL}`, [todayStart]),
+      db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE started_at >= $1 AND started_at < $2 ${NO_PAYPAL}`,
              [new Date(todayStart.getTime() - 24*60*60*1000), todayStart]),
-      db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE cancelled_at >= $1 AND cancelled_at < $2`,
+      db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE cancelled_at >= $1 AND cancelled_at < $2 ${NO_PAYPAL}`,
              [new Date(todayStart.getTime() - 24*60*60*1000), todayStart]),
-      db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE started_at >= $1`, [weekStart]),
-      db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE started_at >= $1 AND started_at < $2`, [twoWeeksAgo, weekStart]),
-      db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE cancelled_at >= $1`, [weekStart]),
-      db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE cancelled_at >= $1 AND cancelled_at < $2`, [twoWeeksAgo, weekStart]),
+      db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE started_at >= $1 ${NO_PAYPAL}`, [weekStart]),
+      db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE started_at >= $1 AND started_at < $2 ${NO_PAYPAL}`, [twoWeeksAgo, weekStart]),
+      db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE cancelled_at >= $1 ${NO_PAYPAL}`, [weekStart]),
+      db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE cancelled_at >= $1 AND cancelled_at < $2 ${NO_PAYPAL}`, [twoWeeksAgo, weekStart]),
       db.one(`SELECT COALESCE(SUM(price_cents),0)::bigint AS cents, COUNT(*)::int AS n
               FROM subscriptions
-              WHERE status = 'ACTIVE' AND next_bill_at >= $1 AND next_bill_at < $2`,
+              WHERE status = 'ACTIVE' AND next_bill_at >= $1 AND next_bill_at < $2 ${NO_PAYPAL}`,
              [tomorrowStart, tomorrowEnd]),
       db.many(`SELECT source, COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS mrr_cents
-               FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW() GROUP BY source ORDER BY n DESC`),
+               FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW() ${NO_PAYPAL} GROUP BY source ORDER BY n DESC`),
       db.many(`SELECT TO_CHAR(DATE(created_at), 'YYYY-MM-DD') AS day, COALESCE(SUM(amount_cents),0)::bigint AS cents
                FROM orders WHERE created_at >= $1
                GROUP BY TO_CHAR(DATE(created_at), 'YYYY-MM-DD') ORDER BY day ASC`, [periodAgo]),
       db.many(`SELECT TO_CHAR(DATE(next_bill_at), 'YYYY-MM-DD') AS day, COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS cents
                FROM subscriptions
-               WHERE status = 'ACTIVE' AND next_bill_at >= $1 AND next_bill_at < $2
+               WHERE status = 'ACTIVE' AND next_bill_at >= $1 AND next_bill_at < $2 ${NO_PAYPAL}
                GROUP BY TO_CHAR(DATE(next_bill_at), 'YYYY-MM-DD') ORDER BY day ASC`,
               [todayStart, new Date(todayStart.getTime() + 8 * 24 * 60 * 60 * 1000)]),
       db.many(`SELECT TO_CHAR(DATE(started_at), 'YYYY-MM-DD') AS day, source, COUNT(*)::int AS n
-               FROM subscriptions WHERE started_at >= $1
+               FROM subscriptions WHERE started_at >= $1 ${NO_PAYPAL}
                GROUP BY TO_CHAR(DATE(started_at), 'YYYY-MM-DD'), source ORDER BY day ASC`, [periodAgo]),
       db.many(`SELECT TO_CHAR(DATE(cancelled_at), 'YYYY-MM-DD') AS day, source, COUNT(*)::int AS n
-               FROM subscriptions WHERE cancelled_at >= $1
+               FROM subscriptions WHERE cancelled_at >= $1 ${NO_PAYPAL}
                GROUP BY TO_CHAR(DATE(cancelled_at), 'YYYY-MM-DD'), source ORDER BY day ASC`, [periodAgo]),
       db.many(`SELECT id, customer_email, product, source, price_cents, cancelled_at, cancel_reason
-               FROM subscriptions WHERE cancelled_at IS NOT NULL
+               FROM subscriptions WHERE cancelled_at IS NOT NULL ${NO_PAYPAL}
                ORDER BY cancelled_at DESC LIMIT 10`),
       db.many(`SELECT kind, source, email, payload, ts FROM events ORDER BY ts DESC LIMIT 50`),
       db.many(`SELECT product, source, COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS mrr_cents
-               FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW() AND product IS NOT NULL
+               FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW() AND product IS NOT NULL ${NO_PAYPAL}
                GROUP BY product, source ORDER BY n DESC LIMIT 15`),
       db.many(`SELECT customer_email, product, source, price_cents, next_bill_at
                FROM subscriptions
-               WHERE status = 'ACTIVE' AND next_bill_at >= $1 AND next_bill_at < $2
+               WHERE status = 'ACTIVE' AND next_bill_at >= $1 AND next_bill_at < $2 ${NO_PAYPAL}
                ORDER BY source, price_cents DESC`,
               [tomorrowStart, tomorrowEnd]),
       db.many(`SELECT COALESCE(NULLIF(TRIM(raw->>'merchant'), ''), 'Unknown / Not Set') AS gateway,
                COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS mrr_cents
                FROM subscriptions
                WHERE source = 'cc' AND status = 'ACTIVE' AND next_bill_at >= NOW()
+               AND raw->>'merchant' NOT ILIKE '%paypal%'
                GROUP BY COALESCE(NULLIF(TRIM(raw->>'merchant'), ''), 'Unknown / Not Set') ORDER BY n DESC`)
     ]);
 
@@ -650,6 +654,7 @@ router.get('/api/today-orders', async function(req, res) {
       FROM subscriptions s
       LEFT JOIN customers c ON s.customer_id = c.id
       WHERE s.status = 'ACTIVE' AND s.next_bill_at >= $1 AND s.next_bill_at < $2
+      AND NOT (s.source = 'cc' AND s.raw->>'merchant' ILIKE '%paypal%')
       ORDER BY s.source, s.price_cents DESC
     `, [todayStart, todayEnd]);
 
