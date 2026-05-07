@@ -1281,7 +1281,7 @@ function renderTodayOrders() {
     var globalIdx = (pageTodayOrders - 1) * PAGE_SIZE_TODAY + idx;
     var shipCell = o.source === 'cc'
       ? '<span class="ship-none" id="ship-cell-' + globalIdx + '"><span style="opacity:.4;font-size:11px">Loading…</span></span>'
-      : '<span class="ship-none">N/A</span>';
+      : buildDbOrderStatus(o.today_order_status);
     return '<tr>' +
       '<td><span class="tod-email">' + esc(o.customer_email) + '</span>' +
            (name ? '<span class="tod-name">' + name + '</span>' : '') + '</td>' +
@@ -1321,6 +1321,15 @@ function renderTodayOrders() {
 }
 
 function todayPage(p) { pageTodayOrders = p; renderTodayOrders(); }
+
+function buildDbOrderStatus(status) {
+  if (!status) return '<span class="ship-badge ship-pending">Scheduled</span>';
+  var s = (status || '').toUpperCase();
+  if (s === 'COMPLETE' || s === 'SUCCESS')  return '<span class="ship-badge ship-delivered">Billed</span>';
+  if (s === 'REFUNDED')                     return '<span class="ship-badge ship-refunded">Refunded</span>';
+  if (s === 'FAILED' || s === 'DECLINED' || s === 'ERROR') return '<span class="ship-badge ship-failed">Failed</span>';
+  return '<span class="ship-badge ship-processing">' + esc(status) + '</span>';
+}
 
 function buildShippingHtml(orders) {
   var todayStr  = new Date().toLocaleDateString('en-CA');
