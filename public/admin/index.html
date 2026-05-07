@@ -1321,12 +1321,32 @@ function autoCheckShipping(idx, email) {
     .then(function(d) {
       var cell = document.getElementById('ship-cell-' + idx);
       if (!cell) return;
-      var orders  = (d.orders || []).sort(function(a,b){ return new Date(b.dateCreated||0) - new Date(a.dateCreated||0); });
-      var latest  = orders[0];
-      if (!latest) { cell.innerHTML = '<span class="ship-badge ship-pending">No orders</span>'; return; }
-      var status   = latest.shippingStatus || 'PENDING';
+
+      var todayStr = new Date().toLocaleDateString('en-CA'); /* YYYY-MM-DD in local time */
+      var allOrders = d.orders || [];
+
+      /* Keep only subscription (recurring) orders billed today */
+      var todaySubs = allOrders.filter(function(o) {
+        var isToday = o.dateCreated && new Date(o.dateCreated).toLocaleDateString('en-CA') === todayStr;
+        var isSub   = o.recurringFlag === '1' || o.orderType === 'RECURRING' || !!o.parentOrderId;
+        return isToday && isSub;
+      });
+
+      /* Fall back to any order today if no subscription match yet */
+      var todayAny = todaySubs.length ? todaySubs
+        : allOrders.filter(function(o) {
+            return o.dateCreated && new Date(o.dateCreated).toLocaleDateString('en-CA') === todayStr;
+          });
+
+      if (!todayAny.length) {
+        cell.innerHTML = '<span class="ship-badge ship-pending">Scheduled</span>';
+        return;
+      }
+
+      var order    = todayAny.sort(function(a,b){ return new Date(b.dateCreated||0)-new Date(a.dateCreated||0); })[0];
+      var status   = order.shippingStatus || 'PENDING';
       var cls      = { DELIVERED:'ship-delivered', SHIPPED:'ship-shipped', PROCESSING:'ship-processing' }[status] || 'ship-pending';
-      var tracking = latest.trackingNumber || '';
+      var tracking = order.trackingNumber || '';
       cell.innerHTML = '<span class="ship-badge ' + cls + '">' + esc(status) + '</span>' +
         (tracking ? '<span class="track-chip">' + esc(tracking) + '</span>' : '');
     })
