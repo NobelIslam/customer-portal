@@ -650,16 +650,10 @@ router.get('/api/today-orders', async function(req, res) {
     const rows = await db.many(`
       SELECT s.id, s.source, s.native_id, s.customer_email, s.product,
              s.status, s.price_cents, s.next_bill_at, s.frequency,
-             c.first_name, c.last_name,
-             o.status AS today_order_status
+             s.last_billed_at,
+             c.first_name, c.last_name
       FROM subscriptions s
       LEFT JOIN customers c ON s.customer_id = c.id
-      LEFT JOIN LATERAL (
-        SELECT status FROM orders
-        WHERE customer_email = s.customer_email
-          AND created_at >= $1 AND created_at < $2
-        ORDER BY created_at DESC LIMIT 1
-      ) o ON true
       WHERE s.status = 'ACTIVE'
       AND (
         (s.next_bill_at >= $1 AND s.next_bill_at < $2)
