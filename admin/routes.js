@@ -590,6 +590,51 @@ router.get('/api/cc/db-vs-cc', async function(req, res) {
   }
 });
 
+/* ── GET /admin/api/debug/cc-orders?email=xxx — raw CC order/query response ── */
+
+router.get('/api/debug/cc-orders', async function(req, res) {
+  try {
+    const email = (req.query.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ error: 'email query param required' });
+
+    const today   = new Date();
+    const endDate = (today.getMonth()+1).toString().padStart(2,'0') + '/' +
+                    today.getDate().toString().padStart(2,'0') + '/' + today.getFullYear();
+
+    const params = new URLSearchParams({
+      loginId:        process.env.CC_LOGIN_ID      || '',
+      password:       process.env.CC_API_PASSWORD  || '',
+      emailAddress:   email,
+      startDate:      '01/01/2016',
+      endDate:        endDate,
+      resultsPerPage: 10,
+      sortDir:        -1
+    });
+
+    const r    = await fetch('https://api.checkoutchamp.com/order/query/?' + params.toString(), { method: 'POST' });
+    const raw  = await r.text();
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch(e) { parsed = null; }
+
+    const orders = parsed && parsed.result === 'SUCCESS' && parsed.message && parsed.message.data
+      ? parsed.message.data : [];
+
+    res.json({
+      _meta: {
+        email,
+        ccResult:      parsed && parsed.result,
+        totalCount:    parsed && parsed.message && parsed.message.totalCount,
+        returnedCount: orders.length,
+        note: 'First 10 orders sorted newest-first. Check dateCreated, status, orderType, recurringFlag, responseType, shippingStatus fields.'
+      },
+      firstOrder:  orders[0] || null,
+      allOrders:   orders
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* ── GET /admin/api/today-orders — subscriptions due today ── */
 
 router.get('/api/today-orders', async function(req, res) {
