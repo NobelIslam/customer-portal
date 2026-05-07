@@ -466,6 +466,7 @@
         <div class="panel-head">
           <span class="panel-title">Subscriptions billing today — CC · Recharge · Subi</span>
           <span id="today-count" style="font-size:11px;color:var(--muted2);margin-left:auto"></span>
+          <button id="today-refresh-btn" class="mini-btn" onclick="refreshTodayOrders(this)" style="margin-left:8px;font-size:10px;padding:3px 9px;">↻ Refresh</button>
         </div>
         <div id="today-orders-wrap"><div class="empty">Loading…</div></div>
       </div>
@@ -1255,6 +1256,16 @@ function loadTodayOrders() {
       document.getElementById('today-orders-wrap').innerHTML =
         '<div class="empty">Failed to load: ' + esc(e.message) + '</div>';
     });
+}
+
+function refreshTodayOrders(btn) {
+  btn.disabled = true;
+  btn.textContent = 'Syncing…';
+  fetch('/admin/sync/run', { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, H), body: JSON.stringify({}) })
+    .then(function() { return new Promise(function(r) { setTimeout(r, 4000); }); })
+    .then(function() { loadTodayOrders(); })
+    .catch(function() { loadTodayOrders(); })
+    .finally(function() { btn.disabled = false; btn.textContent = '↻ Refresh'; });
 }
 
 function renderTodayOrders() {
