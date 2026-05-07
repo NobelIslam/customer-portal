@@ -455,27 +455,24 @@
       <div class="panel mb10" id="products-panel"></div>
 
       <!-- Today + Tomorrow side by side -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;margin-bottom:10px;">
-        <div>
-          <div class="section-label" id="s-today">Today's scheduled orders</div>
-          <div class="panel">
-            <div class="panel-head">
-              <span class="panel-title">Subscriptions billing today — CC · Recharge · Subi</span>
-              <span id="today-count" style="font-size:11px;color:var(--muted2);margin-left:auto"></span>
-            </div>
-            <div id="today-orders-wrap"><div class="empty">Loading…</div></div>
-          </div>
+      <!-- Today's Scheduled Orders -->
+      <div class="section-label" id="s-today">Today's scheduled orders</div>
+      <div class="panel mb10">
+        <div class="panel-head">
+          <span class="panel-title">Subscriptions billing today — CC · Recharge · Subi</span>
+          <span id="today-count" style="font-size:11px;color:var(--muted2);margin-left:auto"></span>
         </div>
-        <div>
-          <div class="section-label" id="s-tomorrow">Tomorrow's scheduled orders</div>
-          <div class="panel">
-            <div class="panel-head">
-              <span class="panel-title">All sources — CC + Recharge + Subi</span>
-              <span id="tomorrow-count" style="font-size:11px;color:var(--muted2);margin-left:auto"></span>
-            </div>
-            <div id="tomorrow-list"></div>
-          </div>
+        <div id="today-orders-wrap"><div class="empty">Loading…</div></div>
+      </div>
+
+      <!-- Tomorrow's Scheduled Orders -->
+      <div class="section-label" id="s-tomorrow">Tomorrow's scheduled orders</div>
+      <div class="panel mb10">
+        <div class="panel-head">
+          <span class="panel-title">All sources — CC + Recharge + Subi</span>
+          <span id="tomorrow-count" style="font-size:11px;color:var(--muted2);margin-left:auto"></span>
         </div>
+        <div id="tomorrow-list"></div>
       </div>
 
       <!-- Gateway breakdown — full width -->
