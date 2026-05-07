@@ -13,7 +13,7 @@ const sync    = require('./sync');
 const router = express.Router();
 
 const TOKEN_SECRET  = process.env.TOKEN_SECRET || 'tgp-portal-secret-2026';
-const ADMIN_BASE_URL = process.env.BASE_URL || 'https://try.thegreatproject.com';
+const ADMIN_BASE_URL = process.env.BASE_URL || 'https://help.thegreatproject.com';
 const CC_API_BASE    = 'https://api.checkoutchamp.com';
 const RC_API_BASE    = 'https://api.rechargeapps.com';
 const SUBI_API_BASE  = 'https://api.subi.co/public/v1.0';
