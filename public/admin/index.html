@@ -455,10 +455,10 @@
       <div class="panel mb10" id="products-panel"></div>
 
       <!-- Today + Tomorrow side by side -->
-      <div style="display:flex;gap:16px;align-items:stretch;margin-bottom:10px;">
-        <div style="flex:1;min-width:0;display:flex;flex-direction:column;">
+      <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:10px;">
+        <div style="flex:1;min-width:0;">
           <div class="section-label" id="s-today">Today's scheduled orders</div>
-          <div class="panel" style="flex:1;">
+          <div class="panel">
             <div class="panel-head">
               <span class="panel-title">Subscriptions billing today — CC · Recharge · Subi</span>
               <span id="today-count" style="font-size:11px;color:var(--muted2);margin-left:auto"></span>
@@ -466,9 +466,9 @@
             <div id="today-orders-wrap"><div class="empty">Loading…</div></div>
           </div>
         </div>
-        <div style="flex:1;min-width:0;display:flex;flex-direction:column;">
+        <div style="flex:1;min-width:0;">
           <div class="section-label" id="s-tomorrow">Tomorrow's scheduled orders</div>
-          <div class="panel" style="flex:1;">
+          <div class="panel">
             <div class="panel-head">
               <span class="panel-title">All sources — CC + Recharge + Subi</span>
               <span id="tomorrow-count" style="font-size:11px;color:var(--muted2);margin-left:auto"></span>
