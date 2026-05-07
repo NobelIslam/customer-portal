@@ -1407,6 +1407,15 @@ function manageCustomer(idx, btn) {
 }
 
 loadTodayOrders();
+
+/* ── Debug helper — call from browser console ──
+   debugOrders('customer@example.com')
+   ─────────────────────────────────────────── */
+function debugOrders(email) {
+  var tok = localStorage.getItem('tgp_admin_session') || '';
+  var url = '/admin/api/debug/cc-orders?email=' + encodeURIComponent(email) + '&token=' + encodeURIComponent(tok);
+  window.open(url, '_blank');
+}
 </script>
 </body>
 </html>
