@@ -282,8 +282,8 @@
     .ship-failed    { background: rgba(239,68,68,.12);  color: #fca5a5; border: 1px solid rgba(239,68,68,.25); }
     .ship-refunded  { background: rgba(251,146,60,.12); color: #fdba74; border: 1px solid rgba(251,146,60,.25); }
     .ship-shopify   { background: rgba(149,191,71,.12); color: #95bf47; border: 1px solid rgba(149,191,71,.3); }
-    .ship-shopify-wrap { text-decoration:none; display:inline-flex; flex-direction:column; align-items:flex-start; gap:5px; }
-    .shopify-logo   { width:72px; height:auto; object-fit:contain; opacity:.9; display:block; }
+    .ship-shopify-wrap { text-decoration:none; }
+    .shopify-logo   { height:14px; width:auto; object-fit:contain; opacity:.9; display:inline; vertical-align:middle; margin-left:4px; }
     .ship-none      { color: var(--muted); font-size: 11px; }
     .track-chip { font-size: 10px; color: var(--muted); margin-top: 3px; display: block; font-family: monospace; }
     .tod-action { display: flex; gap: 5px; align-items: center; flex-wrap: nowrap; }
@@ -1356,8 +1356,9 @@ function buildShippingHtml(orders) {
     if (extId) {
       var shopUrl = 'https://bigferverv.myshopify.com/admin/orders/' + encodeURIComponent(extId);
       return '<a href="' + shopUrl + '" target="_blank" class="ship-shopify-wrap">' +
-        '<span class="ship-badge ship-shopify">Exported to Shopify</span>' +
-        '<img src="https://cdn.shopify.com/s/files/1/0726/1975/3811/files/Shopify_logo_2018-cropped.svg?v=1778165364" class="shopify-logo" alt="Shopify"/>' +
+        '<span class="ship-badge ship-shopify">Exported to ' +
+          '<img src="https://cdn.shopify.com/s/files/1/0726/1975/3811/files/Shopify_logo_2018-cropped.svg?v=1778165364" class="shopify-logo" alt="Shopify"/>' +
+        '</span>' +
       '</a>';
     }
   }
