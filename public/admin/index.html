@@ -1352,14 +1352,7 @@ function buildShippingHtml(orders) {
 
   /* HOLD + external order ID → exported to Shopify */
   if (status === 'HOLD') {
-    var extId = order.externalOrderId  || order.external_order_id ||
-                order.shopifyOrderId   || order.shopify_order_id  ||
-                order.externalId       || order.external_id       || '';
-    if (!extId && order.fulfillments && order.fulfillments.length) {
-      order.fulfillments.forEach(function(f) {
-        if (!extId) extId = f.externalOrderId || f.shopifyOrderId || f.externalId || f.external_id || '';
-      });
-    }
+    var extId = order.externalOrderId || '';
     if (extId) {
       var shopUrl = 'https://bigferverv.myshopify.com/admin/orders/' + encodeURIComponent(extId);
       return '<a href="' + shopUrl + '" target="_blank" class="ship-shopify-wrap">' +
