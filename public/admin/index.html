@@ -1244,7 +1244,8 @@ var allTodayOrders  = [];
 var shippingCache   = {}; /* email → rendered HTML, persists across pagination */
 
 function loadTodayOrders() {
-  shippingCache = {}; /* clear on fresh data load only */
+  shippingCache = {};
+  shopifyTrackingCache = {};
   fetch('/admin/api/today-orders', { headers: H })
     .then(function(r) { return r.json(); })
     .then(function(d) {
@@ -1282,7 +1283,7 @@ function renderTodayOrders() {
     var globalIdx = (pageTodayOrders - 1) * PAGE_SIZE_TODAY + idx;
     var shipCell = o.source === 'cc'
       ? '<span class="ship-none" id="ship-cell-' + globalIdx + '"><span style="opacity:.4;font-size:11px">Loading…</span></span>'
-      : buildDbOrderStatus(o.last_billed_at, o.next_bill_at);
+      : '<span id="ship-cell-' + globalIdx + '">' + buildDbOrderStatus(o.last_billed_at, o.next_bill_at) + '</span>';
     return '<tr>' +
       '<td><span class="tod-email">' + esc(o.customer_email) + '</span>' +
            (name ? '<span class="tod-name">' + name + '</span>' : '') + '</td>' +
@@ -1313,25 +1314,72 @@ function renderTodayOrders() {
       '<tbody>' + rows + '</tbody>' +
     '</table>' + pagBar;
 
-  /* Auto-fetch shipping for every CC row on this page */
+  /* Auto-fetch shipping for every row on this page */
   slice.forEach(function(o, idx) {
-    if (o.source !== 'cc') return;
     var globalIdx = (pageTodayOrders - 1) * PAGE_SIZE_TODAY + idx;
-    autoCheckShipping(globalIdx, o.customer_email);
+    if (o.source === 'cc') {
+      autoCheckShipping(globalIdx, o.customer_email);
+    } else if (isBilledRow(o)) {
+      autoCheckShopifyTracking(globalIdx, o.customer_email);
+    }
+
   });
 }
 
 function todayPage(p) { pageTodayOrders = p; renderTodayOrders(); }
 
+function isBilledRow(o) {
+  var today = new Date().toLocaleDateString('en-CA');
+  if (o.last_billed_at && new Date(o.last_billed_at).toLocaleDateString('en-CA') === today) return true;
+  if (o.next_bill_at && new Date(o.next_bill_at) < new Date()) return true;
+  return false;
+}
+
 function buildDbOrderStatus(lastBilledAt, nextBillAt) {
   var today = new Date().toLocaleDateString('en-CA');
-  /* Sync already confirmed billing today */
   if (lastBilledAt && new Date(lastBilledAt).toLocaleDateString('en-CA') === today)
     return '<span class="ship-badge ship-delivered">Billed today</span>';
-  /* Billing time has already passed — billed but sync hasn't updated yet */
   if (nextBillAt && new Date(nextBillAt) < new Date())
     return '<span class="ship-badge ship-delivered">Billed</span>';
   return '<span class="ship-badge ship-pending">Scheduled</span>';
+}
+
+var shopifyTrackingCache = {};
+
+function autoCheckShopifyTracking(idx, email) {
+  var cell = document.getElementById('ship-cell-' + idx);
+  if (!cell) return;
+
+  if (Object.prototype.hasOwnProperty.call(shopifyTrackingCache, email)) {
+    cell.innerHTML = shopifyTrackingCache[email];
+    return;
+  }
+
+  shopifyTrackingCache[email] = cell.innerHTML; /* keep current while loading */
+
+  fetch('/admin/api/shopify/tracking?email=' + encodeURIComponent(email), { headers: H })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var html;
+      if (d.error) {
+        html = cell.innerHTML; /* keep billed badge, no tracking available */
+      } else if (d.tracking && d.tracking.tracking_number) {
+        var t = d.tracking;
+        var trackUrl = t.tracking_url
+          ? '<a href="' + esc(t.tracking_url) + '" target="_blank" class="track-chip">' + esc(t.tracking_number) + '</a>'
+          : '<span class="track-chip">' + esc(t.tracking_number) + '</span>';
+        var statusBadge = t.status === 'delivered'  ? '<span class="ship-badge ship-delivered">Delivered</span>'
+                        : t.status === 'in_transit' ? '<span class="ship-badge ship-shipped">In Transit</span>'
+                        : '<span class="ship-badge ship-delivered">Billed</span>';
+        html = statusBadge + trackUrl;
+      } else {
+        html = cell.innerHTML; /* no tracking yet, keep billed badge */
+      }
+      shopifyTrackingCache[email] = html;
+      var c = document.getElementById('ship-cell-' + idx);
+      if (c) c.innerHTML = html;
+    })
+    .catch(function() { /* leave current badge as-is */ });
 }
 
 function buildShippingHtml(orders) {

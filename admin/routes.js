@@ -12,11 +12,13 @@ const sync    = require('./sync');
 
 const router = express.Router();
 
-const TOKEN_SECRET  = process.env.TOKEN_SECRET || 'tgp-portal-secret-2026';
+const TOKEN_SECRET   = process.env.TOKEN_SECRET || 'tgp-portal-secret-2026';
 const ADMIN_BASE_URL = process.env.BASE_URL || 'https://help.thegreatproject.com';
 const CC_API_BASE    = 'https://api.checkoutchamp.com';
 const RC_API_BASE    = 'https://api.rechargeapps.com';
 const SUBI_API_BASE  = 'https://api.subi.co/public/v1.0';
+const SHOPIFY_STORE  = process.env.SHOPIFY_STORE  || 'bigferverv.myshopify.com';
+const SHOPIFY_TOKEN  = process.env.SHOPIFY_ACCESS_TOKEN || '';
 
 function adminCreateToken(payload) {
   payload.expires = Date.now() + 24 * 60 * 60 * 1000;
@@ -683,6 +685,56 @@ router.get('/api/debug/rc-charges', async function(req, res) {
       db_subscriptions:     dbSub,
       _note: 'subscriptions_live shows next_charge_scheduled_at from Recharge. charges_recent shows actual charge history with status and scheduled_at.'
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ── GET /admin/api/shopify/tracking?email=xxx — Shopify fulfillment tracking ── */
+
+router.get('/api/shopify/tracking', async function(req, res) {
+  try {
+    const email = (req.query.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ error: 'email required' });
+    if (!SHOPIFY_TOKEN) return res.status(503).json({ error: 'SHOPIFY_ACCESS_TOKEN not configured' });
+
+    /* Fetch recent Shopify orders for this email (last 10, any status) */
+    const url = 'https://' + SHOPIFY_STORE + '/admin/api/2024-01/orders.json' +
+      '?email=' + encodeURIComponent(email) +
+      '&status=any&limit=10&fields=id,name,created_at,fulfillment_status,fulfillments';
+
+    const r = await fetch(url, {
+      headers: { 'X-Shopify-Access-Token': SHOPIFY_TOKEN, 'Content-Type': 'application/json' }
+    });
+    if (!r.ok) {
+      const t = await r.text();
+      return res.status(r.status).json({ error: 'Shopify API error: ' + t.substring(0, 200) });
+    }
+    const data = await r.json();
+    const orders = data.orders || [];
+
+    /* Pull tracking from the most recent fulfilled order */
+    let tracking = null;
+    for (const order of orders) {
+      if (!order.fulfillments || !order.fulfillments.length) continue;
+      for (const f of order.fulfillments) {
+        if (f.tracking_number) {
+          tracking = {
+            order_id:          order.id,
+            order_name:        order.name,
+            order_created_at:  order.created_at,
+            tracking_number:   f.tracking_number,
+            tracking_company:  f.tracking_company || null,
+            tracking_url:      (f.tracking_urls && f.tracking_urls[0]) || f.tracking_url || null,
+            status:            f.shipment_status || f.status || null
+          };
+          break;
+        }
+      }
+      if (tracking) break;
+    }
+
+    res.json({ email, tracking, orders_checked: orders.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
