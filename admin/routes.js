@@ -753,7 +753,11 @@ router.get('/api/shopify/tracking', async function(req, res) {
   }
 });
 
-/* ── GET /admin/api/today-orders — subscriptions due today ── */
+/* ── GET /admin/api/today-orders — subscriptions billed today ──
+   Always queries CC order/query API directly for today's recurring
+   charges so orders billed >30 days into the subscription are never
+   missed due to the delta-sync window. DB results for Recharge/Subi
+   come from the last_billed_at / next_bill_at columns as before.   */
 
 router.get('/api/today-orders', async function(req, res) {
   try {
@@ -761,7 +765,45 @@ router.get('/api/today-orders', async function(req, res) {
     const todayStart = new Date(now); todayStart.setUTCHours(0, 0, 0, 0);
     const todayEnd   = new Date(todayStart); todayEnd.setUTCDate(todayEnd.getUTCDate() + 1);
 
-    const rows = await db.many(`
+    /* ── 1. Query CC API live for today's recurring orders ── */
+    let ccLiveEmails = [];
+    if (process.env.CC_LOGIN_ID && process.env.CC_API_PASSWORD) {
+      try {
+        const todayStr = (now.getMonth()+1).toString().padStart(2,'0') + '/' +
+                         now.getDate().toString().padStart(2,'0') + '/' + now.getFullYear();
+        let page = 1;
+        let allCCOrders = [];
+        while (page <= 10) {
+          const p = new URLSearchParams({
+            loginId:        process.env.CC_LOGIN_ID,
+            password:       process.env.CC_API_PASSWORD,
+            startDate:      todayStr,
+            endDate:        todayStr,
+            resultsPerPage: 200,
+            page:           page
+          });
+          const r = await fetch(CC_API_BASE + '/order/query/?' + p.toString(), { method: 'POST' });
+          const d = await r.json();
+          const orders = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+          allCCOrders = allCCOrders.concat(orders);
+          if (orders.length < 200) break;
+          page++;
+        }
+        const recurring = allCCOrders.filter(function(o) {
+          return o.recurringFlag === '1' || o.orderType === 'RECURRING' || o.parentOrderId;
+        });
+        ccLiveEmails = Array.from(new Set(
+          recurring.map(function(o) { return (o.emailAddress || '').trim().toLowerCase(); }).filter(Boolean)
+        ));
+        console.log('[today-orders] CC live recurring:', recurring.length, 'orders |', ccLiveEmails.length, 'emails');
+      } catch (e) {
+        console.error('[today-orders] CC live query failed:', e.message);
+        /* fall through — DB-only results still returned */
+      }
+    }
+
+    /* ── 2. DB query: DB-tracked billing OR CC live billing ── */
+    let sql = `
       SELECT s.id, s.source, s.native_id, s.customer_email, s.product,
              s.status, s.price_cents, s.next_bill_at, s.frequency,
              s.last_billed_at,
@@ -771,14 +813,22 @@ router.get('/api/today-orders', async function(req, res) {
       WHERE s.status = 'ACTIVE'
       AND (
         (s.next_bill_at >= $1 AND s.next_bill_at < $2)
-        OR (s.last_billed_at >= $1 AND s.last_billed_at < $2)
+        OR (s.last_billed_at >= $1 AND s.last_billed_at < $2)`;
+
+    const sqlParams = [todayStart, todayEnd];
+    if (ccLiveEmails.length > 0) {
+      sqlParams.push(ccLiveEmails);
+      sql += `\n        OR (s.source = 'cc' AND LOWER(s.customer_email) = ANY($3))`;
+    }
+    sql += `
       )
       AND NOT (s.source = 'cc' AND s.raw->>'merchant' ILIKE '%paypal%')
       AND NOT (s.source = 'cc' AND COALESCE(NULLIF(TRIM(s.raw->>'merchant'), ''), '') = '')
-      ORDER BY s.source, s.price_cents DESC
-    `, [todayStart, todayEnd]);
+      ORDER BY s.source, s.price_cents DESC`;
 
-    res.json({ orders: rows, count: rows.length });
+    const rows = await db.many(sql, sqlParams);
+
+    res.json({ orders: rows, count: rows.length, ccLiveCount: ccLiveEmails.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

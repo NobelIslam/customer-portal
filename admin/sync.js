@@ -536,7 +536,7 @@ async function syncTodayBillings() {
   const perPage = 200;
 
   while (page <= 20) {
-    const url = CC_API_BASE + '/order/query/?' + ccParams({
+    const url = CC_BASE + '/order/query/?' + ccParams({
       startDate:      todayStr,
       endDate:        todayStr,
       resultsPerPage: perPage,
