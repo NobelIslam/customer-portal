@@ -133,8 +133,9 @@ router.get('/api/overview', async function(req, res) {
     const weekStart    = new Date(todayStart); weekStart.setUTCDate(weekStart.getUTCDate() - 7);
     const twoWeeksAgo  = new Date(todayStart); twoWeeksAgo.setUTCDate(twoWeeksAgo.getUTCDate() - 14);
 
-    /* Exclude PayPal Commerce from all subscription metrics */
-    const NO_PAYPAL = `AND NOT (source = 'cc' AND raw->>'merchant' ILIKE '%paypal%')`;
+    /* Exclude PayPal Commerce and Unknown/Not Set gateway CC subscriptions */
+    const NO_PAYPAL = `AND NOT (source = 'cc' AND raw->>'merchant' ILIKE '%paypal%')
+      AND NOT (source = 'cc' AND COALESCE(NULLIF(TRIM(raw->>'merchant'), ''), '') = '')`;
 
     const [
       activeCount,
@@ -210,7 +211,8 @@ router.get('/api/overview', async function(req, res) {
                FROM subscriptions
                WHERE source = 'cc' AND status = 'ACTIVE' AND next_bill_at >= NOW()
                AND raw->>'merchant' NOT ILIKE '%paypal%'
-               GROUP BY COALESCE(NULLIF(TRIM(raw->>'merchant'), ''), 'Unknown / Not Set') ORDER BY n DESC`)
+               AND COALESCE(NULLIF(TRIM(raw->>'merchant'), ''), '') != ''
+               GROUP BY NULLIF(TRIM(raw->>'merchant'), '') ORDER BY n DESC`)
     ]);
 
     res.json({
@@ -761,6 +763,7 @@ router.get('/api/today-orders', async function(req, res) {
         OR (s.last_billed_at >= $1 AND s.last_billed_at < $2)
       )
       AND NOT (s.source = 'cc' AND s.raw->>'merchant' ILIKE '%paypal%')
+      AND NOT (s.source = 'cc' AND COALESCE(NULLIF(TRIM(s.raw->>'merchant'), ''), '') = '')
       ORDER BY s.source, s.price_cents DESC
     `, [todayStart, todayEnd]);
 
