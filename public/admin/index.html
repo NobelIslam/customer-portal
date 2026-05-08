@@ -1369,13 +1369,16 @@ function autoCheckShopifyTracking(idx, email) {
         html = cell.innerHTML; /* keep billed badge, no tracking available */
       } else if (d.tracking && d.tracking.tracking_number) {
         var t = d.tracking;
-        var trackUrl = t.tracking_url
-          ? '<a href="' + esc(t.tracking_url) + '" target="_blank" class="track-chip">' + esc(t.tracking_number) + '</a>'
-          : '<span class="track-chip">' + esc(t.tracking_number) + '</span>';
-        var statusBadge = t.status === 'delivered'  ? '<span class="ship-badge ship-delivered">Delivered</span>'
-                        : t.status === 'in_transit' ? '<span class="ship-badge ship-shipped">In Transit</span>'
-                        : '<span class="ship-badge ship-delivered">Billed</span>';
-        html = statusBadge + trackUrl;
+        var s = (t.status || '').toLowerCase();
+        html =
+          s === 'delivered'                                  ? '<span class="ship-badge ship-delivered">Delivered</span>'
+        : (s === 'in_transit' || s === 'out_for_delivery')   ? '<span class="ship-badge ship-shipped">In Transit</span>'
+        : (s === 'attempted_delivery')                       ? '<span class="ship-badge ship-processing">Attempted</span>'
+        : (s === 'confirmed' || s === 'label_printed'
+           || s === 'label_purchased' || s === 'ready_for_pickup'
+           || s === 'picked_up')                             ? '<span class="ship-badge ship-shipped">Shipped</span>'
+        : (s === 'failure' || s === 'error')                 ? '<span class="ship-badge ship-failed">Failed</span>'
+        :                                                      '<span class="ship-badge ship-shipped">Shipped</span>';
       } else {
         html = cell.innerHTML; /* no tracking yet, keep billed badge */
       }
