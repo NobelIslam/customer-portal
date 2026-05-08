@@ -641,6 +641,53 @@ router.get('/api/debug/cc-orders', async function(req, res) {
   }
 });
 
+/* ── GET /admin/api/debug/rc-charges?email=xxx — raw Recharge charge + sub data ── */
+
+router.get('/api/debug/rc-charges', requireAdmin, async function(req, res) {
+  try {
+    const email = (req.query.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ error: 'email query param required' });
+
+    const RC_KEY = process.env.RECHARGE_API_KEY;
+    if (!RC_KEY) return res.status(500).json({ error: 'RECHARGE_API_KEY not set' });
+
+    const headers = { 'X-Recharge-Access-Token': RC_KEY, 'Content-Type': 'application/json' };
+
+    /* 1. Find customer by email */
+    const custR = await fetch('https://api.rechargeapps.com/customers?email=' + encodeURIComponent(email), { headers });
+    const custD = await custR.json();
+    const customer = custD.customers && custD.customers[0];
+
+    if (!customer) return res.json({ found: false, email, note: 'No Recharge customer found for this email' });
+
+    /* 2. Fetch subscriptions for this customer */
+    const subR = await fetch('https://api.rechargeapps.com/subscriptions?customer_id=' + customer.id, { headers });
+    const subD = await subR.json();
+
+    /* 3. Fetch recent charges (last 5) */
+    const chgR = await fetch('https://api.rechargeapps.com/charges?customer_id=' + customer.id + '&limit=5&sort_by=scheduled_at-desc', { headers });
+    const chgD = await chgR.json();
+
+    /* 4. Also check our local DB */
+    const dbSub = await db.many(
+      `SELECT id, status, next_bill_at, last_billed_at, last_synced_at FROM subscriptions
+       WHERE LOWER(customer_email) = $1 AND source = 'recharge'`, [email]
+    );
+
+    res.json({
+      email,
+      recharge_customer_id: customer.id,
+      customer_status:      customer.status,
+      subscriptions_live:   subD.subscriptions || [],
+      charges_recent:       chgD.charges || [],
+      db_subscriptions:     dbSub,
+      _note: 'subscriptions_live shows next_charge_scheduled_at from Recharge. charges_recent shows actual charge history with status and scheduled_at.'
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* ── GET /admin/api/today-orders — subscriptions due today ── */
 
 router.get('/api/today-orders', async function(req, res) {
