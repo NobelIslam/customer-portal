@@ -1358,8 +1358,12 @@ function autoCheckShopifyTracking(idx, email) {
   shopifyTrackingCache[email] = cell.innerHTML; /* keep current while loading */
 
   fetch('/admin/api/shopify/tracking?email=' + encodeURIComponent(email), { headers: H })
-    .then(function(r) { return r.json(); })
+    .then(function(r) {
+      if (!r.ok) { shopifyTrackingCache[email] = cell.innerHTML; return null; }
+      return r.json();
+    })
     .then(function(d) {
+      if (!d) return; /* non-ok response — keep badge as-is */
       var html;
       if (d.error) {
         html = cell.innerHTML; /* keep billed badge, no tracking available */
