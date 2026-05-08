@@ -1367,7 +1367,7 @@ function autoCheckShopifyTracking(idx, email) {
       var html;
       if (d.error) {
         html = cell.innerHTML; /* keep billed badge, no tracking available */
-      } else if (d.tracking && d.tracking.tracking_number) {
+      } else if (d.tracking) {
         var t = d.tracking;
         var s = (t.status || '').toLowerCase();
         html =
@@ -1409,8 +1409,7 @@ function buildShippingHtml(orders) {
   var REFUNDED = ['REFUNDED','PARTIAL_REFUND'];
 
   if (FAILED.indexOf(orderStatus) !== -1 || FAILED.indexOf(responseType) !== -1) {
-    return '<span class="ship-badge ship-failed">' + esc(orderStatus || responseType) + '</span>' +
-      (declineMsg ? '<span class="track-chip">' + esc(declineMsg) + '</span>' : '');
+    return '<span class="ship-badge ship-failed">' + esc(orderStatus || responseType) + '</span>';
   }
   if (REFUNDED.indexOf(orderStatus) !== -1) {
     return '<span class="ship-badge ship-refunded">' + esc(orderStatus) + '</span>';
@@ -1432,8 +1431,7 @@ function buildShippingHtml(orders) {
 
   var cls      = { DELIVERED:'ship-delivered', SHIPPED:'ship-shipped', PROCESSING:'ship-processing' }[status] || 'ship-pending';
   var tracking = order.trackingNumber || '';
-  return '<span class="ship-badge ' + cls + '">' + esc(status) + '</span>' +
-    (tracking ? '<span class="track-chip">' + esc(tracking) + '</span>' : '');
+  return '<span class="ship-badge ' + cls + '">' + esc(status) + '</span>';
 }
 
 function autoCheckShipping(idx, email) {
