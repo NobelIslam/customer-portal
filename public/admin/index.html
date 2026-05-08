@@ -1282,7 +1282,7 @@ function renderTodayOrders() {
     var globalIdx = (pageTodayOrders - 1) * PAGE_SIZE_TODAY + idx;
     var shipCell = o.source === 'cc'
       ? '<span class="ship-none" id="ship-cell-' + globalIdx + '"><span style="opacity:.4;font-size:11px">Loading…</span></span>'
-      : buildDbOrderStatus(o.last_billed_at);
+      : buildDbOrderStatus(o.last_billed_at, o.next_bill_at);
     return '<tr>' +
       '<td><span class="tod-email">' + esc(o.customer_email) + '</span>' +
            (name ? '<span class="tod-name">' + name + '</span>' : '') + '</td>' +
@@ -1323,11 +1323,14 @@ function renderTodayOrders() {
 
 function todayPage(p) { pageTodayOrders = p; renderTodayOrders(); }
 
-function buildDbOrderStatus(lastBilledAt) {
-  if (!lastBilledAt) return '<span class="ship-badge ship-pending">Scheduled</span>';
+function buildDbOrderStatus(lastBilledAt, nextBillAt) {
   var today = new Date().toLocaleDateString('en-CA');
-  var billedToday = new Date(lastBilledAt).toLocaleDateString('en-CA') === today;
-  if (billedToday) return '<span class="ship-badge ship-delivered">Billed today</span>';
+  /* Sync already confirmed billing today */
+  if (lastBilledAt && new Date(lastBilledAt).toLocaleDateString('en-CA') === today)
+    return '<span class="ship-badge ship-delivered">Billed today</span>';
+  /* Billing time has already passed — billed but sync hasn't updated yet */
+  if (nextBillAt && new Date(nextBillAt) < new Date())
+    return '<span class="ship-badge ship-delivered">Billed</span>';
   return '<span class="ship-badge ship-pending">Scheduled</span>';
 }
 
