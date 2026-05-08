@@ -356,6 +356,17 @@ router.post('/sync/run', async function(req, res) {
   }
 });
 
+/* ── /admin/sync/today — force-stamp today's CC billings immediately ── */
+
+router.post('/sync/today', async function(req, res) {
+  try {
+    const result = await sync.syncTodayBillings();
+    res.json({ ok: true, result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* ════════════════════════════════════════════════════
    CC API TEST ENDPOINTS
    All require admin auth. Use these to inspect raw CC

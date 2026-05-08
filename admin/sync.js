@@ -518,6 +518,76 @@ async function upsertSubiContract(c) {
 }
 
 /* ════════════════════════════════════════════════════
+   TODAY'S BILLINGS SYNC
+   Queries CC order/query for today's date to catch
+   any subscriptions billed today that the 30-day
+   delta window would miss (created >30 days ago).
+   Sets last_billed_at on matched subscriptions.
+   ════════════════════════════════════════════════════ */
+
+async function syncTodayBillings() {
+  if (!process.env.CC_LOGIN_ID || !process.env.CC_API_PASSWORD) return;
+
+  const today    = new Date();
+  const todayStr = ccDate(today);
+
+  let allOrders = [];
+  let page = 1;
+  const perPage = 200;
+
+  while (page <= 20) {
+    const url = CC_API_BASE + '/order/query/?' + ccParams({
+      startDate:      todayStr,
+      endDate:        todayStr,
+      resultsPerPage: perPage,
+      page:           page,
+      sortDir:        -1
+    });
+    const r = await fetch(url, { method: 'POST' });
+    const d = await r.json();
+    const orders = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+    allOrders = allOrders.concat(orders);
+    console.log('[sync:today] CC orders page', page, '| got', orders.length);
+    if (orders.length < perPage) break;
+    page++;
+  }
+
+  /* Keep only recurring orders */
+  const recurring = allOrders.filter(function(o) {
+    return o.recurringFlag === '1' || o.orderType === 'RECURRING' || o.parentOrderId;
+  });
+
+  if (!recurring.length) {
+    console.log('[sync:today] no CC recurring orders found for today');
+    return { billed: 0 };
+  }
+
+  /* Collect unique emails */
+  const emails = Array.from(new Set(
+    recurring.map(function(o) { return (o.emailAddress || '').trim().toLowerCase(); }).filter(Boolean)
+  ));
+
+  console.log('[sync:today] CC recurring today:', recurring.length, 'orders |', emails.length, 'unique emails');
+
+  /* Stamp last_billed_at for any matching active CC subscription that hasn't been stamped yet today */
+  const todayStart = new Date(today); todayStart.setUTCHours(0,0,0,0);
+  const todayEnd   = new Date(todayStart); todayEnd.setUTCDate(todayEnd.getUTCDate() + 1);
+
+  const result = await db.query(`
+    UPDATE subscriptions
+    SET last_billed_at = NOW()
+    WHERE source = 'cc'
+      AND status  = 'ACTIVE'
+      AND (last_billed_at IS NULL OR last_billed_at < $1)
+      AND LOWER(customer_email) = ANY($2)
+  `, [todayStart, emails]);
+
+  const updated = result.rowCount || 0;
+  console.log('[sync:today] stamped last_billed_at on', updated, 'CC subscriptions');
+  return { billed: emails.length, updated: updated };
+}
+
+/* ════════════════════════════════════════════════════
    ORCHESTRATOR
    ════════════════════════════════════════════════════ */
 
@@ -546,13 +616,24 @@ async function runSyncCycle(opts) {
     }
   }
 
+  /* Always run today's billing sync to catch CC orders billed today
+     regardless of subscription creation date (fixes 30-day delta gap) */
+  try {
+    const todayResult = await syncTodayBillings();
+    results.todayBillings = Object.assign({ ok: true }, todayResult);
+  } catch (err) {
+    console.error('[sync:today] failed:', err.message);
+    results.todayBillings = { ok: false, error: err.message };
+  }
+
   console.log('[sync] cycle done', JSON.stringify(results));
   return results;
 }
 
 module.exports = {
-  runSyncCycle: runSyncCycle,
-  syncCC:       syncCC,
-  syncRecharge: syncRecharge,
-  syncSubi:     syncSubi
+  runSyncCycle:       runSyncCycle,
+  syncCC:             syncCC,
+  syncRecharge:       syncRecharge,
+  syncSubi:           syncSubi,
+  syncTodayBillings:  syncTodayBillings
 };
