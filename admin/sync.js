@@ -584,7 +584,28 @@ async function syncTodayBillings() {
 
   const updated = result.rowCount || 0;
   console.log('[sync:today] stamped last_billed_at on', updated, 'CC subscriptions');
-  return { billed: emails.length, updated: updated };
+  return {
+    billed:        emails.length,
+    updated:       updated,
+    total_orders:  allOrders.length,
+    recurring_orders: recurring.length,
+    orders:        recurring.map(function(o) {
+      return {
+        orderId:       o.orderId,
+        emailAddress:  o.emailAddress,
+        firstName:     o.firstName,
+        lastName:      o.lastName,
+        productName:   o.productName,
+        totalAmount:   o.totalAmount,
+        orderStatus:   o.orderStatus || o.status,
+        orderType:     o.orderType,
+        recurringFlag: o.recurringFlag,
+        parentOrderId: o.parentOrderId,
+        dateCreated:   o.dateCreated,
+        shippingStatus: o.shippingStatus || null
+      };
+    })
+  };
 }
 
 /* ════════════════════════════════════════════════════
