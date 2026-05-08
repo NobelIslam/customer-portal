@@ -500,7 +500,7 @@
 })();
 
 var SESSION = localStorage.getItem('tgp_admin_session');
-var H = { 'Authorization': 'Bearer ' + SESSION };
+var H = { 'Authorization': 'Bearer ' + SESSION, 'Cache-Control': 'no-cache, no-store', 'Pragma': 'no-cache' };
 function logout() { localStorage.removeItem('tgp_admin_session'); location.href = '/admin/login'; }
 
 /* ── Helpers ── */
