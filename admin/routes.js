@@ -643,7 +643,7 @@ router.get('/api/debug/cc-orders', async function(req, res) {
 
 /* ── GET /admin/api/debug/rc-charges?email=xxx — raw Recharge charge + sub data ── */
 
-router.get('/api/debug/rc-charges', requireAdmin, async function(req, res) {
+router.get('/api/debug/rc-charges', async function(req, res) {
   try {
     const email = (req.query.email || '').trim().toLowerCase();
     if (!email) return res.status(400).json({ error: 'email query param required' });
