@@ -900,6 +900,153 @@ router.post('/api/magic-link', async function(req, res) {
   }
 });
 
+/* ── GET /admin/api/debug/billed-and-exported
+   Finds CC recurring orders that were billed today (or within ?days=N)
+   where next_bill_at has already moved to the future, and checks
+   Shopify to see if the order was exported and fulfilled/shipped.
+   ────────────────────────────────────────────────── */
+router.get('/api/debug/billed-and-exported', async function(req, res) {
+  try {
+    const days    = Math.min(parseInt(req.query.days || '3', 10), 14);
+    const now     = new Date();
+    const endDate = (now.getMonth()+1).toString().padStart(2,'0') + '/' +
+                    now.getDate().toString().padStart(2,'0') + '/' + now.getFullYear();
+    const startD  = new Date(now); startD.setDate(startD.getDate() - days);
+    const startDate = (startD.getMonth()+1).toString().padStart(2,'0') + '/' +
+                      startD.getDate().toString().padStart(2,'0') + '/' + startD.getFullYear();
+
+    /* ── 1. Pull CC recurring orders for window ── */
+    let ccOrders = [], page = 1;
+    while (page <= 20) {
+      const p = new URLSearchParams({
+        loginId: process.env.CC_LOGIN_ID, password: process.env.CC_API_PASSWORD,
+        startDate, endDate, resultsPerPage: 200, page, sortDir: -1
+      });
+      const r = await fetch(CC_API_BASE + '/order/query/?' + p.toString(), { method: 'POST' });
+      const d = await r.json();
+      const batch = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+      const recurring = batch.filter(function(o) {
+        return o.orderType === 'RECURRING' || o.recurringFlag === '1' || o.parentOrderId;
+      });
+      ccOrders = ccOrders.concat(recurring);
+      if (batch.length < 200) break;
+      page++;
+    }
+
+    /* ── 2. For each recurring order, get current nextBillDate from CC purchase/query ── */
+    /* batch by purchaseId — CC purchase/query can filter by purchaseId */
+    const purchaseIds = ccOrders.map(function(o) { return o.purchaseId; }).filter(Boolean);
+    const purchaseMap = {};
+
+    /* fetch in chunks of 10 to avoid overloading CC */
+    for (var i = 0; i < purchaseIds.length; i++) {
+      const pid = purchaseIds[i];
+      try {
+        const p = new URLSearchParams({
+          loginId: process.env.CC_LOGIN_ID, password: process.env.CC_API_PASSWORD,
+          purchaseId: pid, resultsPerPage: 1, page: 1
+        });
+        const r = await fetch(CC_API_BASE + '/purchase/query/?' + p.toString(), { method: 'POST' });
+        const d = await r.json();
+        const row = (d.result === 'SUCCESS' && d.message && d.message.data && d.message.data[0]);
+        if (row) purchaseMap[pid] = { nextBillDate: row.nextBillDate, status: row.status, merchant: row.merchant };
+      } catch(e) { /* skip */ }
+    }
+
+    /* ── 3. Check Shopify for each unique email ── */
+    const uniqueEmails = Array.from(new Set(ccOrders.map(function(o) {
+      return (o.emailAddress || '').trim().toLowerCase();
+    }).filter(Boolean)));
+
+    const shopifyMap = {};
+    if (SHOPIFY_TOKEN) {
+      for (var j = 0; j < uniqueEmails.length; j++) {
+        const email = uniqueEmails[j];
+        try {
+          const url = 'https://' + SHOPIFY_STORE + '/admin/api/2024-01/orders.json' +
+            '?email=' + encodeURIComponent(email) +
+            '&status=any&limit=5&fields=id,name,created_at,fulfillment_status,fulfillments';
+          const r = await fetch(url, { headers: { 'X-Shopify-Access-Token': SHOPIFY_TOKEN } });
+          if (r.ok) {
+            const d = await r.json();
+            const orders = (d.orders || []);
+            /* find most recent fulfilled order */
+            let shipment = null;
+            for (const ord of orders) {
+              if (ord.fulfillments && ord.fulfillments.length) {
+                const f = ord.fulfillments[0];
+                shipment = {
+                  order_name:       ord.name,
+                  order_created_at: ord.created_at,
+                  fulfillment_status: ord.fulfillment_status,
+                  shipment_status:  f.shipment_status || f.status || null,
+                  tracking_company: f.tracking_company || null,
+                  tracking_url:     (f.tracking_urls && f.tracking_urls[0]) || null
+                };
+                break;
+              }
+            }
+            shopifyMap[email] = shipment;
+          }
+        } catch(e) { /* skip */ }
+      }
+    }
+
+    /* ── 4. Build result rows ── */
+    const rows = ccOrders.map(function(o) {
+      const email   = (o.emailAddress || '').trim().toLowerCase();
+      const pid     = o.purchaseId;
+      const sub     = purchaseMap[pid] || {};
+      const shopify = shopifyMap[email] || null;
+      return {
+        cc_order_id:    o.orderId,
+        purchase_id:    pid,
+        email:          o.emailAddress,
+        product:        o.productName,
+        amount:         o.totalAmount,
+        cc_order_status: o.orderStatus || o.status,
+        cc_order_date:  o.dateCreated,
+        subscription: {
+          current_next_bill_date: sub.nextBillDate || null,
+          status:   sub.status   || null,
+          merchant: sub.merchant || null
+        },
+        shopify: shopify
+          ? {
+              exported:    true,
+              order_name:  shopify.order_name,
+              order_date:  shopify.order_created_at,
+              fulfillment: shopify.fulfillment_status,
+              shipment:    shopify.shipment_status,
+              carrier:     shopify.tracking_company,
+              tracking_url: shopify.tracking_url
+            }
+          : { exported: SHOPIFY_TOKEN ? false : 'SHOPIFY_TOKEN_NOT_SET' }
+      };
+    });
+
+    const exported   = rows.filter(function(r) { return r.shopify && r.shopify.exported === true; });
+    const notExported = rows.filter(function(r) { return r.shopify && r.shopify.exported === false; });
+
+    res.json({
+      as_of:    now.toISOString(),
+      window:   startDate + ' → ' + endDate,
+      summary: {
+        cc_recurring_orders: ccOrders.length,
+        exported_to_shopify: exported.length,
+        not_in_shopify:      notExported.length,
+        shopify_configured:  !!SHOPIFY_TOKEN
+      },
+      exported_and_shipped: exported.filter(function(r) { return r.shopify.shipment && r.shopify.shipment !== 'label_printed'; }),
+      exported_pending:     exported.filter(function(r) { return !r.shopify.shipment || r.shopify.shipment === 'label_printed'; }),
+      not_exported:         notExported,
+      all:                  rows
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* ── GET /admin/api/debug/today-breakdown
    Side-by-side comparison: DB subscriptions scheduled for today
    vs CC API recurring orders charged today.
