@@ -765,26 +765,20 @@ router.get('/api/today-orders', async function(req, res) {
     const todayStart = new Date(now); todayStart.setUTCHours(0, 0, 0, 0);
     const todayEnd   = new Date(todayStart); todayEnd.setUTCDate(todayEnd.getUTCDate() + 1);
 
-    /* ── 1. Query CC API live — use yesterday+today window so we never
-          miss charges that CC processed near a UTC date boundary.
-          Source of truth is CC: any RECURRING order CC created in this
-          window means that subscription was billed and should show here. ── */
+    /* ── 1. Query CC API live for today's recurring orders (CC native date) ── */
     let ccLiveEmails = [];
     if (process.env.CC_LOGIN_ID && process.env.CC_API_PASSWORD) {
       try {
-        const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
-        const fmt = function(d) {
-          return (d.getMonth()+1).toString().padStart(2,'0') + '/' +
-                  d.getDate().toString().padStart(2,'0') + '/' + d.getFullYear();
-        };
+        const todayStr = (now.getMonth()+1).toString().padStart(2,'0') + '/' +
+                         now.getDate().toString().padStart(2,'0') + '/' + now.getFullYear();
         let page = 1;
         let allCCOrders = [];
         while (page <= 10) {
           const p = new URLSearchParams({
             loginId:        process.env.CC_LOGIN_ID,
             password:       process.env.CC_API_PASSWORD,
-            startDate:      fmt(yesterday),
-            endDate:        fmt(now),
+            startDate:      todayStr,
+            endDate:        todayStr,
             resultsPerPage: 200,
             page:           page
           });
