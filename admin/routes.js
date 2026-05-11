@@ -900,4 +900,126 @@ router.post('/api/magic-link', async function(req, res) {
   }
 });
 
+/* ── GET /admin/api/debug/today-breakdown
+   Side-by-side comparison: DB subscriptions scheduled for today
+   vs CC API recurring orders charged today.
+   Shows what's in DB only, CC only, and both.
+   ────────────────────────────────────────────────── */
+router.get('/api/debug/today-breakdown', async function(req, res) {
+  try {
+    const now        = new Date();
+    const todayStart = new Date(now); todayStart.setUTCHours(0, 0, 0, 0);
+    const todayEnd   = new Date(todayStart); todayEnd.setUTCDate(todayEnd.getUTCDate() + 1);
+    const todayStr   = (now.getMonth()+1).toString().padStart(2,'0') + '/' +
+                       now.getDate().toString().padStart(2,'0') + '/' + now.getFullYear();
+
+    /* ── 1. DB: all sources scheduled/billed today ── */
+    const dbRows = await db.many(`
+      SELECT s.source, s.native_id, s.customer_email, s.product,
+             s.price_cents, s.status, s.next_bill_at, s.last_billed_at, s.last_synced_at
+      FROM subscriptions s
+      WHERE s.status = 'ACTIVE'
+      AND (
+        (s.next_bill_at  >= $1 AND s.next_bill_at  < $2)
+        OR (s.last_billed_at >= $1 AND s.last_billed_at < $2)
+      )
+      AND NOT (s.source = 'cc' AND s.raw->>'merchant' ILIKE '%paypal%')
+      AND NOT (s.source = 'cc' AND COALESCE(NULLIF(TRIM(s.raw->>'merchant'), ''), '') = '')
+      ORDER BY s.source, s.price_cents DESC
+    `, [todayStart, todayEnd]);
+
+    const dbByEmail = {};
+    dbRows.forEach(function(r) {
+      const key = (r.customer_email || '').toLowerCase();
+      if (!dbByEmail[key]) dbByEmail[key] = [];
+      dbByEmail[key].push(r);
+    });
+
+    /* ── 2. CC API: today's recurring orders ── */
+    let ccOrders = [];
+    let ccError  = null;
+    if (process.env.CC_LOGIN_ID && process.env.CC_API_PASSWORD) {
+      try {
+        let page = 1;
+        while (page <= 10) {
+          const p = new URLSearchParams({
+            loginId: process.env.CC_LOGIN_ID, password: process.env.CC_API_PASSWORD,
+            startDate: todayStr, endDate: todayStr, resultsPerPage: 200, page: page, sortDir: -1
+          });
+          const r = await fetch(CC_API_BASE + '/order/query/?' + p.toString(), { method: 'POST' });
+          const d = await r.json();
+          const batch = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+          ccOrders = ccOrders.concat(batch);
+          if (batch.length < 200) break;
+          page++;
+        }
+      } catch (e) { ccError = e.message; }
+    }
+
+    const ccAllToday   = ccOrders.length;
+    const ccRecurring  = ccOrders.filter(function(o) {
+      return o.orderType === 'RECURRING' || o.recurringFlag === '1' || o.parentOrderId;
+    });
+    const ccNewSales   = ccOrders.filter(function(o) {
+      return o.orderType !== 'RECURRING' && !o.recurringFlag && !o.parentOrderId;
+    });
+
+    const ccByEmail = {};
+    ccRecurring.forEach(function(o) {
+      const key = (o.emailAddress || '').trim().toLowerCase();
+      if (!ccByEmail[key]) ccByEmail[key] = [];
+      ccByEmail[key].push({
+        orderId:     o.orderId,
+        product:     o.productName,
+        total:       o.totalAmount,
+        status:      o.orderStatus || o.status,
+        orderType:   o.orderType,
+        dateCreated: o.dateCreated
+      });
+    });
+
+    /* ── 3. Cross-reference ── */
+    const allEmails = new Set([...Object.keys(dbByEmail), ...Object.keys(ccByEmail)]);
+    const inBoth    = [];
+    const dbOnly    = [];
+    const ccOnly    = [];
+
+    allEmails.forEach(function(email) {
+      const inDb = !!dbByEmail[email];
+      const inCc = !!ccByEmail[email];
+      const entry = {
+        email:    email,
+        db:       dbByEmail[email]  || null,
+        cc_orders: ccByEmail[email] || null
+      };
+      if (inDb && inCc) inBoth.push(entry);
+      else if (inDb)    dbOnly.push(entry);
+      else              ccOnly.push(entry);
+    });
+
+    res.json({
+      as_of:       now.toISOString(),
+      today_utc:   todayStart.toISOString().slice(0, 10),
+      summary: {
+        db_total:          dbRows.length,
+        db_cc_source:      dbRows.filter(function(r){ return r.source === 'cc'; }).length,
+        db_recharge:       dbRows.filter(function(r){ return r.source === 'recharge'; }).length,
+        db_subi:           dbRows.filter(function(r){ return r.source === 'subi'; }).length,
+        cc_api_all_today:  ccAllToday,
+        cc_api_recurring:  ccRecurring.length,
+        cc_api_new_sales:  ccNewSales.length,
+        matched_in_both:   inBoth.length,
+        db_only:           dbOnly.length,
+        cc_only:           ccOnly.length,
+        cc_api_error:      ccError
+      },
+      matched_in_both: inBoth,
+      db_only:         dbOnly,
+      cc_only:         ccOnly
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
