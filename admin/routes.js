@@ -900,6 +900,60 @@ router.post('/api/magic-link', async function(req, res) {
   }
 });
 
+/* ── GET /admin/api/debug/cc-billed-today
+   Returns CC recurring orders already processed today —
+   i.e. subscriptions whose nextBillDate was today but CC
+   has billed them and moved the date forward.
+   ────────────────────────────────────────────────── */
+router.get('/api/debug/cc-billed-today', async function(req, res) {
+  try {
+    const now = new Date();
+    const todayStr = (now.getMonth()+1).toString().padStart(2,'0') + '/' +
+                     now.getDate().toString().padStart(2,'0') + '/' + now.getFullYear();
+
+    let allOrders = [], page = 1;
+    while (page <= 20) {
+      const p = new URLSearchParams({
+        loginId: process.env.CC_LOGIN_ID, password: process.env.CC_API_PASSWORD,
+        startDate: todayStr, endDate: todayStr, resultsPerPage: 200, page, sortDir: -1
+      });
+      const r = await fetch(CC_API_BASE + '/order/query/?' + p.toString(), { method: 'POST' });
+      const d = await r.json();
+      const batch = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+      allOrders = allOrders.concat(batch);
+      if (batch.length < 200) break;
+      page++;
+    }
+
+    const recurring = allOrders.filter(function(o) {
+      return o.orderType === 'RECURRING' || o.recurringFlag === '1' || o.parentOrderId;
+    });
+
+    const orders = recurring.map(function(o) {
+      return {
+        order_id:    o.orderId,
+        email:       o.emailAddress,
+        name:        (o.firstName || '') + ' ' + (o.lastName || ''),
+        product:     o.productName,
+        amount:      o.totalAmount,
+        status:      o.orderStatus || o.status,
+        billed_at:   o.dateCreated
+      };
+    });
+
+    res.json({
+      as_of:           now.toISOString(),
+      date_queried:    todayStr,
+      total_today:     allOrders.length,
+      already_billed:  orders.length,
+      still_pending:   28 - orders.length > 0 ? (28 - orders.length) + ' (estimated)' : 0,
+      orders:          orders
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* ── GET /admin/api/debug/billed-and-exported
    Finds CC recurring orders that were billed today (or within ?days=N)
    where next_bill_at has already moved to the future, and checks
