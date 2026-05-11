@@ -978,44 +978,60 @@ router.get('/api/debug/today-breakdown', async function(req, res) {
       });
     });
 
-    /* ── 3. Cross-reference ── */
-    const allEmails = new Set([...Object.keys(dbByEmail), ...Object.keys(ccByEmail)]);
-    const inBoth    = [];
-    const dbOnly    = [];
-    const ccOnly    = [];
+    /* ── 3. Cross-reference CC-source DB rows vs CC API ── */
+    const dbCcRows      = dbRows.filter(function(r){ return r.source === 'cc'; });
+    const dbOtherRows   = dbRows.filter(function(r){ return r.source !== 'cc'; });
 
-    allEmails.forEach(function(email) {
-      const inDb = !!dbByEmail[email];
-      const inCc = !!ccByEmail[email];
+    const ccEmailsInDb  = new Set(dbCcRows.map(function(r){ return (r.customer_email||'').toLowerCase(); }));
+    const ccEmailsInApi = new Set(Object.keys(ccByEmail));
+    const allCcEmails   = new Set([...ccEmailsInDb, ...ccEmailsInApi]);
+
+    const cc_billed_and_in_db   = [];
+    const cc_scheduled_not_yet  = [];
+    const cc_billed_missing_db  = [];
+
+    allCcEmails.forEach(function(email) {
+      const inDb  = ccEmailsInDb.has(email);
+      const inApi = ccEmailsInApi.has(email);
       const entry = {
-        email:    email,
-        db:       dbByEmail[email]  || null,
+        email:     email,
+        db:        dbByEmail[email] || null,
         cc_orders: ccByEmail[email] || null
       };
-      if (inDb && inCc) inBoth.push(entry);
-      else if (inDb)    dbOnly.push(entry);
-      else              ccOnly.push(entry);
+      if (inDb && inApi)  cc_billed_and_in_db.push(entry);
+      else if (inDb)      cc_scheduled_not_yet.push(entry);   /* in DB, CC hasn't charged yet */
+      else                cc_billed_missing_db.push(entry);   /* CC charged, not in DB */
+    });
+
+    /* Group non-CC (Recharge/Subi) separately — CC API doesn't cover them */
+    const otherBySource = {};
+    dbOtherRows.forEach(function(r) {
+      if (!otherBySource[r.source]) otherBySource[r.source] = [];
+      otherBySource[r.source].push(r);
     });
 
     res.json({
-      as_of:       now.toISOString(),
-      today_utc:   todayStart.toISOString().slice(0, 10),
+      as_of:     now.toISOString(),
+      today_utc: todayStart.toISOString().slice(0, 10),
+      note: 'CC cross-reference compares CC-source DB subscriptions vs CC order/query API. Recharge/Subi are listed separately — they are not in the CC API.',
       summary: {
-        db_total:          dbRows.length,
-        db_cc_source:      dbRows.filter(function(r){ return r.source === 'cc'; }).length,
-        db_recharge:       dbRows.filter(function(r){ return r.source === 'recharge'; }).length,
-        db_subi:           dbRows.filter(function(r){ return r.source === 'subi'; }).length,
-        cc_api_all_today:  ccAllToday,
-        cc_api_recurring:  ccRecurring.length,
-        cc_api_new_sales:  ccNewSales.length,
-        matched_in_both:   inBoth.length,
-        db_only:           dbOnly.length,
-        cc_only:           ccOnly.length,
-        cc_api_error:      ccError
+        db_total:              dbRows.length,
+        db_cc_source:          dbCcRows.length,
+        db_recharge:           (otherBySource.recharge||[]).length,
+        db_subi:               (otherBySource.subi||[]).length,
+        cc_api_all_today:      ccAllToday,
+        cc_api_recurring:      ccRecurring.length,
+        cc_api_new_sales:      ccNewSales.length,
+        cc_billed_and_in_db:   cc_billed_and_in_db.length,
+        cc_scheduled_not_billed_yet: cc_scheduled_not_yet.length,
+        cc_billed_missing_from_db:   cc_billed_missing_db.length,
+        cc_api_error:          ccError
       },
-      matched_in_both: inBoth,
-      db_only:         dbOnly,
-      cc_only:         ccOnly
+      cc_billed_and_in_db:          cc_billed_and_in_db,
+      cc_scheduled_not_billed_yet:  cc_scheduled_not_yet,
+      cc_billed_missing_from_db:    cc_billed_missing_db,
+      recharge_scheduled_today:     otherBySource.recharge || [],
+      subi_scheduled_today:         otherBySource.subi     || []
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
