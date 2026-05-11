@@ -528,8 +528,10 @@ async function upsertSubiContract(c) {
 async function syncTodayBillings() {
   if (!process.env.CC_LOGIN_ID || !process.env.CC_API_PASSWORD) return;
 
-  const today    = new Date();
-  const todayStr = ccDate(today);
+  const today     = new Date();
+  const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+  const todayStr     = ccDate(today);
+  const yesterdayStr = ccDate(yesterday);
 
   let allOrders = [];
   let page = 1;
@@ -537,7 +539,7 @@ async function syncTodayBillings() {
 
   while (page <= 20) {
     const url = CC_BASE + '/order/query/?' + ccParams({
-      startDate:      todayStr,
+      startDate:      yesterdayStr,
       endDate:        todayStr,
       resultsPerPage: perPage,
       page:           page,
