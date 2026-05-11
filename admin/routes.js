@@ -765,20 +765,26 @@ router.get('/api/today-orders', async function(req, res) {
     const todayStart = new Date(now); todayStart.setUTCHours(0, 0, 0, 0);
     const todayEnd   = new Date(todayStart); todayEnd.setUTCDate(todayEnd.getUTCDate() + 1);
 
-    /* ── 1. Query CC API live for today's recurring orders ── */
+    /* ── 1. Query CC API live — use yesterday+today window so we never
+          miss charges that CC processed near a UTC date boundary.
+          Source of truth is CC: any RECURRING order CC created in this
+          window means that subscription was billed and should show here. ── */
     let ccLiveEmails = [];
     if (process.env.CC_LOGIN_ID && process.env.CC_API_PASSWORD) {
       try {
-        const todayStr = (now.getMonth()+1).toString().padStart(2,'0') + '/' +
-                         now.getDate().toString().padStart(2,'0') + '/' + now.getFullYear();
+        const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
+        const fmt = function(d) {
+          return (d.getMonth()+1).toString().padStart(2,'0') + '/' +
+                  d.getDate().toString().padStart(2,'0') + '/' + d.getFullYear();
+        };
         let page = 1;
         let allCCOrders = [];
         while (page <= 10) {
           const p = new URLSearchParams({
             loginId:        process.env.CC_LOGIN_ID,
             password:       process.env.CC_API_PASSWORD,
-            startDate:      todayStr,
-            endDate:        todayStr,
+            startDate:      fmt(yesterday),
+            endDate:        fmt(now),
             resultsPerPage: 200,
             page:           page
           });
@@ -790,7 +796,7 @@ router.get('/api/today-orders', async function(req, res) {
           page++;
         }
         const recurring = allCCOrders.filter(function(o) {
-          return o.recurringFlag === '1' || o.orderType === 'RECURRING' || o.parentOrderId;
+          return o.orderType === 'RECURRING' || o.recurringFlag === '1' || o.parentOrderId;
         });
         ccLiveEmails = Array.from(new Set(
           recurring.map(function(o) { return (o.emailAddress || '').trim().toLowerCase(); }).filter(Boolean)
@@ -798,7 +804,6 @@ router.get('/api/today-orders', async function(req, res) {
         console.log('[today-orders] CC live recurring:', recurring.length, 'orders |', ccLiveEmails.length, 'emails');
       } catch (e) {
         console.error('[today-orders] CC live query failed:', e.message);
-        /* fall through — DB-only results still returned */
       }
     }
 
