@@ -811,7 +811,7 @@ router.get('/api/today-orders', async function(req, res) {
       LEFT JOIN customers c ON s.customer_id = c.id
       WHERE s.status = 'ACTIVE'
       AND (
-        (s.next_bill_at >= $1 AND s.next_bill_at < $2)
+        (s.next_bill_at >= $1 - INTERVAL '1 day' AND s.next_bill_at < $2)
         OR (s.last_billed_at >= $1 AND s.last_billed_at < $2)`;
 
     const sqlParams = [todayStart, todayEnd];
