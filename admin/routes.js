@@ -764,146 +764,151 @@ router.get('/api/today-orders', async function(req, res) {
     const now        = new Date();
     const todayStart = new Date(now); todayStart.setUTCHours(0, 0, 0, 0);
     const todayEnd   = new Date(todayStart); todayEnd.setUTCDate(todayEnd.getUTCDate() + 1);
-    const todayStr   = (now.getMonth()+1).toString().padStart(2,'0') + '/' +
-                       now.getDate().toString().padStart(2,'0') + '/' + now.getFullYear();
+    const todayUTC   = now.toISOString().split('T')[0];          /* YYYY-MM-DD */
+    const tomorrowUTC = todayEnd.toISOString().split('T')[0];
+    const ccTodayStr  = (now.getMonth()+1).toString().padStart(2,'0') + '/' +
+                        now.getDate().toString().padStart(2,'0') + '/' + now.getFullYear(); /* MM/DD/YYYY for CC order/query */
 
-    /* ── 1. CC: purchase/query for subscriptions with nextBillDate = today (scheduled)
-              + order/query for RECURRING orders already billed today ── */
-    let ccEmails = [];
-    let ccLiveRows = [];
+    var allOrders = [];
 
+    /* ── 1. CC: purchase/query → subscriptions with nextBillDate = today ──
+       nextBillDate comes back as YYYY-MM-DD from the CC API.              */
     if (process.env.CC_LOGIN_ID && process.env.CC_API_PASSWORD) {
-      /* 1a. Scheduled today — scan purchase/query wide range, filter by nextBillDate */
       try {
-        let page = 1;
+        var ccEmails = [];
+        var page = 1;
         while (page <= 50) {
           const p = new URLSearchParams({
             loginId:        process.env.CC_LOGIN_ID,
             password:       process.env.CC_API_PASSWORD,
             startDate:      '01/01/2019',
-            endDate:        todayStr,
+            endDate:        ccTodayStr,
             resultsPerPage: 200,
             page:           page
           });
           const r = await fetch(CC_API_BASE + '/purchase/query/?' + p.toString(), { method: 'POST' });
           const d = await r.json();
           const subs = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
-          const todaySubs = subs.filter(function(s) { return (s.nextBillDate || '').trim() === todayStr; });
-          todaySubs.forEach(function(s) {
+          subs.forEach(function(s) {
+            /* nextBillDate is YYYY-MM-DD — compare against todayUTC */
+            if ((s.nextBillDate || '').trim() !== todayUTC) return;
             const email = (s.emailAddress || '').trim().toLowerCase();
-            if (email) {
-              ccEmails.push(email);
-              ccLiveRows.push({
-                source: 'cc', native_id: s.purchaseId || null,
-                customer_email: email, product: s.productName || null,
-                price_cents: Math.round(parseFloat(s.totalAmount || 0) * 100),
-                next_bill_at: s.nextBillDate || null, status: 'ACTIVE',
-                first_name: s.firstName || null, last_name: s.lastName || null,
-                frequency: s.billingFrequency || null, last_billed_at: null
-              });
-            }
+            if (!email || ccEmails.includes(email)) return;
+            ccEmails.push(email);
+            allOrders.push({
+              source: 'cc', native_id: s.purchaseId || null,
+              customer_email: email, product: s.productName || null,
+              price_cents: Math.round(parseFloat(s.price || 0) * 100),
+              next_bill_at: s.nextBillDate || null, status: 'ACTIVE',
+              first_name: s.firstName || null, last_name: s.lastName || null,
+              frequency: s.billingCycleType || null, last_billed_at: null
+            });
           });
           if (subs.length < 200) break;
           page++;
         }
-        console.log('[today-orders] CC scheduled today:', ccLiveRows.length, 'subs');
+        console.log('[today-orders] CC scheduled today:', ccEmails.length);
       } catch (e) {
         console.error('[today-orders] CC purchase query failed:', e.message);
       }
 
-      /* 1b. Already billed today — order/query RECURRING */
+      /* ── 1b. CC order/query → RECURRING orders already billed today ── */
       try {
-        let page = 1;
-        while (page <= 10) {
+        var ccBilledEmails = allOrders.map(function(o) { return o.customer_email; });
+        var page2 = 1;
+        while (page2 <= 10) {
           const p = new URLSearchParams({
             loginId:        process.env.CC_LOGIN_ID,
             password:       process.env.CC_API_PASSWORD,
-            startDate:      todayStr,
-            endDate:        todayStr,
+            startDate:      ccTodayStr,
+            endDate:        ccTodayStr,
             resultsPerPage: 200,
-            page:           page,
+            page:           page2,
             sortDir:        -1
           });
           const r = await fetch(CC_API_BASE + '/order/query/?' + p.toString(), { method: 'POST' });
           const d = await r.json();
           const orders = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
-          const rec    = orders.filter(function(o) {
+          orders.filter(function(o) {
             return o.orderType === 'RECURRING' || o.recurringFlag === '1' || o.parentOrderId;
-          });
-          rec.forEach(function(o) {
+          }).forEach(function(o) {
             const email = (o.emailAddress || '').trim().toLowerCase();
-            if (email && !ccEmails.includes(email)) {
-              ccEmails.push(email);
-              ccLiveRows.push({
-                source: 'cc', native_id: o.orderId || null,
-                customer_email: email, product: o.productName || null,
-                price_cents: Math.round(parseFloat(o.totalAmount || 0) * 100),
-                next_bill_at: null, status: 'ACTIVE',
-                first_name: o.firstName || null, last_name: o.lastName || null,
-                frequency: null, last_billed_at: now.toISOString()
-              });
-            }
+            if (!email || ccBilledEmails.includes(email)) return;
+            ccBilledEmails.push(email);
+            allOrders.push({
+              source: 'cc', native_id: o.orderId || null,
+              customer_email: email, product: o.productName || null,
+              price_cents: Math.round(parseFloat(o.totalAmount || 0) * 100),
+              next_bill_at: null, status: 'ACTIVE',
+              first_name: o.firstName || null, last_name: o.lastName || null,
+              frequency: null, last_billed_at: now.toISOString()
+            });
           });
           if (orders.length < 200) break;
-          page++;
+          page2++;
         }
-        console.log('[today-orders] CC billed today added, total CC emails:', ccEmails.length);
+        console.log('[today-orders] CC total (sched+billed):', allOrders.filter(function(o){ return o.source==='cc'; }).length);
       } catch (e) {
         console.error('[today-orders] CC order query failed:', e.message);
       }
     }
 
-    /* ── 2. DB: fetch CC rows matching live emails + all RC/Subi due today ── */
-    let dbRows = [];
-    const ccEmailsUniq = Array.from(new Set(ccEmails));
+    /* ── 2. Recharge: live API — subscriptions with next_charge_scheduled_at = today ── */
+    if (process.env.RECHARGE_API_KEY) {
+      try {
+        var rcPage = 1;
+        while (true) {
+          const url = RC_API_BASE + '/subscriptions?status=active' +
+            '&next_charge_scheduled_at_min=' + todayUTC +
+            '&next_charge_scheduled_at_max=' + tomorrowUTC +
+            '&limit=250&page=' + rcPage;
+          const r = await fetch(url, { headers: { 'X-Recharge-Access-Token': process.env.RECHARGE_API_KEY } });
+          const d = await r.json();
+          const subs = d.subscriptions || [];
+          subs.forEach(function(s) {
+            allOrders.push({
+              source: 'recharge', native_id: String(s.id),
+              customer_email: (s.email || '').toLowerCase(),
+              product: s.product_title || s.title || null,
+              price_cents: Math.round(parseFloat(s.price || 0) * 100),
+              next_bill_at: s.next_charge_scheduled_at || null,
+              status: 'ACTIVE',
+              first_name: null, last_name: null,
+              frequency: s.order_interval_frequency + ' ' + s.order_interval_unit,
+              last_billed_at: null
+            });
+          });
+          if (subs.length < 250) break;
+          rcPage++;
+        }
+        console.log('[today-orders] RC scheduled today:', allOrders.filter(function(o){ return o.source==='recharge'; }).length);
+      } catch (e) {
+        console.error('[today-orders] RC query failed:', e.message);
+      }
+    }
 
-    if (ccEmailsUniq.length > 0) {
-      /* CC: pull from DB by email so we get the canonical subscription record */
-      const ccDb = await db.many(`
+    /* ── 3. Subi: DB (Subi sync keeps next_bill_at current) ── */
+    try {
+      const subiRows = await db.many(`
         SELECT s.id, s.source, s.native_id, s.customer_email, s.product,
                s.status, s.price_cents, s.next_bill_at, s.frequency,
                s.last_billed_at, c.first_name, c.last_name
         FROM subscriptions s
         LEFT JOIN customers c ON s.customer_id = c.id
-        WHERE s.status = 'ACTIVE'
-          AND s.source = 'cc'
-          AND LOWER(s.customer_email) = ANY($1)
-          AND NOT (s.raw->>'merchant' ILIKE '%paypal%')
-          AND NOT (COALESCE(NULLIF(TRIM(s.raw->>'merchant'), ''), '') = '')
+        WHERE s.status = 'ACTIVE' AND s.source = 'subi'
+          AND (
+            (s.next_bill_at >= $1 AND s.next_bill_at < $2)
+            OR (s.last_billed_at >= $1 AND s.last_billed_at < $2)
+          )
         ORDER BY s.price_cents DESC
-      `, [ccEmailsUniq]);
-      dbRows = dbRows.concat(ccDb);
+      `, [todayStart, todayEnd]);
+      allOrders = allOrders.concat(subiRows);
+      console.log('[today-orders] Subi today:', subiRows.length);
+    } catch (e) {
+      console.error('[today-orders] Subi DB query failed:', e.message);
     }
 
-    /* RC + Subi: DB query by next_bill_at or last_billed_at today */
-    const rcSubi = await db.many(`
-      SELECT s.id, s.source, s.native_id, s.customer_email, s.product,
-             s.status, s.price_cents, s.next_bill_at, s.frequency,
-             s.last_billed_at, c.first_name, c.last_name
-      FROM subscriptions s
-      LEFT JOIN customers c ON s.customer_id = c.id
-      WHERE s.status = 'ACTIVE'
-        AND s.source != 'cc'
-        AND (
-          (s.next_bill_at >= $1 AND s.next_bill_at < $2)
-          OR (s.last_billed_at >= $1 AND s.last_billed_at < $2)
-        )
-      ORDER BY s.source, s.price_cents DESC
-    `, [todayStart, todayEnd]);
-    dbRows = dbRows.concat(rcSubi);
-
-    /* ── 3. For any CC email not in DB, use live row as fallback ── */
-    const dbEmails = new Set(dbRows.filter(function(r) { return r.source === 'cc'; })
-      .map(function(r) { return (r.customer_email || '').toLowerCase(); }));
-    const liveOnlyRows = ccLiveRows.filter(function(r) { return !dbEmails.has(r.customer_email); });
-
-    const allOrders = dbRows.concat(liveOnlyRows);
-
-    res.json({
-      orders:       allOrders,
-      count:        allOrders.length,
-      ccLiveCount:  ccEmailsUniq.length
-    });
+    res.json({ orders: allOrders, count: allOrders.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
