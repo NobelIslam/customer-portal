@@ -764,10 +764,11 @@ router.get('/api/today-orders', async function(req, res) {
     const now        = new Date();
     const todayStart = new Date(now); todayStart.setUTCHours(0, 0, 0, 0);
     const todayEnd   = new Date(todayStart); todayEnd.setUTCDate(todayEnd.getUTCDate() + 1);
-    const todayUTC   = now.toISOString().split('T')[0];          /* YYYY-MM-DD */
+    const todayUTC    = now.toISOString().split('T')[0];          /* YYYY-MM-DD UTC */
     const tomorrowUTC = todayEnd.toISOString().split('T')[0];
-    const ccTodayStr  = (now.getMonth()+1).toString().padStart(2,'0') + '/' +
-                        now.getDate().toString().padStart(2,'0') + '/' + now.getFullYear(); /* MM/DD/YYYY for CC order/query */
+    /* CC order/query uses MM/DD/YYYY — derive from UTC date to stay consistent */
+    const ccTodayStr  = (now.getUTCMonth()+1).toString().padStart(2,'0') + '/' +
+                        now.getUTCDate().toString().padStart(2,'0') + '/' + now.getUTCFullYear();
 
     var allOrders = [];
 
@@ -790,8 +791,8 @@ router.get('/api/today-orders', async function(req, res) {
           const d = await r.json();
           const subs = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
           subs.forEach(function(s) {
-            /* nextBillDate is YYYY-MM-DD — compare against todayUTC */
-            if ((s.nextBillDate || '').trim() !== todayUTC) return;
+            /* nextBillDate is YYYY-MM-DD (or YYYY-MM-DD HH:MM:SS) — use startsWith for UTC date */
+            if (!(s.nextBillDate || '').trim().startsWith(todayUTC)) return;
             const email = (s.emailAddress || '').trim().toLowerCase();
             if (!email || ccEmails.includes(email)) return;
             ccEmails.push(email);
