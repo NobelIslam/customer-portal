@@ -290,6 +290,11 @@
     .tod-action { display: flex; gap: 5px; align-items: center; justify-content: flex-end; flex-wrap: nowrap; }
     .tod-table th:last-child, .tod-table td:last-child { text-align: right; }
     .tod-date { white-space: nowrap; font-size: 11px; }
+    .sub-status { display: inline-block; font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; }
+    .sub-status-active   { background: rgba(34,197,94,.15);  color: #4ade80; }
+    .sub-status-paused   { background: rgba(234,179,8,.15);  color: #facc15; }
+    .sub-status-cancelled{ background: rgba(239,68,68,.15);  color: #f87171; }
+    .sub-status-other    { background: rgba(148,163,184,.1); color: var(--muted); }
     .mini-btn { font-size: 10px; padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border2); background: var(--bg3); color: var(--muted2); cursor: pointer; font-family: inherit; font-weight: 500; transition: all 0.12s; white-space: nowrap; }
     .mini-btn:hover:not(:disabled) { border-color: rgba(255,255,255,.25); color: #fff; background: rgba(255,255,255,.07); }
     .mini-btn.manage { background: var(--bg3); border-color: var(--border2); color: var(--muted2); }
@@ -1298,6 +1303,14 @@ function renderTodayOrders() {
         var dt = new Date(d);
         return isNaN(dt) ? esc(d) : dt.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
       })() + '</td>' +
+      '<td>' + (function() {
+        var s = (o.status || '').toUpperCase();
+        var cls = s === 'ACTIVE' ? 'sub-status-active'
+                : s === 'PAUSED' ? 'sub-status-paused'
+                : s === 'CANCELLED' || s === 'CANCELED' ? 'sub-status-cancelled'
+                : 'sub-status-other';
+        return '<span class="sub-status ' + cls + '">' + esc(s || '—') + '</span>';
+      })() + '</td>' +
       '<td class="tod-action">' +
         '<button class="mini-btn manage" onclick="manageCustomer(' + globalIdx + ',this)">Manage →</button>' +
       '</td>' +
@@ -1316,7 +1329,7 @@ function renderTodayOrders() {
     '<table class="tod-table">' +
       '<thead><tr>' +
         '<th>Customer</th><th>Product</th><th>Source</th>' +
-        '<th>Amount</th><th>Shipping</th><th>Date</th><th>Actions</th>' +
+        '<th>Amount</th><th>Shipping</th><th>Date</th><th>Status</th><th>Actions</th>' +
       '</tr></thead>' +
       '<tbody>' + rows + '</tbody>' +
     '</table>' + pagBar;
