@@ -810,23 +810,29 @@ router.get('/api/today-orders', async function(req, res) {
         return rows;
       })(),
 
-      /* ── Recharge: live API filtered by next_charge_scheduled_at = today UTC ── */
+      /* ── Recharge: live API — scheduled today + already charged today ── */
       (async function() {
         if (!process.env.RECHARGE_API_KEY) return [];
-        var rows = [], rcPage = 1;
+        var rows = [], seenEmails = [];
+        const headers = { 'X-Recharge-Access-Token': process.env.RECHARGE_API_KEY };
         try {
+          /* 2a. Scheduled today: subscriptions with next_charge_scheduled_at = today */
+          var rcPage = 1;
           while (true) {
             const url = RC_API_BASE + '/subscriptions?status=active' +
               '&next_charge_scheduled_at_min=' + todayUTC +
               '&next_charge_scheduled_at_max=' + tomorrowUTC +
               '&limit=250&page=' + rcPage;
-            const r = await fetch(url, { headers: { 'X-Recharge-Access-Token': process.env.RECHARGE_API_KEY } });
+            const r = await fetch(url, { headers: headers });
             const d = await r.json();
             const subs = d.subscriptions || [];
             subs.forEach(function(s) {
+              const email = (s.email || '').toLowerCase();
+              if (seenEmails.includes(email)) return;
+              seenEmails.push(email);
               rows.push({
                 source: 'recharge', native_id: String(s.id),
-                customer_email: (s.email || '').toLowerCase(),
+                customer_email: email,
                 product: s.product_title || s.title || null,
                 price_cents: Math.round(parseFloat(s.price || 0) * 100),
                 next_bill_at: s.next_charge_scheduled_at || null,
@@ -838,12 +844,40 @@ router.get('/api/today-orders', async function(req, res) {
             if (subs.length < 250) break;
             rcPage++;
           }
+
+          /* 2b. Already billed today: successful charges created today */
+          var chPage = 1;
+          while (true) {
+            const url = RC_API_BASE + '/charges?status=success' +
+              '&created_at_min=' + todayUTC + 'T00:00:00Z' +
+              '&created_at_max=' + tomorrowUTC + 'T00:00:00Z' +
+              '&limit=250&page=' + chPage;
+            const r = await fetch(url, { headers: headers });
+            const d = await r.json();
+            const charges = d.charges || [];
+            charges.forEach(function(c) {
+              const email = (c.email || '').toLowerCase();
+              if (seenEmails.includes(email)) return;
+              seenEmails.push(email);
+              rows.push({
+                source: 'recharge', native_id: String(c.subscription_id || c.id),
+                customer_email: email,
+                product: (c.line_items && c.line_items[0]) ? c.line_items[0].title : null,
+                price_cents: Math.round(parseFloat(c.total_price || 0) * 100),
+                next_bill_at: null, status: 'ACTIVE',
+                first_name: null, last_name: null,
+                frequency: null, last_billed_at: c.created_at || now.toISOString()
+              });
+            });
+            if (charges.length < 250) break;
+            chPage++;
+          }
         } catch (e) { console.error('[today-orders] RC query failed:', e.message); }
-        console.log('[today-orders] RC scheduled today:', rows.length);
+        console.log('[today-orders] RC today (sched+billed):', rows.length);
         return rows;
       })(),
 
-      /* ── CC scheduled + Subi: DB query by next_bill_at or last_billed_at today ── */
+      /* ── CC scheduled + Subi: DB query — exclude RC (handled by live API above) ── */
       db.many(`
         SELECT s.id, s.source, s.native_id, s.customer_email, s.product,
                s.status, s.price_cents, s.next_bill_at, s.frequency,
@@ -851,6 +885,7 @@ router.get('/api/today-orders', async function(req, res) {
         FROM subscriptions s
         LEFT JOIN customers c ON s.customer_id = c.id
         WHERE s.status = 'ACTIVE'
+          AND s.source != 'recharge'
           AND (
             (s.next_bill_at >= $1 AND s.next_bill_at < $2)
             OR (s.last_billed_at >= $1 AND s.last_billed_at < $2)
