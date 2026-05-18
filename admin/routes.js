@@ -810,33 +810,36 @@ router.get('/api/today-orders', async function(req, res) {
         return rows;
       })(),
 
-      /* ── Recharge: live API — scheduled today + already charged today ── */
+      /* ── Recharge: fetch all active subs + filter client-side by today UTC ──
+         The RC API date filter (next_charge_scheduled_at_min/max) does not
+         work reliably in v1 — it returns all active subs regardless.
+         We also check today's successful charges for already-billed orders.  */
       (async function() {
         if (!process.env.RECHARGE_API_KEY) return [];
         var rows = [], seenEmails = [];
         const headers = { 'X-Recharge-Access-Token': process.env.RECHARGE_API_KEY };
         try {
-          /* 2a. Scheduled today: subscriptions with next_charge_scheduled_at = today */
+          /* 2a. All active subscriptions — filter client-side for today */
           var rcPage = 1;
           while (true) {
-            const url = RC_API_BASE + '/subscriptions?status=active' +
-              '&next_charge_scheduled_at_min=' + todayUTC +
-              '&next_charge_scheduled_at_max=' + tomorrowUTC +
-              '&limit=250&page=' + rcPage;
+            const url = RC_API_BASE + '/subscriptions?status=active&limit=250&page=' + rcPage;
             const r = await fetch(url, { headers: headers });
             const d = await r.json();
             const subs = d.subscriptions || [];
             subs.forEach(function(s) {
+              const nextCharge = (s.next_charge_scheduled_at || '');
+              /* Only include if next_charge_scheduled_at starts with today's UTC date */
+              if (!nextCharge.startsWith(todayUTC)) return;
               const email = (s.email || '').toLowerCase();
-              if (seenEmails.includes(email)) return;
+              if (!email || seenEmails.includes(email)) return;
               seenEmails.push(email);
               rows.push({
                 source: 'recharge', native_id: String(s.id),
                 customer_email: email,
                 product: s.product_title || s.title || null,
                 price_cents: Math.round(parseFloat(s.price || 0) * 100),
-                next_bill_at: s.next_charge_scheduled_at || null,
-                status: 'ACTIVE', first_name: null, last_name: null,
+                next_bill_at: nextCharge, status: 'ACTIVE',
+                first_name: null, last_name: null,
                 frequency: s.order_interval_frequency + ' ' + s.order_interval_unit,
                 last_billed_at: null
               });
@@ -857,7 +860,7 @@ router.get('/api/today-orders', async function(req, res) {
             const charges = d.charges || [];
             charges.forEach(function(c) {
               const email = (c.email || '').toLowerCase();
-              if (seenEmails.includes(email)) return;
+              if (!email || seenEmails.includes(email)) return;
               seenEmails.push(email);
               rows.push({
                 source: 'recharge', native_id: String(c.subscription_id || c.id),
