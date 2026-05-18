@@ -290,11 +290,18 @@
     .tod-action { display: flex; gap: 5px; align-items: center; justify-content: flex-end; flex-wrap: nowrap; }
     .tod-table th:last-child, .tod-table td:last-child { text-align: right; }
     .tod-date { white-space: nowrap; font-size: 11px; }
-    .sub-status { display: inline-block; font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; }
-    .sub-status-active   { background: rgba(34,197,94,.15);  color: #4ade80; }
-    .sub-status-paused   { background: rgba(234,179,8,.15);  color: #facc15; }
-    .sub-status-cancelled{ background: rgba(239,68,68,.15);  color: #f87171; }
-    .sub-status-other    { background: rgba(148,163,184,.1); color: var(--muted); }
+    /* ── Upcoming CC billings list ── */
+    .cc-upcoming-wrap { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 14px; }
+    .cc-upcoming-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 10px; }
+    .cc-date-group { margin-bottom: 12px; }
+    .cc-date-label { font-size: 11px; font-weight: 600; color: var(--muted2); margin-bottom: 5px; display: flex; align-items: center; gap: 6px; }
+    .cc-date-badge { font-size: 10px; background: rgba(148,163,184,.12); color: var(--muted); padding: 1px 6px; border-radius: 10px; }
+    .cc-up-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,.04); font-size: 12px; color: var(--muted2); }
+    .cc-up-row:last-child { border-bottom: none; }
+    .cc-up-email { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 500; }
+    .cc-up-product { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; }
+    .cc-up-amt { font-size: 11px; white-space: nowrap; color: var(--muted2); }
+    .cc-up-freq { font-size: 10px; color: var(--muted); white-space: nowrap; }
     .mini-btn { font-size: 10px; padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border2); background: var(--bg3); color: var(--muted2); cursor: pointer; font-family: inherit; font-weight: 500; transition: all 0.12s; white-space: nowrap; }
     .mini-btn:hover:not(:disabled) { border-color: rgba(255,255,255,.25); color: #fff; background: rgba(255,255,255,.07); }
     .mini-btn.manage { background: var(--bg3); border-color: var(--border2); color: var(--muted2); }
@@ -475,6 +482,7 @@
           <span id="today-count" style="font-size:11px;color:var(--muted2);margin-left:auto"></span>
         </div>
         <div id="today-orders-wrap"><div class="empty">Loading…</div></div>
+        <div id="cc-upcoming-wrap"></div>
       </div>
 
       <!-- Tomorrow's Scheduled Orders -->
@@ -1303,14 +1311,6 @@ function renderTodayOrders() {
         var dt = new Date(d);
         return isNaN(dt) ? esc(d) : dt.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
       })() + '</td>' +
-      '<td>' + (function() {
-        var s = (o.status || '').toUpperCase();
-        var cls = s === 'ACTIVE' ? 'sub-status-active'
-                : s === 'PAUSED' ? 'sub-status-paused'
-                : s === 'CANCELLED' || s === 'CANCELED' ? 'sub-status-cancelled'
-                : 'sub-status-other';
-        return '<span class="sub-status ' + cls + '">' + esc(s || '—') + '</span>';
-      })() + '</td>' +
       '<td class="tod-action">' +
         '<button class="mini-btn manage" onclick="manageCustomer(' + globalIdx + ',this)">Manage →</button>' +
       '</td>' +
@@ -1329,7 +1329,7 @@ function renderTodayOrders() {
     '<table class="tod-table">' +
       '<thead><tr>' +
         '<th>Customer</th><th>Product</th><th>Source</th>' +
-        '<th>Amount</th><th>Shipping</th><th>Date</th><th>Status</th><th>Actions</th>' +
+        '<th>Amount</th><th>Shipping</th><th>Date</th><th>Actions</th>' +
       '</tr></thead>' +
       '<tbody>' + rows + '</tbody>' +
     '</table>' + pagBar;
@@ -1509,6 +1509,53 @@ function manageCustomer(idx, btn) {
 }
 
 loadTodayOrders();
+
+/* ── Upcoming CC billings ── */
+function loadCcUpcoming() {
+  var wrap = document.getElementById('cc-upcoming-wrap');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  fetch('/admin/api/cc-upcoming', { headers: H })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var orders = d.orders || [];
+      if (!orders.length) return;
+
+      /* Group by date string (YYYY-MM-DD) */
+      var groups = {}, keys = [];
+      orders.forEach(function(o) {
+        var key = o.next_bill_at ? o.next_bill_at.toString().split('T')[0] : 'No date';
+        if (!groups[key]) { groups[key] = []; keys.push(key); }
+        groups[key].push(o);
+      });
+
+      var html = '<div class="cc-upcoming-wrap"><div class="cc-upcoming-title">Upcoming CC scheduled billings (' + orders.length + ' subscriptions)</div>';
+      keys.forEach(function(key) {
+        var grp = groups[key];
+        var label = key === 'No date' ? 'No date' : (function() {
+          var dt = new Date(key + 'T00:00:00Z');
+          return isNaN(dt) ? key : dt.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric', timeZone:'UTC' });
+        })();
+        var total = grp.reduce(function(s, o) { return s + (o.price_cents || 0); }, 0);
+        html += '<div class="cc-date-group">';
+        html += '<div class="cc-date-label">' + esc(label) + '<span class="cc-date-badge">' + grp.length + ' sub' + (grp.length > 1 ? 's' : '') + ' · $' + (total / 100).toFixed(2) + '</span></div>';
+        grp.forEach(function(o) {
+          var name = ((o.first_name || '') + ' ' + (o.last_name || '')).trim();
+          html += '<div class="cc-up-row">' +
+            '<span class="cc-up-email">' + esc(o.customer_email) + (name ? ' <span style="color:var(--muted);font-size:10px">(' + esc(name) + ')</span>' : '') + '</span>' +
+            '<span class="cc-up-product">' + esc(o.product || '—') + '</span>' +
+            '<span class="cc-up-amt">$' + ((o.price_cents || 0) / 100).toFixed(2) + '</span>' +
+            (o.frequency ? '<span class="cc-up-freq">' + esc(o.frequency) + '</span>' : '') +
+          '</div>';
+        });
+        html += '</div>';
+      });
+      html += '</div>';
+      wrap.innerHTML = html;
+    })
+    .catch(function(e) { console.error('[cc-upcoming]', e); });
+}
+loadCcUpcoming();
 
 /* ── Debug helper — call from browser console ──
    debugOrders('customer@example.com')
