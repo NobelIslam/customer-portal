@@ -11,24 +11,24 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:      #0a0a0a;
-      --bg2:     #111111;
-      --bg3:     #181818;
-      --border:  #222222;
-      --border2: #2a2a2a;
-      --text:    #e8e8e8;
-      --muted:   #666;
-      --muted2:  #999;
+      --bg:      #faf8f5;
+      --bg2:     #ffffff;
+      --bg3:     #f2efe9;
+      --border:  #e4dfd7;
+      --border2: #ccc7be;
+      --text:    #1c1917;
+      --muted:   #78716c;
+      --muted2:  #57534e;
       --accent:  #f04e00;
       --accent2: #ff6b35;
-      --green:   #22c55e;
-      --red:     #ef4444;
-      --yellow:  #f59e0b;
-      --blue:    #3b82f6;
-      --purple:  #a855f7;
-      --cc:      #3b82f6;
-      --rc:      #22c55e;
-      --subi:    #a855f7;
+      --green:   #16a34a;
+      --red:     #dc2626;
+      --yellow:  #d97706;
+      --blue:    #2563eb;
+      --purple:  #9333ea;
+      --cc:      #2563eb;
+      --rc:      #16a34a;
+      --subi:    #9333ea;
     }
 
     html, body {
@@ -50,7 +50,7 @@
     }
     .brand {
       font-family: 'Oswald', sans-serif; font-size: 17px; font-weight: 600;
-      letter-spacing: 0.06em; text-transform: uppercase; color: #fff; flex-shrink: 0;
+      letter-spacing: 0.06em; text-transform: uppercase; color: var(--text); flex-shrink: 0;
     }
     .brand .dot { color: var(--accent); }
 
@@ -104,7 +104,7 @@
       padding: 6px 12px; border-radius: 6px; cursor: pointer;
       font-family: inherit; font-size: 12px; font-weight: 500; transition: all 0.15s;
     }
-    .btn:hover { border-color: var(--accent); color: #fff; }
+    .btn:hover { border-color: var(--accent); color: var(--accent); }
     .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
     .btn.primary:hover { background: var(--accent2); }
     .btn:disabled { opacity: 0.35; cursor: not-allowed; }
@@ -139,14 +139,14 @@
 
     /* ── Page head ── */
     .page-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
-    .page-title { font-family: 'Oswald', sans-serif; font-size: 22px; font-weight: 500; letter-spacing: 0.03em; text-transform: uppercase; margin: 0 0 2px; color: #fff; }
+    .page-title { font-family: 'Oswald', sans-serif; font-size: 22px; font-weight: 500; letter-spacing: 0.03em; text-transform: uppercase; margin: 0 0 2px; color: var(--text); }
     .page-sub { font-size: 11px; color: var(--muted); }
 
     /* ── Section labels ── */
     .section-label {
       font-family: 'Oswald', sans-serif; font-size: 14px; font-weight: 500;
       text-transform: uppercase; letter-spacing: 0.07em;
-      color: #fff; margin: 20px 0 10px;
+      color: var(--text); margin: 20px 0 10px;
       display: flex; align-items: center; gap: 8px;
     }
     .section-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
@@ -161,7 +161,7 @@
     /* ── KPI cards ── */
     .kpi { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
     .kpi-label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 8px; font-weight: 600; }
-    .kpi-value { font-family: 'Oswald', sans-serif; font-size: 28px; font-weight: 500; color: #fff; line-height: 1; }
+    .kpi-value { font-family: 'Oswald', sans-serif; font-size: 28px; font-weight: 500; color: var(--text); line-height: 1; }
     .kpi-delta { font-size: 10px; margin-top: 5px; min-height: 14px; color: var(--muted); }
     .kpi-spark { height: 26px; margin-top: 8px; }
     .kpi.accent { border-color: rgba(240,78,0,.35); }
@@ -179,11 +179,11 @@
     .src-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
     .src-name { font-family: 'Oswald', sans-serif; font-size: 13px; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; }
     .src-badge { font-size: 9px; padding: 2px 7px; border-radius: 20px; font-weight: 600; letter-spacing: 0.04em; }
-    .badge-cc   { background: rgba(59,130,246,.12); color: #93c5fd; border: 1px solid rgba(59,130,246,.25); }
-    .badge-rc   { background: rgba(34,197,94,.12);  color: #86efac; border: 1px solid rgba(34,197,94,.25); }
-    .badge-subi { background: rgba(168,85,247,.12); color: #d8b4fe; border: 1px solid rgba(168,85,247,.25); }
+    .badge-cc   { background: rgba(37,99,235,.08);  color: #1d4ed8; border: 1px solid rgba(37,99,235,.2); }
+    .badge-rc   { background: rgba(22,163,74,.08);  color: #15803d; border: 1px solid rgba(22,163,74,.2); }
+    .badge-subi { background: rgba(147,51,234,.08); color: #7c3aed; border: 1px solid rgba(147,51,234,.2); }
     .src-stats { display: flex; gap: 20px; margin-bottom: 10px; }
-    .src-val { font-family: 'Oswald', sans-serif; font-size: 24px; font-weight: 500; color: #fff; line-height: 1; }
+    .src-val { font-family: 'Oswald', sans-serif; font-size: 24px; font-weight: 500; color: var(--text); line-height: 1; }
     .src-lbl { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 3px; }
     .src-bar { height: 3px; background: var(--border2); border-radius: 2px; overflow: hidden; }
     .src-fill { height: 100%; border-radius: 2px; transition: width 0.5s ease; }
@@ -216,9 +216,9 @@
 
     /* ── Source tags ── */
     .src-tag { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 9px; font-weight: 600; margin-left: 3px; letter-spacing: 0.04em; text-transform: uppercase; }
-    .tag-cc   { background: rgba(59,130,246,.15); color: #93c5fd; }
-    .tag-rc   { background: rgba(34,197,94,.15);  color: #86efac; }
-    .tag-subi { background: rgba(168,85,247,.15); color: #d8b4fe; }
+    .tag-cc   { background: rgba(37,99,235,.1);  color: #1d4ed8; }
+    .tag-rc   { background: rgba(22,163,74,.1);  color: #15803d; }
+    .tag-subi { background: rgba(147,51,234,.1); color: #7c3aed; }
 
     /* ── Cancels list ── */
     .cancel-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); gap: 10px; font-size: 12px; }
@@ -256,7 +256,7 @@
       padding: 4px 10px; border-radius: 5px; cursor: pointer;
       font-family: inherit; font-size: 11px; font-weight: 500; transition: all 0.15s;
     }
-    .pag-btn:hover:not(:disabled) { border-color: var(--accent); color: #fff; }
+    .pag-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
     .pag-btn:disabled { opacity: 0.3; cursor: not-allowed; }
     .pag-info { font-size: 11px; color: var(--muted); }
 
@@ -276,13 +276,13 @@
     .tod-product { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .tod-amt { font-family: 'Oswald', sans-serif; font-size: 13px; color: var(--text); white-space: nowrap; }
     .ship-badge { display: inline-flex; align-items: center; gap: 4px; line-height: normal; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
-    .ship-delivered { background: rgba(34,197,94,.12); color: #86efac; border: 1px solid rgba(34,197,94,.2); }
-    .ship-shipped   { background: rgba(59,130,246,.12); color: #93c5fd; border: 1px solid rgba(59,130,246,.2); }
-    .ship-processing{ background: rgba(234,179,8,.12);  color: #fde047; border: 1px solid rgba(234,179,8,.2); }
-    .ship-pending   { background: rgba(156,163,175,.1); color: #9ca3af; border: 1px solid rgba(156,163,175,.2); }
-    .ship-failed    { background: rgba(239,68,68,.12);  color: #fca5a5; border: 1px solid rgba(239,68,68,.25); }
-    .ship-refunded  { background: rgba(251,146,60,.12); color: #fdba74; border: 1px solid rgba(251,146,60,.25); }
-    .ship-shopify   { background: rgba(149,191,71,.12); color: #fff; border: 1px solid rgba(149,191,71,.3); }
+    .ship-delivered { background: rgba(22,163,74,.1);  color: #15803d; border: 1px solid rgba(22,163,74,.2); }
+    .ship-shipped   { background: rgba(37,99,235,.1);  color: #1d4ed8; border: 1px solid rgba(37,99,235,.2); }
+    .ship-processing{ background: rgba(217,119,6,.1);  color: #92400e; border: 1px solid rgba(217,119,6,.2); }
+    .ship-pending   { background: rgba(120,113,108,.1);color: #57534e; border: 1px solid rgba(120,113,108,.2); }
+    .ship-failed    { background: rgba(220,38,38,.1);  color: #b91c1c; border: 1px solid rgba(220,38,38,.2); }
+    .ship-refunded  { background: rgba(194,65,12,.1);  color: #c2410c; border: 1px solid rgba(194,65,12,.2); }
+    .ship-shopify   { background: rgba(149,191,71,.12); color: #3a6b00; border: 1px solid rgba(149,191,71,.3); }
     .ship-shopify-wrap { text-decoration:none; }
     .shopify-logo   { height:14px; width:auto; object-fit:contain; opacity:.9; display:inline; vertical-align:middle; margin-left:4px; }
     .ship-none      { color: var(--muted); font-size: 11px; }
@@ -291,7 +291,7 @@
     .tod-table th:last-child, .tod-table td:last-child { text-align: right; }
     .tod-date { white-space: nowrap; font-size: 11px; }
     .mini-btn { font-size: 10px; padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border2); background: var(--bg3); color: var(--muted2); cursor: pointer; font-family: inherit; font-weight: 500; transition: all 0.12s; white-space: nowrap; }
-    .mini-btn:hover:not(:disabled) { border-color: rgba(255,255,255,.25); color: #fff; background: rgba(255,255,255,.07); }
+    .mini-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); background: rgba(240,78,0,.05); }
     .mini-btn.manage { background: var(--bg3); border-color: var(--border2); color: var(--muted2); }
     .mini-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   </style>
@@ -652,8 +652,8 @@ Chart.defaults.color = '#555';
 Chart.defaults.font.family = 'Inter, sans-serif';
 Chart.defaults.font.size = 11;
 
-var TT = { backgroundColor: '#111', borderColor: '#2a2a2a', borderWidth: 1, titleColor: '#fff', bodyColor: '#ccc', padding: 10 };
-var GRID = '#1a1a1a';
+var TT = { backgroundColor: '#fff', borderColor: '#e4dfd7', borderWidth: 1, titleColor: '#1c1917', bodyColor: '#57534e', padding: 10 };
+var GRID = '#e4dfd7';
 var TICK = '#555';
 
 /* ── Robust day parser — handles Date objects, ISO strings, locale strings ── */
