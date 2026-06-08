@@ -1399,13 +1399,20 @@ function autoCheckShopifyTracking(idx, email) {
 
 function buildShippingHtml(orders) {
   var todayStr  = new Date().toLocaleDateString('en-CA');
+  /* CC stores dateCreated in EDT (UTC-4) — must parse with offset so that
+     early-morning CEST charges (which are previous-day EDT) map to today CEST. */
+  function ccDateStr(dateCreated) {
+    if (!dateCreated) return '';
+    var dt = new Date(dateCreated.replace(' ', 'T') + '-04:00');
+    return isNaN(dt) ? '' : dt.toLocaleDateString('en-CA');
+  }
   var todaySubs = orders.filter(function(o) {
-    var isToday = o.dateCreated && new Date(o.dateCreated).toLocaleDateString('en-CA') === todayStr;
+    var isToday = ccDateStr(o.dateCreated) === todayStr;
     var isSub   = o.recurringFlag === '1' || o.orderType === 'RECURRING' || !!o.parentOrderId;
     return isToday && isSub;
   });
   var todayAny = todaySubs.length ? todaySubs : orders.filter(function(o) {
-    return o.dateCreated && new Date(o.dateCreated).toLocaleDateString('en-CA') === todayStr;
+    return ccDateStr(o.dateCreated) === todayStr;
   });
   if (!todayAny.length) return '<span class="ship-badge ship-pending">Scheduled</span>';
 
