@@ -917,30 +917,6 @@ router.get('/api/today-orders', async function(req, res) {
   }
 });
 
-/* ── GET /admin/api/cc-upcoming — CC subscriptions scheduled to bill after today ── */
-router.get('/api/cc-upcoming', async function(req, res) {
-  try {
-    const now = new Date();
-    const todayStart = new Date(now); todayStart.setUTCHours(0, 0, 0, 0);
-    const rows = await db.many(`
-      SELECT s.customer_email, s.product, s.price_cents, s.next_bill_at,
-             s.frequency, c.first_name, c.last_name
-      FROM subscriptions s
-      LEFT JOIN customers c ON s.customer_id = c.id
-      WHERE s.source = 'cc'
-        AND s.status = 'ACTIVE'
-        AND s.next_bill_at >= $1
-        AND NOT (s.raw->>'merchant' ILIKE '%paypal%')
-        AND NOT (COALESCE(NULLIF(TRIM(s.raw->>'merchant'), ''), '') = '')
-      ORDER BY s.next_bill_at ASC, s.price_cents DESC
-      LIMIT 1000
-    `, [todayStart]);
-    res.json({ orders: rows, count: rows.length });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 /* ── POST /admin/api/magic-link — generate portal link for a customer (no email sent) ── */
 
 router.post('/api/magic-link', async function(req, res) {
