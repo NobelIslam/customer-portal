@@ -48,11 +48,8 @@
       background: var(--bg2);
       border-bottom: 1px solid var(--border);
     }
-    .brand {
-      font-family: 'Oswald', sans-serif; font-size: 17px; font-weight: 600;
-      letter-spacing: 0.06em; text-transform: uppercase; color: var(--text); flex-shrink: 0;
-    }
-    .brand .dot { color: var(--accent); }
+    .brand { display: flex; align-items: center; flex-shrink: 0; }
+    .brand img { height: 32px; width: auto; display: block; }
 
     /* Search */
     .search-wrap { position: relative; flex: 1; max-width: 260px; }
@@ -300,7 +297,7 @@
 
 <!-- ── Topbar ── -->
 <div class="topbar">
-  <div class="brand">TGP <span class="dot">·</span> Admin</div>
+  <div class="brand"><img src="https://assets.imagehub.io/9af52737-7d56-468f-b38c-baa38d5b7b0a/1765912829614_Logo_horizontal_black.png" alt="TGP Admin"/></div>
 
   <!-- Search -->
   <div class="search-wrap">
