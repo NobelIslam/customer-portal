@@ -944,7 +944,10 @@ router.get('/api/today-orders', async function(req, res) {
         return rows;
       })(),
 
-      /* ── CC scheduled + Subi: DB query — exclude RC (handled by live API above) ── */
+      /* ── Subi: DB query only — CC is fully handled by live API queries above ──
+         CC pending comes from live purchase/query (ccPendingRows) so the DB is
+         not used for CC; stale DB CC rows (e.g. RECYCLE_FAILED subs not yet
+         re-synced) would otherwise create ghost entries.                       */
       db.many(`
         SELECT s.id, s.source, s.native_id, s.customer_email, s.product,
                s.status, s.price_cents, s.next_bill_at, s.frequency,
@@ -952,14 +955,12 @@ router.get('/api/today-orders', async function(req, res) {
         FROM subscriptions s
         LEFT JOIN customers c ON s.customer_id = c.id
         WHERE s.status = 'ACTIVE'
-          AND s.source != 'recharge'
+          AND s.source = 'subi'
           AND (
             (s.next_bill_at >= $1 AND s.next_bill_at < $2)
             OR (s.last_billed_at >= $1 AND s.last_billed_at < $2)
           )
-          AND NOT (s.source = 'cc' AND s.raw->>'merchant' ILIKE '%paypal%')
-          AND NOT (s.source = 'cc' AND COALESCE(NULLIF(TRIM(s.raw->>'merchant'), ''), '') = '')
-        ORDER BY s.source, s.price_cents DESC
+        ORDER BY s.price_cents DESC
       `, [todayStart, todayEnd])
     ]);
 
@@ -974,15 +975,8 @@ router.get('/api/today-orders', async function(req, res) {
       return !ccLiveEmails.has(r.customer_email);
     });
 
-    /* DB rows: skip CC if covered by live data; keep Subi */
-    const filteredDb = dbRows.filter(function(r) {
-      if (r.source === 'cc' && (ccLiveEmails.has(r.customer_email) || ccPendingEmails.has(r.customer_email))) return false;
-      if (r.source === 'recharge' && rcLiveEmails.has(r.customer_email)) return false;
-      return true;
-    }).map(function(r) {
-      if (r.source === 'cc') r.cc_charge_status = 'SCHEDULED';
-      return r;
-    });
+    /* DB rows are Subi only — no CC or RC rows to filter out */
+    const filteredDb = dbRows;
 
     const allOrders = ccRows.concat(filteredCcPending).concat(rcRows).concat(filteredDb);
     console.log('[today-orders] total:', allOrders.length);

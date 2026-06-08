@@ -73,8 +73,8 @@ async function syncCC(opts) {
 
   const today    = new Date();
   /* Full sync: fixed epoch so ALL-TIME subscriptions are captured regardless of age.
-     Delta sync: 30-day rolling window for recent changes only. */
-  const startDate = isFull ? '01/01/2015' : ccDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 30));
+     Delta sync: 90-day rolling window for recent changes (covers billing cycles 1-3). */
+  const startDate = isFull ? '01/01/2015' : ccDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 90));
   /* Use tomorrow as endDate so today's records are never excluded by an exclusive boundary */
   const tomorrow  = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
@@ -82,7 +82,7 @@ async function syncCC(opts) {
 
   console.log('[sync:cc] window:', startDate, '→', endDate, '| full:', isFull);
 
-  /* ── 1. Purchases (subscriptions) ── */
+  /* ── 1a. Purchases (subscriptions) — date-windowed ── */
   let subsTouched = 0;
   let page = 1;
   const perPage = 200;
@@ -105,6 +105,39 @@ async function syncCC(opts) {
     console.log('[sync:cc] purchases page', page, '| got', data.length, '| total', subsTouched);
     if (data.length < perPage) break;
     page++;
+  }
+
+  /* ── 1b. All-time ACTIVE subscriptions refresh ──
+     The date-windowed pass above only catches subs created in the last 90 days.
+     Subscriptions older than that can still change status or nextBillDate (e.g.
+     a cycle-4 sub going RECYCLE_FAILED won't appear in the 90-day window).
+     This second pass fetches every currently-ACTIVE sub from CC to ensure their
+     nextBillDate and status are always current in our DB.                      */
+  if (!isFull) {
+    let activePage = 1;
+    let activeTouched = 0;
+    while (activePage <= 50) {
+      const r = await fetch(CC_BASE + '/purchase/query/?' + ccParams({
+        startDate:      '01/01/2015',
+        endDate:        endDate,
+        status:         'ACTIVE',
+        resultsPerPage: perPage,
+        page:           activePage
+      }), { method: 'POST' });
+      const text = await r.text();
+      let d;
+      try { d = JSON.parse(text); } catch (e) {
+        console.error('[sync:cc] non-JSON active-refresh page', activePage, ':', text.substring(0, 200));
+        break;
+      }
+      const data = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+      for (const p of data) await upsertCCPurchase(p);
+      activeTouched += data.length;
+      subsTouched   += data.length;
+      console.log('[sync:cc] active-refresh page', activePage, '| got', data.length, '| total', activeTouched);
+      if (data.length < perPage) break;
+      activePage++;
+    }
   }
 
   /* ── 2. Orders ── */
