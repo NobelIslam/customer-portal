@@ -770,8 +770,8 @@ router.get('/api/today-orders', async function(req, res) {
     const ccTodayStr  = (now.getUTCMonth()+1).toString().padStart(2,'0') + '/' +
                         now.getUTCDate().toString().padStart(2,'0') + '/' + now.getUTCFullYear();
 
-    /* Run all three source queries in parallel for speed */
-    const [ccRows, rcRows, dbRows] = await Promise.all([
+    /* Run all four source queries in parallel for speed */
+    const [ccRows, ccPendingRows, rcRows, dbRows] = await Promise.all([
 
       /* ── CC: transactions/query for today's CHARGED RECURRING billings ──
          CC stores timestamps in EDT (UTC-4). User is in Amsterdam (CEST = UTC+2).
@@ -824,6 +824,53 @@ router.get('/api/today-orders', async function(req, res) {
           }
         } catch (e) { console.error('[today-orders] CC transactions query failed:', e.message); }
         console.log('[today-orders] CC charged today (CEST):', rows.length);
+        return rows;
+      })(),
+
+      /* ── CC: purchase/query for today's PENDING scheduled subscriptions (live) ──
+         Delta sync only covers subs created in the last 30 days, so cycle 2+ subs
+         started earlier are missing from the DB. Query CC live and filter by
+         nextBillDate = today so we never depend on sync freshness.
+         Query last 90 days to cover subs up to billing cycle ~3.            */
+      (async function() {
+        if (!process.env.CC_LOGIN_ID || !process.env.CC_API_PASSWORD) return [];
+        var ago90 = new Date(todayStart.getTime() - 90 * 24 * 3600 * 1000);
+        var ccStart90 = (ago90.getUTCMonth()+1).toString().padStart(2,'0') + '/' +
+                        ago90.getUTCDate().toString().padStart(2,'0') + '/' + ago90.getUTCFullYear();
+        var rows = [], seenEmails = [], page = 1;
+        try {
+          while (page <= 20) {
+            const p = new URLSearchParams({
+              loginId: process.env.CC_LOGIN_ID, password: process.env.CC_API_PASSWORD,
+              startDate: ccStart90, endDate: ccTodayStr,
+              status: 'ACTIVE', resultsPerPage: 200, page: page
+            });
+            const r = await fetch(CC_API_BASE + '/purchase/query/?' + p.toString(), { method: 'POST' });
+            const d = await r.json();
+            const subs = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+            subs.forEach(function(s) {
+              if (s.nextBillDate !== todayUTC) return;
+              var merchant = (s.merchant || '').trim();
+              if (!merchant || /paypal/i.test(merchant)) return;
+              var email = (s.emailAddress || '').trim().toLowerCase();
+              if (!email || seenEmails.includes(email)) return;
+              seenEmails.push(email);
+              rows.push({
+                source: 'cc', native_id: String(s.purchaseId || ''),
+                customer_email: email,
+                product: s.productName || null,
+                price_cents: Math.round(parseFloat(s.price || s.recurringPrice || 0) * 100),
+                next_bill_at: todayUTC + 'T00:00:00Z',
+                cc_charge_status: 'SCHEDULED', status: 'ACTIVE',
+                first_name: s.firstName || null, last_name: s.lastName || null,
+                frequency: null, last_billed_at: null
+              });
+            });
+            if (subs.length < 200) break;
+            page++;
+          }
+        } catch (e) { console.error('[today-orders] CC pending query failed:', e.message); }
+        console.log('[today-orders] CC pending today (live):', rows.length);
         return rows;
       })(),
 
@@ -916,12 +963,20 @@ router.get('/api/today-orders', async function(req, res) {
       `, [todayStart, todayEnd])
     ]);
 
-    /* Merge: CC live billed + RC live scheduled + DB (CC scheduled + Subi)
-       Deduplicate CC: if email already in CC live rows, skip DB CC row    */
-    const ccLiveEmails = new Set(ccRows.map(function(r) { return r.customer_email; }));
-    const rcLiveEmails = new Set(rcRows.map(function(r) { return r.customer_email; }));
-    const filteredDb   = dbRows.filter(function(r) {
-      if (r.source === 'cc'      && ccLiveEmails.has(r.customer_email)) return false;
+    /* Merge: CC charged (live txns) + CC pending (live purchases) + RC (live) + DB (Subi + DB-only CC)
+       Priority: ccRows (charged) > ccPendingRows (live pending) > dbRows (stale-sync fallback) */
+    const ccLiveEmails    = new Set(ccRows.map(function(r) { return r.customer_email; }));
+    const ccPendingEmails = new Set(ccPendingRows.map(function(r) { return r.customer_email; }));
+    const rcLiveEmails    = new Set(rcRows.map(function(r) { return r.customer_email; }));
+
+    /* Remove live-pending rows that were already charged */
+    const filteredCcPending = ccPendingRows.filter(function(r) {
+      return !ccLiveEmails.has(r.customer_email);
+    });
+
+    /* DB rows: skip CC if covered by live data; keep Subi */
+    const filteredDb = dbRows.filter(function(r) {
+      if (r.source === 'cc' && (ccLiveEmails.has(r.customer_email) || ccPendingEmails.has(r.customer_email))) return false;
       if (r.source === 'recharge' && rcLiveEmails.has(r.customer_email)) return false;
       return true;
     }).map(function(r) {
@@ -929,7 +984,7 @@ router.get('/api/today-orders', async function(req, res) {
       return r;
     });
 
-    const allOrders = ccRows.concat(rcRows).concat(filteredDb);
+    const allOrders = ccRows.concat(filteredCcPending).concat(rcRows).concat(filteredDb);
     console.log('[today-orders] total:', allOrders.length);
     res.json({ orders: allOrders, count: allOrders.length });
   } catch (err) {
