@@ -1282,9 +1282,14 @@ function renderTodayOrders() {
                : '<span class="src-tag tag-subi">Subi</span>';
     var name = (o.first_name || o.last_name) ? esc((o.first_name || '') + ' ' + (o.last_name || '')).trim() : '';
     var globalIdx = (pageTodayOrders - 1) * PAGE_SIZE_TODAY + idx;
-    var shipCell = o.source === 'cc'
-      ? '<span class="ship-none" id="ship-cell-' + globalIdx + '"><span style="opacity:.4;font-size:11px">Loading…</span></span>'
-      : '<span id="ship-cell-' + globalIdx + '">' + buildDbOrderStatus(o.last_billed_at, o.next_bill_at) + '</span>';
+    var shipCell;
+    if (o.source === 'cc' && o.cc_charge_status === 'CHARGED') {
+      shipCell = '<span class="ship-none" id="ship-cell-' + globalIdx + '"><span style="opacity:.4;font-size:11px">Loading…</span></span>';
+    } else if (o.source === 'cc') {
+      shipCell = '<span class="ship-badge ship-pending">Scheduled</span>';
+    } else {
+      shipCell = '<span id="ship-cell-' + globalIdx + '">' + buildDbOrderStatus(o.last_billed_at, o.next_bill_at) + '</span>';
+    }
     return '<tr>' +
       '<td><span class="tod-email">' + esc(o.customer_email) + '</span>' +
            (name ? '<span class="tod-name">' + name + '</span>' : '') + '</td>' +
@@ -1321,15 +1326,14 @@ function renderTodayOrders() {
       '<tbody>' + rows + '</tbody>' +
     '</table>' + pagBar;
 
-  /* Auto-fetch shipping for every row on this page */
+  /* Auto-fetch shipping for charged CC rows; Shopify tracking for billed RC/Subi */
   slice.forEach(function(o, idx) {
     var globalIdx = (pageTodayOrders - 1) * PAGE_SIZE_TODAY + idx;
-    if (o.source === 'cc') {
+    if (o.source === 'cc' && o.cc_charge_status === 'CHARGED') {
       autoCheckShipping(globalIdx, o.customer_email);
-    } else if (isBilledRow(o)) {
+    } else if (o.source !== 'cc' && isBilledRow(o)) {
       autoCheckShopifyTracking(globalIdx, o.customer_email);
     }
-
   });
 }
 

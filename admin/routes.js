@@ -773,40 +773,57 @@ router.get('/api/today-orders', async function(req, res) {
     /* Run all three source queries in parallel for speed */
     const [ccRows, rcRows, dbRows] = await Promise.all([
 
-      /* ── CC: order/query for today's RECURRING billed orders (fast, single call) ── */
+      /* ── CC: transactions/query for today's CHARGED RECURRING billings ──
+         CC stores timestamps in EDT (UTC-4). User is in Amsterdam (CEST = UTC+2).
+         Amsterdam today starts at CEST 00:00 = UTC-2h = EDT previous day 18:00.
+         Query yesterday + today (UTC) and filter client-side to the CEST 24h window
+         so early-morning CEST charges (which fall on yesterday in EDT) are included. */
       (async function() {
         if (!process.env.CC_LOGIN_ID || !process.env.CC_API_PASSWORD) return [];
+        /* CEST today window in UTC: midnight−2h → midnight+22h */
+        var cestStart = new Date(todayStart.getTime() - 2 * 3600 * 1000);
+        var cestEnd   = new Date(cestStart.getTime() + 24 * 3600 * 1000);
+        var yesterday = new Date(todayStart.getTime() - 24 * 3600 * 1000);
+        var ccStart   = (yesterday.getUTCMonth()+1).toString().padStart(2,'0') + '/' +
+                        yesterday.getUTCDate().toString().padStart(2,'0') + '/' + yesterday.getUTCFullYear();
+        var ccEnd     = ccTodayStr;
         var rows = [], seenEmails = [], page = 1;
         try {
           while (page <= 10) {
             const p = new URLSearchParams({
               loginId: process.env.CC_LOGIN_ID, password: process.env.CC_API_PASSWORD,
-              startDate: ccTodayStr, endDate: ccTodayStr,
-              resultsPerPage: 200, page: page, sortDir: -1
+              startDate: ccStart, endDate: ccEnd,
+              billType: 'RECURRING', txnType: 'SALE', responseType: 'SUCCESS',
+              resultsPerPage: 200, page: page
             });
-            const r = await fetch(CC_API_BASE + '/order/query/?' + p.toString(), { method: 'POST' });
+            const r = await fetch(CC_API_BASE + '/transactions/query/?' + p.toString(), { method: 'POST' });
             const d = await r.json();
-            const orders = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
-            orders.filter(function(o) {
-              return o.orderType === 'RECURRING' || o.recurringFlag === '1' || o.parentOrderId;
-            }).forEach(function(o) {
-              const email = (o.emailAddress || '').trim().toLowerCase();
+            const txns = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+            txns.forEach(function(t) {
+              /* Keep only transactions within the CEST today window */
+              var ds = (t.dateCreated || '');
+              if (ds) {
+                var dt = new Date(ds.replace(' ', 'T') + '-04:00');
+                if (isNaN(dt) || dt < cestStart || dt >= cestEnd) return;
+              }
+              var email = (t.emailAddress || '').trim().toLowerCase();
               if (!email || seenEmails.includes(email)) return;
               seenEmails.push(email);
               rows.push({
-                source: 'cc', native_id: o.orderId || null,
-                customer_email: email, product: o.productName || null,
-                price_cents: Math.round(parseFloat(o.totalAmount || 0) * 100),
-                next_bill_at: null, status: 'ACTIVE',
-                first_name: o.firstName || null, last_name: o.lastName || null,
-                frequency: null, last_billed_at: now.toISOString()
+                source: 'cc', native_id: t.orderId || null,
+                customer_email: email,
+                product: t.productName || null,
+                price_cents: Math.round(parseFloat(t.amount || t.totalAmount || 0) * 100),
+                next_bill_at: null, cc_charge_status: 'CHARGED', status: 'ACTIVE',
+                first_name: t.firstName || null, last_name: t.lastName || null,
+                frequency: null, last_billed_at: ds || now.toISOString()
               });
             });
-            if (orders.length < 200) break;
+            if (txns.length < 200) break;
             page++;
           }
-        } catch (e) { console.error('[today-orders] CC order query failed:', e.message); }
-        console.log('[today-orders] CC billed today:', rows.length);
+        } catch (e) { console.error('[today-orders] CC transactions query failed:', e.message); }
+        console.log('[today-orders] CC charged today (CEST):', rows.length);
         return rows;
       })(),
 
@@ -907,6 +924,9 @@ router.get('/api/today-orders', async function(req, res) {
       if (r.source === 'cc'      && ccLiveEmails.has(r.customer_email)) return false;
       if (r.source === 'recharge' && rcLiveEmails.has(r.customer_email)) return false;
       return true;
+    }).map(function(r) {
+      if (r.source === 'cc') r.cc_charge_status = 'SCHEDULED';
+      return r;
     });
 
     const allOrders = ccRows.concat(rcRows).concat(filteredDb);
