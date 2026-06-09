@@ -236,7 +236,7 @@ router.get('/api/overview', async function(req, res) {
       db.many(`SELECT id, customer_email, product, source, price_cents, cancelled_at, cancel_reason
                FROM subscriptions WHERE cancelled_at IS NOT NULL ${NO_PAYPAL}
                ORDER BY cancelled_at DESC LIMIT 10`),
-      db.many(`SELECT kind, source, email, payload, ts FROM events ORDER BY ts DESC LIMIT 50`),
+      Promise.resolve([]),  /* recentEvents removed — activity feed has its own live endpoint */
       db.many(`SELECT product, source, COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS mrr_cents
                FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW() AND product IS NOT NULL ${NO_PAYPAL}
                GROUP BY product, source ORDER BY n DESC LIMIT 15`),
@@ -1011,6 +1011,291 @@ router.get('/api/today-orders', async function(req, res) {
     console.log('[today-orders] total:', allOrders.length);
     res.json({ orders: allOrders, count: allOrders.length });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ── GET /admin/api/activity-feed
+   Live 48-hour activity stream from CC + Recharge.
+   Queries both platforms directly every call — no DB cache.
+   Auto-polled by the dashboard every 30 seconds.            */
+
+router.get('/api/activity-feed', auth.requireAdmin, async function(req, res) {
+  try {
+    const now   = new Date();
+    const hours = Math.min(parseInt(req.query.hours || '48', 10), 72);
+    const since = new Date(now.getTime() - hours * 3600000);
+
+    /* CC API takes MM/DD/YYYY. Add 1-day margin on start side so timezone
+       edges don't drop the earliest events; we filter client-side with ccParseDate anyway. */
+    var ccSinceDate = new Date(since.getTime() - 24 * 3600000);
+    var ccStart = String(ccSinceDate.getUTCMonth() + 1).padStart(2, '0') + '/' +
+                  String(ccSinceDate.getUTCDate()).padStart(2, '0') + '/' +
+                  String(ccSinceDate.getUTCFullYear());
+    var [ty, tm, td] = amsDateStr(now).split('-');
+    var ccEnd = tm + '/' + td + '/' + ty;
+
+    var rcHeaders = process.env.RECHARGE_API_KEY
+      ? { 'X-Recharge-Access-Token': process.env.RECHARGE_API_KEY }
+      : null;
+
+    var events = [];
+
+    await Promise.all([
+
+      /* ── CC: successful transactions (rebills + new subs) ── */
+      (async function() {
+        if (!process.env.CC_LOGIN_ID || !process.env.CC_API_PASSWORD) return;
+        var page = 1;
+        while (page <= 20) {
+          const p = new URLSearchParams({
+            loginId: process.env.CC_LOGIN_ID, password: process.env.CC_API_PASSWORD,
+            startDate: ccStart, endDate: ccEnd,
+            txnType: 'SALE', responseType: 'SUCCESS',
+            resultsPerPage: 200, page: page
+          });
+          const r = await fetch(CC_API_BASE + '/transactions/query/?' + p.toString(), { method: 'POST' });
+          const d = await r.json();
+          const txns = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+          txns.forEach(function(t) {
+            var ts = ccParseDate(t.dateCreated || '');
+            if (!ts || ts < since) return;
+            var email = (t.emailAddress || '').trim().toLowerCase();
+            if (!email || TEST_EMAILS.has(email)) return;
+            events.push({
+              kind:    t.billType === 'RECURRING' ? 'rebill' : 'sub_created',
+              source:  'cc',
+              email:   email,
+              ts:      ts.toISOString(),
+              payload: {
+                amount:  t.amount || t.totalAmount || null,
+                product: t.productName || t.campaignName || null
+              }
+            });
+          });
+          if (txns.length < 200) break;
+          page++;
+        }
+      })(),
+
+      /* ── CC: declined transactions (failed charges) ── */
+      (async function() {
+        if (!process.env.CC_LOGIN_ID || !process.env.CC_API_PASSWORD) return;
+        var page = 1;
+        while (page <= 10) {
+          const p = new URLSearchParams({
+            loginId: process.env.CC_LOGIN_ID, password: process.env.CC_API_PASSWORD,
+            startDate: ccStart, endDate: ccEnd,
+            txnType: 'SALE', responseType: 'DECLINE',
+            resultsPerPage: 200, page: page
+          });
+          const r = await fetch(CC_API_BASE + '/transactions/query/?' + p.toString(), { method: 'POST' });
+          const d = await r.json();
+          const txns = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+          txns.forEach(function(t) {
+            var ts = ccParseDate(t.dateCreated || '');
+            if (!ts || ts < since) return;
+            var email = (t.emailAddress || '').trim().toLowerCase();
+            if (!email || TEST_EMAILS.has(email)) return;
+            events.push({
+              kind:    'failed_charge',
+              source:  'cc',
+              email:   email,
+              ts:      ts.toISOString(),
+              payload: {
+                amount:  t.amount || t.totalAmount || null,
+                product: t.productName || t.campaignName || null,
+                reason:  t.declineReason || t.responseReason || null
+              }
+            });
+          });
+          if (txns.length < 200) break;
+          page++;
+        }
+      })(),
+
+      /* ── CC: recently cancelled subscriptions ──
+         purchase/query startDate/endDate filter on dateCreated. We query the full
+         since window and keep only rows whose dateUpdated falls in the 48h window. */
+      (async function() {
+        if (!process.env.CC_LOGIN_ID || !process.env.CC_API_PASSWORD) return;
+        var page = 1;
+        while (page <= 5) {
+          const p = new URLSearchParams({
+            loginId: process.env.CC_LOGIN_ID, password: process.env.CC_API_PASSWORD,
+            startDate: ccStart, endDate: ccEnd,
+            status: 'CANCELLED', resultsPerPage: 200, page: page
+          });
+          const r = await fetch(CC_API_BASE + '/purchase/query/?' + p.toString(), { method: 'POST' });
+          const d = await r.json();
+          const subs = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+          subs.forEach(function(s) {
+            var ts = ccParseDate(s.dateUpdated || s.cancelDate || s.dateCreated || '');
+            if (!ts || ts < since) return;
+            var email = (s.emailAddress || '').trim().toLowerCase();
+            if (!email || TEST_EMAILS.has(email)) return;
+            events.push({
+              kind:    'sub_cancelled',
+              source:  'cc',
+              email:   email,
+              ts:      ts.toISOString(),
+              payload: { product: s.productName || null, reason: s.cancelReason || null }
+            });
+          });
+          if (subs.length < 200) break;
+          page++;
+        }
+      })(),
+
+      /* ── Recharge: successful charges (rebills + initial) ── */
+      (async function() {
+        if (!rcHeaders) return;
+        var page = 1;
+        while (page <= 20) {
+          const url = RC_API_BASE + '/charges?limit=250&page=' + page +
+            '&created_at_min=' + encodeURIComponent(since.toISOString()) +
+            '&status=success';
+          const r = await fetch(url, { headers: rcHeaders });
+          const d = await r.json();
+          const charges = d.charges || [];
+          charges.forEach(function(c) {
+            var email = (c.email || '').trim().toLowerCase();
+            if (!email) return;
+            events.push({
+              kind:    c.type === 'recurring' ? 'rebill' : 'sub_created',
+              source:  'recharge',
+              email:   email,
+              ts:      c.created_at,
+              payload: {
+                amount:  c.total_price || null,
+                product: (c.line_items && c.line_items[0]) ? c.line_items[0].title : null
+              }
+            });
+          });
+          if (charges.length < 250) break;
+          page++;
+        }
+      })(),
+
+      /* ── Recharge: failed charges ── */
+      (async function() {
+        if (!rcHeaders) return;
+        var page = 1;
+        while (page <= 5) {
+          const url = RC_API_BASE + '/charges?limit=250&page=' + page +
+            '&created_at_min=' + encodeURIComponent(since.toISOString()) +
+            '&status=error';
+          const r = await fetch(url, { headers: rcHeaders });
+          const d = await r.json();
+          const charges = d.charges || [];
+          charges.forEach(function(c) {
+            var email = (c.email || '').trim().toLowerCase();
+            if (!email) return;
+            events.push({
+              kind:    'failed_charge',
+              source:  'recharge',
+              email:   email,
+              ts:      c.created_at,
+              payload: {
+                amount:  c.total_price || null,
+                product: (c.line_items && c.line_items[0]) ? c.line_items[0].title : null,
+                reason:  c.error || c.error_type || null
+              }
+            });
+          });
+          if (charges.length < 250) break;
+          page++;
+        }
+      })(),
+
+      /* ── Recharge: new subscriptions (no email on sub — DB lookup by customer_id) ── */
+      (async function() {
+        if (!rcHeaders) return;
+        var subs = [], page = 1;
+        while (page <= 5) {
+          const url = RC_API_BASE + '/subscriptions?limit=250&page=' + page +
+            '&created_at_min=' + encodeURIComponent(since.toISOString());
+          const r = await fetch(url, { headers: rcHeaders });
+          const d = await r.json();
+          const batch = d.subscriptions || [];
+          batch.forEach(function(s) { if (s.customer_id) subs.push(s); });
+          if (batch.length < 250) break;
+          page++;
+        }
+        if (!subs.length) return;
+        var ids = [...new Set(subs.map(function(s) { return String(s.customer_id); }))];
+        var rows = await db.many('SELECT recharge_id, email FROM customers WHERE recharge_id = ANY($1)', [ids])
+          .catch(function() { return []; });
+        var emailMap = {};
+        rows.forEach(function(r) { if (r.recharge_id) emailMap[String(r.recharge_id)] = r.email; });
+        subs.forEach(function(s) {
+          var email = (emailMap[String(s.customer_id)] || '').trim().toLowerCase();
+          if (!email) return;
+          events.push({
+            kind:    'sub_created',
+            source:  'recharge',
+            email:   email,
+            ts:      s.created_at,
+            payload: { product: s.product_title || null, price: s.price || null }
+          });
+        });
+      })(),
+
+      /* ── Recharge: cancellations ── */
+      (async function() {
+        if (!rcHeaders) return;
+        var subs = [], page = 1;
+        while (page <= 5) {
+          const url = RC_API_BASE + '/subscriptions?limit=250&page=' + page +
+            '&updated_at_min=' + encodeURIComponent(since.toISOString()) +
+            '&status=cancelled';
+          const r = await fetch(url, { headers: rcHeaders });
+          const d = await r.json();
+          const batch = d.subscriptions || [];
+          batch.forEach(function(s) {
+            if (!s.customer_id) return;
+            var cancelTs = s.cancelled_at || s.updated_at;
+            if (!cancelTs || new Date(cancelTs) < since) return;
+            subs.push(s);
+          });
+          if (batch.length < 250) break;
+          page++;
+        }
+        if (!subs.length) return;
+        var ids = [...new Set(subs.map(function(s) { return String(s.customer_id); }))];
+        var rows = await db.many('SELECT recharge_id, email FROM customers WHERE recharge_id = ANY($1)', [ids])
+          .catch(function() { return []; });
+        var emailMap = {};
+        rows.forEach(function(r) { if (r.recharge_id) emailMap[String(r.recharge_id)] = r.email; });
+        subs.forEach(function(s) {
+          var email = (emailMap[String(s.customer_id)] || '').trim().toLowerCase();
+          if (!email) return;
+          events.push({
+            kind:    'sub_cancelled',
+            source:  'recharge',
+            email:   email,
+            ts:      s.cancelled_at || s.updated_at,
+            payload: { product: s.product_title || null, reason: s.cancellation_reason || null }
+          });
+        });
+      })()
+
+    ]);
+
+    /* Sort newest-first; deduplicate (same email+kind within 5-minute bucket = same event) */
+    events.sort(function(a, b) { return new Date(b.ts) - new Date(a.ts); });
+    var seen = new Set();
+    var unique = events.filter(function(e) {
+      var bucket = Math.floor(new Date(e.ts).getTime() / 300000);
+      var key    = (e.email || '') + '|' + e.kind + '|' + bucket;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    res.json({ events: unique.slice(0, 500), since: since.toISOString(), count: unique.length });
+  } catch (err) {
+    console.error('[admin/api/activity-feed]', err);
     res.status(500).json({ error: err.message });
   }
 });

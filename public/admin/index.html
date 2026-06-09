@@ -204,6 +204,8 @@
     /* ── Activity feed ── */
     .a-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
     .a-row:last-child { border-bottom: none; }
+    .a-row-new { animation: feedIn .4s ease; }
+    @keyframes feedIn { from { opacity:0; transform:translateX(-6px); } to { opacity:1; transform:none; } }
     .a-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
     .a-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted2); }
     .a-strong { font-weight: 500; color: var(--text); }
@@ -428,7 +430,7 @@
       <div class="row-2-eq">
         <div class="panel">
           <div class="panel-head">
-            <span class="panel-title">Activity feed</span>
+            <span class="panel-title">Activity feed <span class="live-dot" style="display:inline-block;margin-left:4px;vertical-align:middle"></span></span>
             <span class="panel-meta" id="activity-count"></span>
           </div>
           <div class="filter-bar" id="kind-filters">
@@ -436,7 +438,6 @@
             <span class="filter" data-kind="sub_created">New</span>
             <span class="filter" data-kind="sub_cancelled">Cancels</span>
             <span class="filter" data-kind="rebill">Rebills</span>
-            <span class="filter" data-kind="login">Logins</span>
             <span class="filter" data-kind="failed_charge">Failed</span>
           </div>
           <div class="search-badge" id="feed-search-badge"></div>
@@ -882,14 +883,51 @@ var KIND_META = {
   sub_created:   { lbl: 'New sub',       color: '#22c55e' },
   sub_cancelled: { lbl: 'Cancelled',     color: '#ef4444' },
   rebill:        { lbl: 'Rebill',        color: '#22c55e' },
-  login:         { lbl: 'Login',         color: '#3b82f6' },
   failed_charge: { lbl: 'Failed charge', color: '#f59e0b' }
 };
 
+/* Signatures of events already shown — used to animate newly-arrived rows */
+var seenEventKeys = new Set();
+var feedLastUpdated = null;
+var feedRefreshTimer = null;
+
+function eventKey(e) {
+  /* bucket to 1-minute window so the same event on two polls isn't re-animated */
+  var bucket = Math.floor(new Date(e.ts).getTime() / 60000);
+  return (e.email || '') + '|' + e.kind + '|' + bucket;
+}
+
+function loadActivityFeed() {
+  fetch('/admin/api/activity-feed')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var events = data.events || [];
+      feedLastUpdated = Date.now();
+      renderActivity(events);
+      updateFeedMeta();
+    })
+    .catch(function(err) {
+      console.error('[activity-feed]', err);
+    });
+}
+
+function updateFeedMeta() {
+  if (!feedLastUpdated) return;
+  var sec = Math.round((Date.now() - feedLastUpdated) / 1000);
+  var ago = sec < 5 ? 'just now' : sec < 60 ? sec + 's ago' : Math.floor(sec/60) + 'm ago';
+  var count = allEvents.length;
+  document.getElementById('activity-count').textContent = count + ' events · updated ' + ago;
+}
+
 function renderActivity(events) {
-  allEvents = events || [];
-  document.getElementById('activity-count').textContent = allEvents.length + ' events';
+  var incoming = events || [];
+  var isFirst  = seenEventKeys.size === 0;
+  /* mark all as seen on the very first load (no animation for stale history) */
+  if (isFirst) incoming.forEach(function(e) { seenEventKeys.add(eventKey(e)); });
+  allEvents = incoming;
   applyFeedFilter();
+  /* after first load, record all keys so next poll can detect truly new ones */
+  if (!isFirst) incoming.forEach(function(e) { seenEventKeys.add(eventKey(e)); });
 }
 
 function renderFeedList(events) {
@@ -903,12 +941,13 @@ function renderFeedList(events) {
     html = '<div class="empty">No matching events</div>';
   } else {
     html = slice.map(function(e) {
-      var m   = KIND_META[e.kind] || { lbl: e.kind, color: '#999' };
-      var src = e.source ? '<span class="src-tag tag-' + (e.source==='recharge'?'rc':e.source) + '">' + e.source + '</span>' : '';
-      var detail = e.email || '';
+      var m       = KIND_META[e.kind] || { lbl: e.kind, color: '#999' };
+      var src     = e.source ? '<span class="src-tag tag-' + (e.source==='recharge'?'rc':e.source) + '">' + e.source + '</span>' : '';
+      var detail  = e.email || '';
       if (e.kind === 'rebill' && e.payload && e.payload.amount) detail = '$' + e.payload.amount + ' — ' + (e.payload.product || e.email);
       else if (e.payload && e.payload.product) detail = e.payload.product + ' — ' + (e.email || '');
-      return '<div class="a-row">' +
+      var isNew   = seenEventKeys.size > 0 && !seenEventKeys.has(eventKey(e));
+      return '<div class="a-row' + (isNew ? ' a-row-new' : '') + '">' +
         '<span class="a-dot" style="background:' + m.color + '"></span>' +
         '<span class="a-text"><span class="a-strong">' + m.lbl + '</span> ' + esc(detail) + src + '</span>' +
         '<span class="a-time">' + ago(e.ts) + '</span>' +
@@ -1201,7 +1240,7 @@ async function loadData() {
     renderRevChart(d.revenueTrend);
     renderForecastChart(d.forecast7d);
     renderGrowthCharts(d.newSubsTrend, d.cancelsTrend);
-    renderActivity(d.recentEvents);
+    /* Activity feed is loaded separately via loadActivityFeed() */
     renderCancels(d.recentCancels);
     renderTomorrowRebills(d.tomorrowRebillsList);
     renderProducts(d.productBreakdown);
@@ -1221,7 +1260,10 @@ async function loadData() {
 }
 
 loadData();
+loadActivityFeed();
 setInterval(loadSyncState, 60000);
+setInterval(loadActivityFeed, 30000);
+setInterval(updateFeedMeta, 15000);
 
 /* ════════════════════════════════════════════════════
    TODAY'S SCHEDULED ORDERS
