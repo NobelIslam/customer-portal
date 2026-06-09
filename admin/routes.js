@@ -759,6 +759,12 @@ router.get('/api/shopify/tracking', async function(req, res) {
    missed due to the delta-sync window. DB results for Recharge/Subi
    come from the last_billed_at / next_bill_at columns as before.   */
 
+const TEST_EMAILS = new Set([
+  'nobel@eydigitalmedia.com',
+  'md.nobelislamjoy@gmail.com',
+  'wardun@eydigitalmedia.com'
+]);
+
 router.get('/api/today-orders', async function(req, res) {
   try {
     const now         = new Date();
@@ -807,7 +813,7 @@ router.get('/api/today-orders', async function(req, res) {
                 if (isNaN(dt) || dt < cestStart || dt >= cestEnd) return;
               }
               var email = (t.emailAddress || '').trim().toLowerCase();
-              if (!email || seenEmails.includes(email)) return;
+              if (!email || seenEmails.includes(email) || TEST_EMAILS.has(email)) return;
               seenEmails.push(email);
               rows.push({
                 source: 'cc', native_id: t.orderId || null,
@@ -853,7 +859,7 @@ router.get('/api/today-orders', async function(req, res) {
               var merchant = (s.merchant || '').trim();
               if (!merchant || /paypal/i.test(merchant)) return;
               var email = (s.emailAddress || '').trim().toLowerCase();
-              if (!email || seenEmails.includes(email)) return;
+              if (!email || seenEmails.includes(email) || TEST_EMAILS.has(email)) return;
               seenEmails.push(email);
               rows.push({
                 source: 'cc', native_id: String(s.purchaseId || ''),
