@@ -809,7 +809,7 @@ router.get('/api/today-orders', async function(req, res) {
     const todayAms   = amsDateStr(now);                /* 'YYYY-MM-DD' Amsterdam */
     const todayStart = amsMidnightUTC(now);            /* Amsterdam midnight → UTC */
     const todayEnd   = new Date(todayStart.getTime() + 24 * 3600 * 1000);
-    /* todayUTC kept as Amsterdam date string — used to match CC nextBillDate */
+    /* todayUTC = Amsterdam date string (YYYY-MM-DD) — used to match RC next_charge_scheduled_at */
     const todayUTC   = todayAms;
     /* RC charge window uses Amsterdam boundaries in ISO form */
     const tomorrowUTC = amsDateStr(todayEnd);
@@ -897,7 +897,8 @@ router.get('/api/today-orders', async function(req, res) {
             const d = await r.json();
             const subs = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
             subs.forEach(function(s) {
-              if (s.nextBillDate !== todayUTC) return;
+              /* CC purchase/query returns nextBillDate in MM/DD/YYYY format */
+              if (s.nextBillDate !== ccTodayStr) return;
               var merchant = (s.merchant || '').trim();
               if (!merchant || /paypal/i.test(merchant)) return;
               var email = (s.emailAddress || '').trim().toLowerCase();
