@@ -562,7 +562,10 @@ async function syncTodayBillings() {
   if (!process.env.CC_LOGIN_ID || !process.env.CC_API_PASSWORD) return;
 
   const today    = new Date();
-  const todayStr = ccDate(today);
+  /* Use Amsterdam date for CC query — matches the user's "today" */
+  const amsDate  = today.toLocaleDateString('en-CA', { timeZone: 'Europe/Amsterdam' });
+  const [sy, sm, sd] = amsDate.split('-');
+  const todayStr = sm + '/' + sd + '/' + sy;
 
   let allOrders = [];
   let page = 1;

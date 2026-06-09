@@ -20,6 +20,29 @@ const SUBI_API_BASE  = 'https://api.subi.co/public/v1.0';
 const SHOPIFY_STORE  = process.env.SHOPIFY_STORE  || 'bigferverv.myshopify.com';
 const SHOPIFY_TOKEN  = process.env.SHOPIFY_ACCESS_TOKEN || '';
 
+/* ── Europe/Amsterdam timezone helpers ──────────────────────────────────
+   All "today" boundaries in this dashboard use Amsterdam local midnight,
+   not UTC midnight. In CEST (summer, UTC+2) Amsterdam midnight = UTC 22:00
+   the previous day; in CET (winter, UTC+1) it = UTC 23:00 the previous day.
+   Using UTC midnight would misclassify the 00:00–02:00 CEST window as the
+   previous day, causing early-morning subs/orders to show under yesterday. */
+
+function amsDateStr(d) {
+  /* 'YYYY-MM-DD' in Amsterdam timezone */
+  return d.toLocaleDateString('en-CA', { timeZone: 'Europe/Amsterdam' });
+}
+
+function amsMidnightUTC(d) {
+  /* UTC timestamp that corresponds to Amsterdam midnight on the day of `d` */
+  var date    = amsDateStr(d);
+  var noonUTC = new Date(date + 'T12:00:00Z');
+  /* Determine Amsterdam UTC offset (+2 CEST, +1 CET) from noon that day */
+  var offset  = parseInt(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Amsterdam', hour: 'numeric', hour12: false
+  }).format(noonUTC)) - 12;
+  return new Date(new Date(date + 'T00:00:00Z').getTime() - offset * 3600000);
+}
+
 function adminCreateToken(payload) {
   payload.expires = Date.now() + 24 * 60 * 60 * 1000;
   var data = Buffer.from(JSON.stringify(payload)).toString('base64url');
@@ -124,8 +147,9 @@ router.use('/sync', auth.requireAdmin);
 router.get('/api/overview', async function(req, res) {
   try {
     const now    = new Date();
-    /* Use UTC midnight so counts match PostgreSQL UTC-stored timestamps */
-    const todayStart = new Date(now); todayStart.setUTCHours(0, 0, 0, 0);
+    /* Use Amsterdam midnight — not UTC midnight — so today's counts correctly
+       reflect the Amsterdam day (off by 1–2 h otherwise in CEST/CET). */
+    const todayStart = amsMidnightUTC(now);
     const periodDays = Math.min(Math.max(parseInt(req.query.days || '30', 10), 1), 365);
     const periodAgo  = new Date(todayStart); periodAgo.setUTCDate(periodAgo.getUTCDate() - periodDays);
     const tomorrowEnd   = new Date(todayStart); tomorrowEnd.setUTCDate(tomorrowEnd.getUTCDate() + 2);
@@ -767,14 +791,18 @@ const TEST_EMAILS = new Set([
 
 router.get('/api/today-orders', async function(req, res) {
   try {
-    const now         = new Date();
-    const todayStart  = new Date(now); todayStart.setUTCHours(0, 0, 0, 0);
-    const todayEnd    = new Date(todayStart); todayEnd.setUTCDate(todayEnd.getUTCDate() + 1);
-    const todayUTC    = now.toISOString().split('T')[0];       /* YYYY-MM-DD UTC */
-    const tomorrowUTC = todayEnd.toISOString().split('T')[0];
-    /* CC order/query uses MM/DD/YYYY — derived from UTC date */
-    const ccTodayStr  = (now.getUTCMonth()+1).toString().padStart(2,'0') + '/' +
-                        now.getUTCDate().toString().padStart(2,'0') + '/' + now.getUTCFullYear();
+    const now        = new Date();
+    /* All day boundaries in Amsterdam local time */
+    const todayAms   = amsDateStr(now);                /* 'YYYY-MM-DD' Amsterdam */
+    const todayStart = amsMidnightUTC(now);            /* Amsterdam midnight → UTC */
+    const todayEnd   = new Date(todayStart.getTime() + 24 * 3600 * 1000);
+    /* todayUTC kept as Amsterdam date string — used to match CC nextBillDate */
+    const todayUTC   = todayAms;
+    /* RC charge window uses Amsterdam boundaries in ISO form */
+    const tomorrowUTC = amsDateStr(todayEnd);
+    /* CC order/query uses MM/DD/YYYY — derived from Amsterdam date */
+    const [ty, tm, td] = todayAms.split('-');
+    const ccTodayStr = tm + '/' + td + '/' + ty;
 
     /* Run all four source queries in parallel for speed */
     const [ccRows, ccPendingRows, rcRows, dbRows] = await Promise.all([
@@ -786,12 +814,13 @@ router.get('/api/today-orders', async function(req, res) {
          so early-morning CEST charges (which fall on yesterday in EDT) are included. */
       (async function() {
         if (!process.env.CC_LOGIN_ID || !process.env.CC_API_PASSWORD) return [];
-        /* CEST today window in UTC: midnight−2h → midnight+22h */
-        var cestStart = new Date(todayStart.getTime() - 2 * 3600 * 1000);
-        var cestEnd   = new Date(cestStart.getTime() + 24 * 3600 * 1000);
-        var yesterday = new Date(todayStart.getTime() - 24 * 3600 * 1000);
-        var ccStart   = (yesterday.getUTCMonth()+1).toString().padStart(2,'0') + '/' +
-                        yesterday.getUTCDate().toString().padStart(2,'0') + '/' + yesterday.getUTCFullYear();
+        /* todayStart is already Amsterdam midnight in UTC — use directly as window */
+        var cestStart = todayStart;
+        var cestEnd   = todayEnd;
+        /* CC API dates: yesterday + today in Amsterdam (covers the full UTC window) */
+        var prevAms   = amsDateStr(new Date(todayStart.getTime() - 1)); /* 1ms before Amsterdam midnight */
+        var [py, pm, pd] = prevAms.split('-');
+        var ccStart   = pm + '/' + pd + '/' + py;
         var ccEnd     = ccTodayStr;
         var rows = [], seenEmails = [], page = 1;
         try {
@@ -922,8 +951,8 @@ router.get('/api/today-orders', async function(req, res) {
           var chPage = 1;
           while (true) {
             const url = RC_API_BASE + '/charges?status=success' +
-              '&created_at_min=' + todayUTC + 'T00:00:00Z' +
-              '&created_at_max=' + tomorrowUTC + 'T00:00:00Z' +
+              '&created_at_min=' + todayStart.toISOString() +
+              '&created_at_max=' + todayEnd.toISOString() +
               '&limit=250&page=' + chPage;
             const r = await fetch(url, { headers: headers });
             const d = await r.json();

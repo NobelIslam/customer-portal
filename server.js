@@ -1288,8 +1288,8 @@ const PORT = process.env.PORT || 3000;
 
   /* 2. Start the sync cron unless explicitly disabled */
   if (process.env.DATABASE_URL && process.env.SYNC_DISABLED !== 'true') {
-    /* Every 15 min — pulls deltas from CC + Recharge + Subi */
-    cron.schedule('*/15 * * * *', function() {
+    /* Every 5 min — pulls deltas from CC + Recharge + Subi */
+    cron.schedule('*/5 * * * *', function() {
       adminSync.runSyncCycle({ full: false }).catch(function(err) {
         console.error('[sync-cron] error:', err.message);
       });
