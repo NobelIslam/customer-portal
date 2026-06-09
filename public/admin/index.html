@@ -28,7 +28,6 @@
       --purple:  #9333ea;
       --cc:      #2563eb;
       --rc:      #16a34a;
-      --subi:    #9333ea;
     }
 
     html, body {
@@ -178,7 +177,6 @@
     .src-badge { font-size: 9px; padding: 2px 7px; border-radius: 20px; font-weight: 600; letter-spacing: 0.04em; }
     .badge-cc   { background: rgba(37,99,235,.08);  color: #1d4ed8; border: 1px solid rgba(37,99,235,.2); }
     .badge-rc   { background: rgba(22,163,74,.08);  color: #15803d; border: 1px solid rgba(22,163,74,.2); }
-    .badge-subi { background: rgba(147,51,234,.08); color: #7c3aed; border: 1px solid rgba(147,51,234,.2); }
     .src-stats { display: flex; gap: 20px; margin-bottom: 10px; }
     .src-val { font-family: 'Oswald', sans-serif; font-size: 24px; font-weight: 500; color: var(--text); line-height: 1; }
     .src-lbl { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 3px; }
@@ -215,7 +213,6 @@
     .src-tag { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 9px; font-weight: 600; margin-left: 3px; letter-spacing: 0.04em; text-transform: uppercase; }
     .tag-cc   { background: rgba(37,99,235,.1);  color: #1d4ed8; }
     .tag-rc   { background: rgba(22,163,74,.1);  color: #15803d; }
-    .tag-subi { background: rgba(147,51,234,.1); color: #7c3aed; }
 
     /* ── Cancels list ── */
     .cancel-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); gap: 10px; font-size: 12px; }
@@ -401,7 +398,6 @@
             <div class="legend">
               <span class="legend-item"><span class="legend-dot" style="background:var(--cc)"></span>CC</span>
               <span class="legend-item"><span class="legend-dot" style="background:var(--rc)"></span>Recharge</span>
-              <span class="legend-item"><span class="legend-dot" style="background:var(--subi)"></span>Subi</span>
             </div>
           </div>
           <div class="chart-wrap h240"><canvas id="new-subs-chart"></canvas></div>
@@ -412,7 +408,6 @@
             <div class="legend">
               <span class="legend-item"><span class="legend-dot" style="background:var(--cc)"></span>CC</span>
               <span class="legend-item"><span class="legend-dot" style="background:var(--rc)"></span>Recharge</span>
-              <span class="legend-item"><span class="legend-dot" style="background:var(--subi)"></span>Subi</span>
             </div>
           </div>
           <div class="chart-wrap h240"><canvas id="cancels-chart"></canvas></div>
@@ -463,7 +458,7 @@
       <div class="section-label" id="s-today">Today's scheduled orders</div>
       <div class="panel mb10">
         <div class="panel-head">
-          <span class="panel-title">Subscriptions billing today — CC · Recharge · Subi</span>
+          <span class="panel-title">Subscriptions billing today — CC · Recharge</span>
           <span id="today-count" style="font-size:11px;color:var(--muted2);margin-left:auto"></span>
         </div>
         <div id="today-orders-wrap"><div class="empty">Loading…</div></div>
@@ -473,7 +468,7 @@
       <div class="section-label" id="s-tomorrow">Tomorrow's scheduled orders</div>
       <div class="panel mb10">
         <div class="panel-head">
-          <span class="panel-title">All sources — CC + Recharge + Subi</span>
+          <span class="panel-title">All sources — CC + Recharge</span>
           <span id="tomorrow-count" style="font-size:11px;color:var(--muted2);margin-left:auto"></span>
         </div>
         <div id="tomorrow-list"></div>
@@ -675,7 +670,7 @@ function parseDay(raw) {
 /* ── Pivot trend [{day,source,n}] → per-source arrays ── */
 function pivotTrend(trend, days) {
   var map = {};
-  days.forEach(function(d) { map[d] = { cc: 0, recharge: 0, subi: 0 }; });
+  days.forEach(function(d) { map[d] = { cc: 0, recharge: 0 }; });
   (trend || []).forEach(function(r) {
     /* Normalise the day key to YYYY-MM-DD regardless of pg return type */
     var raw = r.day;
@@ -686,8 +681,7 @@ function pivotTrend(trend, days) {
   });
   return {
     cc:       days.map(function(d) { return map[d].cc; }),
-    recharge: days.map(function(d) { return map[d].recharge; }),
-    subi:     days.map(function(d) { return map[d].subi; })
+    recharge: days.map(function(d) { return map[d].recharge; })
   };
 }
 
@@ -696,7 +690,7 @@ function renderKpis(k) {
   /* Row 1: primary metrics with sparklines */
   document.getElementById('kpi-row1').innerHTML = [
     { label: 'MRR',                  value: $m(k.mrrCents),    delta: 'monthly recurring revenue', cls: 'accent', sparkId: 'sp-mrr',     sparkColor: '#f04e00' },
-    { label: 'Active subscriptions', value: $n(k.activeSubs),  delta: 'CC + Recharge + Subi',      cls: '',       sparkId: 'sp-subs',    sparkColor: '#3b82f6' },
+    { label: 'Active subscriptions', value: $n(k.activeSubs),  delta: 'CC + Recharge',             cls: '',       sparkId: 'sp-subs',    sparkColor: '#3b82f6' },
     { label: 'New today',            value: $n(k.newToday),    delta: dayDelta(k.newToday, k.newYesterday),         sparkId: 'sp-new',     sparkColor: '#22c55e' },
     { label: 'Cancels today',        value: $n(k.cancelsToday), delta: (function() {
         var d=(k.cancelsToday||0)-(k.cancelsYesterday||0), s=d>=0?'+':'', c=d>0?'down':d<0?'up':'neutral';
@@ -736,11 +730,11 @@ function renderSparklines(newTrend, cancelTrend, revTrend) {
   var np = pivotTrend(newTrend, days30);
   var cp = pivotTrend(cancelTrend, days30);
 
-  var newTotals = days30.map(function(d, i) { return (np.cc[i]||0)+(np.recharge[i]||0)+(np.subi[i]||0); }).slice(-20);
-  var canTotals = days30.map(function(d, i) { return (cp.cc[i]||0)+(cp.recharge[i]||0)+(cp.subi[i]||0); }).slice(-20);
+  var newTotals = days30.map(function(d, i) { return (np.cc[i]||0)+(np.recharge[i]||0); }).slice(-20);
+  var canTotals = days30.map(function(d, i) { return (cp.cc[i]||0)+(cp.recharge[i]||0); }).slice(-20);
   var revTotals = (revTrend||[]).slice(-20).map(function(r) { return Number(r.cents)/100; });
   var cum = 0, subsTrend = days30.map(function(d, i) {
-    cum += ((np.cc[i]||0)+(np.recharge[i]||0)+(np.subi[i]||0)) - ((cp.cc[i]||0)+(cp.recharge[i]||0)+(cp.subi[i]||0));
+    cum += ((np.cc[i]||0)+(np.recharge[i]||0)) - ((cp.cc[i]||0)+(cp.recharge[i]||0));
     return cum;
   }).slice(-20);
 
@@ -766,14 +760,13 @@ function renderSparklines(newTrend, cancelTrend, revTrend) {
 function renderSourceCards(sources) {
   var cfg = {
     cc:       { label: 'CheckoutChamp', badge: 'badge-cc',   color: '#3b82f6' },
-    recharge: { label: 'Recharge',      badge: 'badge-rc',   color: '#22c55e' },
-    subi:     { label: 'Subi',          badge: 'badge-subi', color: '#a855f7' }
+    recharge: { label: 'Recharge',      badge: 'badge-rc',   color: '#22c55e' }
   };
   var total = sources.reduce(function(a,s) { return a+s.n; }, 0);
-  var by = { cc: { n:0, mrr_cents:0 }, recharge: { n:0, mrr_cents:0 }, subi: { n:0, mrr_cents:0 } };
+  var by = { cc: { n:0, mrr_cents:0 }, recharge: { n:0, mrr_cents:0 } };
   sources.forEach(function(s) { if (by[s.source]) by[s.source] = s; });
 
-  document.getElementById('src-grid').innerHTML = ['cc','recharge','subi'].map(function(src) {
+  document.getElementById('src-grid').innerHTML = ['cc','recharge'].map(function(src) {
     var s = by[src], c = cfg[src], pct = total > 0 ? Math.round(s.n / total * 100) : 0;
     return '<div class="src-card">' +
       '<div class="src-head"><span class="src-name" style="color:'+c.color+'">'+c.label+'</span><span class="src-badge '+c.badge+'">'+pct+'% of total</span></div>' +
@@ -804,8 +797,7 @@ function renderGrowthCharts(newTrend, cancelTrend) {
     type: 'bar',
     data: { labels: labels, datasets: [
       { label: 'CC',       data: nd.cc,       backgroundColor: 'rgba(59,130,246,.8)',  stack: 's' },
-      { label: 'Recharge', data: nd.recharge, backgroundColor: 'rgba(34,197,94,.8)',   stack: 's' },
-      { label: 'Subi',     data: nd.subi,     backgroundColor: 'rgba(168,85,247,.8)',  stack: 's' }
+      { label: 'Recharge', data: nd.recharge, backgroundColor: 'rgba(34,197,94,.8)',   stack: 's' }
     ]},
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: TT }, scales: stackedScales }
   });
@@ -815,14 +807,13 @@ function renderGrowthCharts(newTrend, cancelTrend) {
     type: 'bar',
     data: { labels: labels, datasets: [
       { label: 'CC',       data: cd.cc,       backgroundColor: 'rgba(59,130,246,.65)', stack: 's' },
-      { label: 'Recharge', data: cd.recharge, backgroundColor: 'rgba(34,197,94,.65)',  stack: 's' },
-      { label: 'Subi',     data: cd.subi,     backgroundColor: 'rgba(168,85,247,.65)', stack: 's' }
+      { label: 'Recharge', data: cd.recharge, backgroundColor: 'rgba(34,197,94,.65)',  stack: 's' }
     ]},
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: TT }, scales: stackedScales }
   });
 
   var netData = days.map(function(d, i) {
-    return (nd.cc[i]+nd.recharge[i]+nd.subi[i]) - (cd.cc[i]+cd.recharge[i]+cd.subi[i]);
+    return (nd.cc[i]+nd.recharge[i]) - (cd.cc[i]+cd.recharge[i]);
   });
   var netTotal = netData.reduce(function(a,v){return a+v;},0);
   document.getElementById('net-growth-summary').textContent = (netTotal >= 0 ? '+' : '') + netTotal + ' net this period';
@@ -1011,7 +1002,7 @@ function renderTomorrowPage() {
     var globalIdx = (pageTomorrow - 1) * PAGE_SIZE_TOMORROW + idx;
     var srcTag = r.source === 'cc'       ? '<span class="src-tag tag-cc">CC</span>'
                : r.source === 'recharge' ? '<span class="src-tag tag-rc">RC</span>'
-               : '<span class="src-tag tag-subi">Subi</span>';
+               : '<span class="src-tag tag-rc">RC</span>';
     var price = r.price_cents ? '$' + (r.price_cents / 100).toFixed(2) : '—';
     return '<tr>' +
       '<td><span class="tod-email">' + esc(r.customer_email || '') + '</span></td>' +
@@ -1276,7 +1267,7 @@ function renderTodayOrders() {
   var rows = slice.map(function(o, idx) {
     var srcTag = o.source === 'cc'      ? '<span class="src-tag tag-cc">CC</span>'
                : o.source === 'recharge' ? '<span class="src-tag tag-rc">RC</span>'
-               : '<span class="src-tag tag-subi">Subi</span>';
+               : '<span class="src-tag tag-rc">RC</span>';
     var name = (o.first_name || o.last_name) ? esc((o.first_name || '') + ' ' + (o.last_name || '')).trim() : '';
     var globalIdx = (pageTodayOrders - 1) * PAGE_SIZE_TODAY + idx;
     var shipCell;
@@ -1323,7 +1314,7 @@ function renderTodayOrders() {
       '<tbody>' + rows + '</tbody>' +
     '</table>' + pagBar;
 
-  /* Auto-fetch shipping for charged CC rows; Shopify tracking for billed RC/Subi */
+  /* Auto-fetch shipping for charged CC rows; Shopify tracking for billed RC rows */
   slice.forEach(function(o, idx) {
     var globalIdx = (pageTodayOrders - 1) * PAGE_SIZE_TODAY + idx;
     if (o.source === 'cc' && o.cc_charge_status === 'CHARGED') {
@@ -1398,13 +1389,22 @@ function autoCheckShopifyTracking(idx, email) {
 }
 
 function buildShippingHtml(orders) {
-  var todayStr  = new Date().toLocaleDateString('en-CA');
-  /* CC stores dateCreated in EDT (UTC-4) — must parse with offset so that
-     early-morning CEST charges (which are previous-day EDT) map to today CEST. */
+  var todayStr  = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Amsterdam' });
+  /* CC stores dateCreated in America/New_York (EDT summer = UTC-4, EST winter = UTC-5).
+     Compute the offset dynamically so the function works year-round, then rebase to
+     Amsterdam local date (the portal's timezone) for the isToday comparison. */
   function ccDateStr(dateCreated) {
     if (!dateCreated) return '';
-    var dt = new Date(dateCreated.replace(' ', 'T') + '-04:00');
-    return isNaN(dt) ? '' : dt.toLocaleDateString('en-CA');
+    var iso     = dateCreated.replace(' ', 'T');
+    var noonUTC = new Date(iso.split('T')[0] + 'T12:00:00Z');
+    var nyHour  = parseInt(new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York', hour: 'numeric', hour12: false
+    }).format(noonUTC));
+    var off     = nyHour - 12;                              /* -4 EDT, -5 EST */
+    var sign    = off < 0 ? '-' : '+';
+    var pad     = String(Math.abs(off)).padStart(2, '0');
+    var dt      = new Date(iso + sign + pad + ':00');
+    return isNaN(dt) ? '' : dt.toLocaleDateString('en-CA', { timeZone: 'Europe/Amsterdam' });
   }
   var todaySubs = orders.filter(function(o) {
     var isToday = ccDateStr(o.dateCreated) === todayStr;

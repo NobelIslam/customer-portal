@@ -8,7 +8,6 @@ CREATE TABLE IF NOT EXISTS customers (
   email         TEXT UNIQUE NOT NULL,
   cc_member_id  TEXT,
   recharge_id   TEXT,
-  subi_id       TEXT,
   first_name    TEXT,
   last_name     TEXT,
   first_seen_at TIMESTAMPTZ DEFAULT NOW(),
@@ -17,7 +16,6 @@ CREATE TABLE IF NOT EXISTS customers (
 
 CREATE INDEX IF NOT EXISTS customers_cc_idx       ON customers (cc_member_id);
 CREATE INDEX IF NOT EXISTS customers_recharge_idx ON customers (recharge_id);
-CREATE INDEX IF NOT EXISTS customers_subi_idx     ON customers (subi_id);
 
 -- ────────────────────────────────────────────────────
 -- subscriptions: one row per active or historical sub
@@ -25,7 +23,7 @@ CREATE INDEX IF NOT EXISTS customers_subi_idx     ON customers (subi_id);
 -- ────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS subscriptions (
   id              TEXT PRIMARY KEY,
-  source          TEXT NOT NULL,             -- 'cc' | 'recharge' | 'subi'
+  source          TEXT NOT NULL,             -- 'cc' | 'recharge'
   native_id       TEXT NOT NULL,             -- the platform's own id
   customer_id     INTEGER REFERENCES customers(id) ON DELETE SET NULL,
   customer_email  TEXT,                       -- denormalised for fast lookup
@@ -112,14 +110,14 @@ CREATE INDEX IF NOT EXISTS events_kind_idx ON events (kind);
 -- 15-min cron can pull deltas instead of full history
 -- ────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS sync_state (
-  source            TEXT PRIMARY KEY,         -- 'cc' | 'recharge' | 'subi'
+  source            TEXT PRIMARY KEY,         -- 'cc' | 'recharge'
   last_full_sync_at TIMESTAMPTZ,
   last_delta_sync_at TIMESTAMPTZ,
   last_error        TEXT,
   last_error_at     TIMESTAMPTZ
 );
 
-INSERT INTO sync_state (source) VALUES ('cc'), ('recharge'), ('subi')
+INSERT INTO sync_state (source) VALUES ('cc'), ('recharge')
 ON CONFLICT (source) DO NOTHING;
 
 -- ────────────────────────────────────────────────────

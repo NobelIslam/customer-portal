@@ -105,12 +105,11 @@ async function upsertCustomer(opts) {
   if (!email) return null;
 
   const sql = `
-    INSERT INTO customers (email, cc_member_id, recharge_id, subi_id, first_name, last_name, last_seen_at)
-    VALUES ($1, $2, $3, $4, $5, $6, NOW())
+    INSERT INTO customers (email, cc_member_id, recharge_id, first_name, last_name, last_seen_at)
+    VALUES ($1, $2, $3, $4, $5, NOW())
     ON CONFLICT (email) DO UPDATE SET
       cc_member_id = COALESCE(EXCLUDED.cc_member_id, customers.cc_member_id),
       recharge_id  = COALESCE(EXCLUDED.recharge_id,  customers.recharge_id),
-      subi_id      = COALESCE(EXCLUDED.subi_id,      customers.subi_id),
       first_name   = COALESCE(EXCLUDED.first_name,   customers.first_name),
       last_name    = COALESCE(EXCLUDED.last_name,    customers.last_name),
       last_seen_at = NOW()
@@ -120,7 +119,6 @@ async function upsertCustomer(opts) {
     email,
     opts.cc_member_id || null,
     opts.recharge_id  || null,
-    opts.subi_id      || null,
     opts.first_name   || null,
     opts.last_name    || null
   ]);

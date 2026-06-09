@@ -16,7 +16,6 @@ const TOKEN_SECRET   = process.env.TOKEN_SECRET || 'tgp-portal-secret-2026';
 const ADMIN_BASE_URL = process.env.BASE_URL || 'https://help.thegreatproject.com';
 const CC_API_BASE    = 'https://api.checkoutchamp.com';
 const RC_API_BASE    = 'https://api.rechargeapps.com';
-const SUBI_API_BASE  = 'https://api.subi.co/public/v1.0';
 const SHOPIFY_STORE  = process.env.SHOPIFY_STORE  || 'bigferverv.myshopify.com';
 const SHOPIFY_TOKEN  = process.env.SHOPIFY_ACCESS_TOKEN || '';
 
@@ -41,6 +40,22 @@ function amsMidnightUTC(d) {
     timeZone: 'Europe/Amsterdam', hour: 'numeric', hour12: false
   }).format(noonUTC)) - 12;
   return new Date(new Date(date + 'T00:00:00Z').getTime() - offset * 3600000);
+}
+
+/* Parse a CC dateCreated string (e.g. "2026-06-08 09:07:12") as a proper UTC Date.
+   CC runs on America/New_York (EDT = UTC-4 in summer, EST = UTC-5 in winter).
+   Using a hardcoded -04:00 offset breaks in winter — this computes it dynamically. */
+function ccParseDate(s) {
+  if (!s) return null;
+  var iso     = s.replace(' ', 'T');
+  var noonUTC = new Date(iso.split('T')[0] + 'T12:00:00Z');
+  var nyHour  = parseInt(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', hour: 'numeric', hour12: false
+  }).format(noonUTC));
+  var off     = nyHour - 12;                                   /* -4 EDT, -5 EST */
+  var sign    = off < 0 ? '-' : '+';
+  var pad     = String(Math.abs(off)).padStart(2, '0');
+  return new Date(iso + sign + pad + ':00');
 }
 
 function adminCreateToken(payload) {
@@ -778,10 +793,8 @@ router.get('/api/shopify/tracking', async function(req, res) {
 });
 
 /* ── GET /admin/api/today-orders — subscriptions billed today ──
-   Always queries CC order/query API directly for today's recurring
-   charges so orders billed >30 days into the subscription are never
-   missed due to the delta-sync window. DB results for Recharge/Subi
-   come from the last_billed_at / next_bill_at columns as before.   */
+   CC and Recharge are queried live. DB is used only as a fallback
+   for Recharge rows not yet surfaced by the live API.              */
 
 const TEST_EMAILS = new Set([
   'nobel@eydigitalmedia.com',
@@ -838,8 +851,8 @@ router.get('/api/today-orders', async function(req, res) {
               /* Keep only transactions within the CEST today window */
               var ds = (t.dateCreated || '');
               if (ds) {
-                var dt = new Date(ds.replace(' ', 'T') + '-04:00');
-                if (isNaN(dt) || dt < cestStart || dt >= cestEnd) return;
+                var dt = ccParseDate(ds);
+                if (!dt || isNaN(dt) || dt < cestStart || dt >= cestEnd) return;
               }
               var email = (t.emailAddress || '').trim().toLowerCase();
               if (!email || seenEmails.includes(email) || TEST_EMAILS.has(email)) return;
@@ -979,41 +992,18 @@ router.get('/api/today-orders', async function(req, res) {
         return rows;
       })(),
 
-      /* ── Subi: DB query only — CC is fully handled by live API queries above ──
-         CC pending comes from live purchase/query (ccPendingRows) so the DB is
-         not used for CC; stale DB CC rows (e.g. RECYCLE_FAILED subs not yet
-         re-synced) would otherwise create ghost entries.                       */
-      db.many(`
-        SELECT s.id, s.source, s.native_id, s.customer_email, s.product,
-               s.status, s.price_cents, s.next_bill_at, s.frequency,
-               s.last_billed_at, c.first_name, c.last_name
-        FROM subscriptions s
-        LEFT JOIN customers c ON s.customer_id = c.id
-        WHERE s.status = 'ACTIVE'
-          AND s.source = 'subi'
-          AND (
-            (s.next_bill_at >= $1 AND s.next_bill_at < $2)
-            OR (s.last_billed_at >= $1 AND s.last_billed_at < $2)
-          )
-        ORDER BY s.price_cents DESC
-      `, [todayStart, todayEnd])
+      Promise.resolve([])   /* placeholder to keep destructuring indexes aligned */
     ]);
 
-    /* Merge: CC charged (live txns) + CC pending (live purchases) + RC (live) + DB (Subi + DB-only CC)
-       Priority: ccRows (charged) > ccPendingRows (live pending) > dbRows (stale-sync fallback) */
-    const ccLiveEmails    = new Set(ccRows.map(function(r) { return r.customer_email; }));
-    const ccPendingEmails = new Set(ccPendingRows.map(function(r) { return r.customer_email; }));
-    const rcLiveEmails    = new Set(rcRows.map(function(r) { return r.customer_email; }));
+    /* Merge: CC charged (live) + CC pending (live) + RC (live)
+       Priority: ccRows (charged) > ccPendingRows (pending) */
+    const ccLiveEmails = new Set(ccRows.map(function(r) { return r.customer_email; }));
 
-    /* Remove live-pending rows that were already charged */
     const filteredCcPending = ccPendingRows.filter(function(r) {
       return !ccLiveEmails.has(r.customer_email);
     });
 
-    /* DB rows are Subi only — no CC or RC rows to filter out */
-    const filteredDb = dbRows;
-
-    const allOrders = ccRows.concat(filteredCcPending).concat(rcRows).concat(filteredDb);
+    const allOrders = ccRows.concat(filteredCcPending).concat(rcRows);
     console.log('[today-orders] total:', allOrders.length);
     res.json({ orders: allOrders, count: allOrders.length });
   } catch (err) {
@@ -1040,9 +1030,7 @@ router.post('/api/magic-link', async function(req, res) {
 
     const sources    = dbRows.map(function(r) { return r.source; });
     const foundIn    = [...new Set(sources.map(function(s) { return s === 'cc' ? 'checkoutchamp' : s; }))];
-    const primaryType = sources.includes('cc')       ? 'checkoutchamp'
-                      : sources.includes('recharge') ? 'recharge'
-                      : 'subi';
+    const primaryType = sources.includes('cc') ? 'checkoutchamp' : 'recharge';
 
     let ccMember = null;
     if (primaryType === 'checkoutchamp') {
@@ -1296,10 +1284,11 @@ router.get('/api/debug/billed-and-exported', async function(req, res) {
 router.get('/api/debug/today-breakdown', async function(req, res) {
   try {
     const now        = new Date();
-    const todayStart = new Date(now); todayStart.setUTCHours(0, 0, 0, 0);
-    const todayEnd   = new Date(todayStart); todayEnd.setUTCDate(todayEnd.getUTCDate() + 1);
-    const todayStr   = (now.getMonth()+1).toString().padStart(2,'0') + '/' +
-                       now.getDate().toString().padStart(2,'0') + '/' + now.getFullYear();
+    const todayAmsD  = amsDateStr(now);
+    const todayStart = amsMidnightUTC(now);
+    const todayEnd   = new Date(todayStart.getTime() + 24 * 3600 * 1000);
+    const [dby, dbm, dbd] = todayAmsD.split('-');
+    const todayStr   = dbm + '/' + dbd + '/' + dby;
 
     /* ── 1. DB: all sources scheduled/billed today ── */
     const dbRows = await db.many(`
@@ -1391,7 +1380,7 @@ router.get('/api/debug/today-breakdown', async function(req, res) {
       else                cc_billed_missing_db.push(entry);   /* CC charged, not in DB */
     });
 
-    /* Group non-CC (Recharge/Subi) separately — CC API doesn't cover them */
+    /* Group non-CC (Recharge) separately — CC API doesn't cover them */
     const otherBySource = {};
     dbOtherRows.forEach(function(r) {
       if (!otherBySource[r.source]) otherBySource[r.source] = [];
@@ -1401,12 +1390,11 @@ router.get('/api/debug/today-breakdown', async function(req, res) {
     res.json({
       as_of:     now.toISOString(),
       today_utc: todayStart.toISOString().slice(0, 10),
-      note: 'CC cross-reference compares CC-source DB subscriptions vs CC order/query API. Recharge/Subi are listed separately — they are not in the CC API.',
+      note: 'CC cross-reference compares CC-source DB subscriptions vs CC order/query API. Recharge is listed separately — it is not in the CC API.',
       summary: {
         db_total:              dbRows.length,
         db_cc_source:          dbCcRows.length,
         db_recharge:           (otherBySource.recharge||[]).length,
-        db_subi:               (otherBySource.subi||[]).length,
         cc_api_all_today:      ccAllToday,
         cc_api_recurring:      ccRecurring.length,
         cc_api_new_sales:      ccNewSales.length,
@@ -1418,8 +1406,7 @@ router.get('/api/debug/today-breakdown', async function(req, res) {
       cc_billed_and_in_db:          cc_billed_and_in_db,
       cc_scheduled_not_billed_yet:  cc_scheduled_not_yet,
       cc_billed_missing_from_db:    cc_billed_missing_db,
-      recharge_scheduled_today:     otherBySource.recharge || [],
-      subi_scheduled_today:         otherBySource.subi     || []
+      recharge_scheduled_today:     otherBySource.recharge || []
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

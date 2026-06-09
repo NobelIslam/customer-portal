@@ -12,8 +12,6 @@ app.use(cors({ origin: '*' }));
 const RECHARGE_API_KEY = process.env.RECHARGE_API_KEY;
 const RECHARGE_BASE    = 'https://api.rechargeapps.com';
 const KLAVIYO_API_KEY  = process.env.KLAVIYO_API_KEY;
-const SUBI_API_KEY     = process.env.SUBI_API_KEY;
-const SUBI_BASE        = 'https://api.subi.co/public/v1.0';
 
 /* ════════════════════════════════════════════════════
    PORTAL MODE CONFIG
@@ -36,13 +34,6 @@ console.log('Portal mode:', PORTAL_MODE);
 function rcHeaders() {
   return {
     'X-Recharge-Access-Token': RECHARGE_API_KEY,
-    'Content-Type': 'application/json'
-  };
-}
-
-function subiHeaders() {
-  return {
-    'X-Api-Key': SUBI_API_KEY,
     'Content-Type': 'application/json'
   };
 }
@@ -279,10 +270,8 @@ app.get('/portal-access', function(req, res) {
 });
 
 /* POST /magic-login/request
-   Checks ALL three sources: CC, Recharge, Subi
-   foundIn[] carries every source the customer exists in
-   Token type = primary source (cc > recharge > subi),
-   but foundIn is stored in token so dashboard fetches all */
+   Checks CC and Recharge; foundIn[] carries every source the customer exists in.
+   Token type = primary source (cc > recharge). */
 app.post('/magic-login/request', async function(req, res) {
   try {
     var email = (req.body.email || '').trim().toLowerCase();
@@ -322,16 +311,6 @@ app.post('/magic-login/request', async function(req, res) {
       }
     } catch (e) { console.error('CheckoutChamp lookup error:', e.message); }
 
-    /* ── 3. Check Subi ── */
-    try {
-      var subiRes  = await fetch(SUBI_BASE + '/subscribers/?email=' + encodeURIComponent(email), { headers: subiHeaders() });
-      var subiData = await subiRes.json();
-      if (subiData.results && subiData.results.length > 0) {
-        foundIn.push('subi');
-        console.log('Subi subscriber found for', email, '— subiId:', subiData.results[0].id);
-      }
-    } catch (e) { console.error('Subi lookup error:', e.message); }
-
     if (foundIn.length === 0) {
       return res.json({
         found: false,
@@ -339,15 +318,8 @@ app.post('/magic-login/request', async function(req, res) {
       });
     }
 
-    /* ── Determine primary type for token (cc > recharge > subi) ── */
-    var primaryType;
-    if (foundIn.includes('checkoutchamp')) {
-      primaryType = 'checkoutchamp';
-    } else if (foundIn.includes('recharge')) {
-      primaryType = 'recharge';
-    } else {
-      primaryType = 'subi';
-    }
+    /* ── Determine primary type for token (cc > recharge) ── */
+    var primaryType = foundIn.includes('checkoutchamp') ? 'checkoutchamp' : 'recharge';
 
     var token;
     var magicLink;
@@ -363,17 +335,10 @@ app.post('/magic-login/request', async function(req, res) {
         password:     tempPassword,
         foundIn:      foundIn   /* ← carries ALL sources */
       });
-    } else if (primaryType === 'recharge') {
+    } else {
       token = createToken({
         email:   email,
         type:    'recharge',
-        foundIn: foundIn
-      });
-    } else {
-      /* Subi-only */
-      token = createToken({
-        email:   email,
-        type:    'subi',
         foundIn: foundIn
       });
     }
@@ -971,293 +936,6 @@ app.post('/recharge-portal/verify', async function(req, res) {
   res.json({ success: true, email: data.email, foundIn: data.foundIn || ['recharge'] });
 });
 
-/* ════════════════════════════════════════════════════
-   SUBI TEST ENDPOINTS
-════════════════════════════════════════════════════ */
-
-/* GET /subi/test?email=xxx
-   - Verifies the email exists in Subi
-   - Returns a magic link (same pattern as /recharge-portal/test)
-   - Also returns the raw subscriber record so you can confirm the data */
-app.get('/subi/test', async function(req, res) {
-  var email = (req.query.email || '').trim().toLowerCase();
-  if (!email) return res.status(400).json({ error: 'email required' });
-
-  try {
-    var subRes  = await fetch(SUBI_BASE + '/subscribers/?email=' + encodeURIComponent(email), { headers: subiHeaders() });
-    if (!subRes.ok) {
-      var errText = await subRes.text();
-      return res.status(subRes.status).json({ error: 'Subi API error: ' + errText.substring(0, 200) });
-    }
-    var subData = await subRes.json();
-    if (!subData.results || subData.results.length === 0) {
-      return res.status(404).json({ error: 'No Subi subscriber found for this email.' });
-    }
-
-    var subscriber     = subData.results[0];
-    var subiCustomerId = subscriber.id;
-
-    /* Also fetch their contracts so you can see what comes back */
-    var contractRes  = await fetch(
-      SUBI_BASE + '/subscription-contracts/?customer_id=' + subiCustomerId + '&limit=100',
-      { headers: subiHeaders() }
-    );
-    var contractData = contractRes.ok ? await contractRes.json() : { results: [] };
-
-    /* Generate a portal magic link for this email */
-    var token = createToken({ email: email, type: 'subi', foundIn: ['subi'] });
-    var link  = PORTAL_URLS.unified + '?token=' + token;
-
-    res.json({
-      found:           true,
-      magicLink:       link,
-      expiresIn:       '24 hours',
-      mode:            PORTAL_MODE,
-      /* Raw Subi data — useful for debugging field names */
-      subiCustomerId:  subiCustomerId,
-      subscriber:      subscriber,
-      contractCount:   (contractData.results || []).length,
-      contracts:       contractData.results || []
-    });
-
-  } catch (e) {
-    res.status(500).json({ error: 'Subi test error: ' + e.message });
-  }
-});
-
-/* GET /subi/debug?email=xxx
-   Lighter version — just returns raw API responses with no token generation.
-   Useful for checking exact field names / data shapes from Subi. */
-app.get('/subi/debug', async function(req, res) {
-  var email = (req.query.email || '').trim().toLowerCase();
-  if (!email) return res.status(400).json({ error: 'email required' });
-
-  var result = { email: email, subscriberLookup: null, contractsLookup: null };
-
-  try {
-    var subRes  = await fetch(SUBI_BASE + '/subscribers/?email=' + encodeURIComponent(email), { headers: subiHeaders() });
-    result.subscriberLookup = { status: subRes.status, body: await subRes.json() };
-  } catch (e) {
-    result.subscriberLookup = { error: e.message };
-  }
-
-  /* If subscriber found, also pull contracts */
-  try {
-    var results = result.subscriberLookup && result.subscriberLookup.body && result.subscriberLookup.body.results;
-    if (results && results.length > 0) {
-      var subiId       = results[0].id;
-      var contractRes  = await fetch(
-        SUBI_BASE + '/subscription-contracts/?customer_id=' + subiId + '&limit=100',
-        { headers: subiHeaders() }
-      );
-      result.contractsLookup = { status: contractRes.status, body: await contractRes.json() };
-    } else {
-      result.contractsLookup = { skipped: 'no subscriber found' };
-    }
-  } catch (e) {
-    result.contractsLookup = { error: e.message };
-  }
-
-  res.json(result);
-});
-
-/* ════════════════════════════════════════════════════
-   SUBI SUBSCRIPTIONS
-════════════════════════════════════════════════════ */
-
-/* GET /subi/subscriptions?email=xxx
-   Step 1: find subscriber by email → get their Subi customer_id
-   Step 2: fetch all subscription contracts for that customer_id
-   Returns normalised array matching the shape used by CC/Recharge */
-app.get('/subi/subscriptions', async function(req, res) {
-  try {
-    var email = (req.query.email || '').trim().toLowerCase();
-    if (!email) return res.status(400).json({ error: 'email required' });
-
-    /* ── Step 1: find subscriber ── */
-    var subRes  = await fetch(SUBI_BASE + '/subscribers/?email=' + encodeURIComponent(email), { headers: subiHeaders() });
-    if (!subRes.ok) {
-      var errText = await subRes.text();
-      console.error('Subi subscribers lookup HTTP', subRes.status, errText.substring(0, 200));
-      return res.status(subRes.status).json({ error: 'Subi API error: ' + errText.substring(0, 100) });
-    }
-    var subData = await subRes.json();
-
-    if (!subData.results || subData.results.length === 0) {
-      return res.json({ success: true, subscriptions: [] });
-    }
-
-    var subiCustomerId = subData.results[0].id;
-    console.log('Subi subscriber found for', email, '— subiCustomerId:', subiCustomerId);
-
-    /* ── Step 2: fetch contracts ── */
-    var contractRes  = await fetch(
-      SUBI_BASE + '/subscription-contracts/?customer_id=' + subiCustomerId + '&limit=100',
-      { headers: subiHeaders() }
-    );
-    if (!contractRes.ok) {
-      var errText2 = await contractRes.text();
-      console.error('Subi contracts HTTP', contractRes.status, errText2.substring(0, 200));
-      return res.status(contractRes.status).json({ error: 'Subi contracts error: ' + errText2.substring(0, 100) });
-    }
-    var contractData = await contractRes.json();
-    var contracts    = contractData.results || [];
-
-    console.log('Subi contracts found:', contracts.length, 'for customer', subiCustomerId);
-
-    /* ── Normalise to a consistent shape ── */
-    var subscriptions = contracts.map(function(c) {
-      /* Build a human-readable frequency string, e.g. "Every 1 MONTH" */
-      var freq = c.billing_policy_interval_count && c.billing_policy_interval
-        ? 'Every ' + c.billing_policy_interval_count + ' ' + c.billing_policy_interval
-        : '';
-
-      /* Product name from first line item (most contracts have one) */
-      var productName = (c.lines && c.lines.length > 0)
-        ? (c.lines[0].title || c.lines[0].variant_title || 'Subscription')
-        : 'Subscription';
-
-      /* Variant detail if present */
-      var variantTitle = (c.lines && c.lines.length > 0) ? (c.lines[0].variant_title || '') : '';
-
-      /* Price: use total_price from contract */
-      var price = c.total_price != null ? c.total_price : '';
-      var currency = c.currency_code || '';
-
-      return {
-        source:       'subi',                               /* flag so dashboard can label/route correctly */
-        id:           c.id,                                 /* Subi contract id — used for actions */
-        status:       (c.status || 'ACTIVE').toUpperCase(),
-        product:      productName,
-        variantTitle: variantTitle,
-        price:        price,
-        currency:     currency,
-        frequency:    freq,
-        nextBillDate: c.next_billing_date || '',
-        linesCount:   c.lines_count || (c.lines ? c.lines.length : 0),
-        lastPaymentStatus: c.last_payment_status || ''
-      };
-    });
-
-    /* Sort: ACTIVE first, then PAUSED, then others */
-    var statusOrder = { ACTIVE: 0, PAUSED: 1, FAILED: 2, CANCELLED: 3, EXPIRED: 4, DEACTIVATED: 5 };
-    subscriptions.sort(function(a, b) {
-      return (statusOrder[a.status] || 9) - (statusOrder[b.status] || 9);
-    });
-
-    res.json({ success: true, subscriptions: subscriptions });
-
-  } catch (err) {
-    console.error('Subi subscriptions error:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-/* ── Subi subscription actions ─────────────────────────────
-   All follow the same pattern:
-   POST /subi/subscription/:id/<action>
-   Proxies to SUBI_BASE/subscription-contracts/:id/<action>/
-─────────────────────────────────────────────────────────── */
-
-/* POST /subi/subscription/:id/cancel */
-app.post('/subi/subscription/:id/cancel', async function(req, res) {
-  try {
-    var contractId = req.params.id;
-    var r = await fetch(SUBI_BASE + '/subscription-contracts/' + contractId + '/cancel/', {
-      method: 'POST',
-      headers: subiHeaders(),
-      body: JSON.stringify({})
-    });
-    if (!r.ok) {
-      var errText = await r.text();
-      console.error('Subi cancel HTTP', r.status, errText.substring(0, 200));
-      return res.status(r.status).json({ error: 'Subi cancel failed: ' + errText.substring(0, 100) });
-    }
-    console.log('Subi cancel OK for contract', contractId);
-    res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-/* POST /subi/subscription/:id/pause */
-app.post('/subi/subscription/:id/pause', async function(req, res) {
-  try {
-    var contractId = req.params.id;
-    var r = await fetch(SUBI_BASE + '/subscription-contracts/' + contractId + '/pause/', {
-      method: 'POST',
-      headers: subiHeaders(),
-      body: JSON.stringify({})
-    });
-    if (!r.ok) {
-      var errText = await r.text();
-      console.error('Subi pause HTTP', r.status, errText.substring(0, 200));
-      return res.status(r.status).json({ error: 'Subi pause failed: ' + errText.substring(0, 100) });
-    }
-    console.log('Subi pause OK for contract', contractId);
-    res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-/* POST /subi/subscription/:id/resume */
-app.post('/subi/subscription/:id/resume', async function(req, res) {
-  try {
-    var contractId = req.params.id;
-    var r = await fetch(SUBI_BASE + '/subscription-contracts/' + contractId + '/resume/', {
-      method: 'POST',
-      headers: subiHeaders(),
-      body: JSON.stringify({})
-    });
-    if (!r.ok) {
-      var errText = await r.text();
-      console.error('Subi resume HTTP', r.status, errText.substring(0, 200));
-      return res.status(r.status).json({ error: 'Subi resume failed: ' + errText.substring(0, 100) });
-    }
-    console.log('Subi resume OK for contract', contractId);
-    res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-/* POST /subi/subscription/:id/skip */
-app.post('/subi/subscription/:id/skip', async function(req, res) {
-  try {
-    var contractId = req.params.id;
-    var r = await fetch(SUBI_BASE + '/subscription-contracts/' + contractId + '/skip/', {
-      method: 'POST',
-      headers: subiHeaders(),
-      body: JSON.stringify({})
-    });
-    if (!r.ok) {
-      var errText = await r.text();
-      console.error('Subi skip HTTP', r.status, errText.substring(0, 200));
-      return res.status(r.status).json({ error: 'Subi skip failed: ' + errText.substring(0, 100) });
-    }
-    console.log('Subi skip OK for contract', contractId);
-    res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-/* POST /subi/subscription/:id/reschedule
-   body: { date: "2025-09-01T00:00:00Z" }  (ISO 8601) */
-app.post('/subi/subscription/:id/reschedule', async function(req, res) {
-  try {
-    var contractId = req.params.id;
-    var date = req.body.date;
-    if (!date) return res.status(400).json({ error: 'date required (ISO 8601 format)' });
-    var r = await fetch(SUBI_BASE + '/subscription-contracts/' + contractId + '/reschedule/', {
-      method: 'POST',
-      headers: subiHeaders(),
-      body: JSON.stringify({ date: date })
-    });
-    if (!r.ok) {
-      var errText = await r.text();
-      console.error('Subi reschedule HTTP', r.status, errText.substring(0, 200));
-      return res.status(r.status).json({ error: 'Subi reschedule failed: ' + errText.substring(0, 100) });
-    }
-    var data = await r.json().catch(function() { return {}; });
-    console.log('Subi reschedule OK for contract', contractId, '→', date);
-    res.json({ success: true, nextBillingDate: data.date || date });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
 /* ════════════════════════════════════════════════════ */
 app.get('/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
 
@@ -1288,7 +966,7 @@ const PORT = process.env.PORT || 3000;
 
   /* 2. Start the sync cron unless explicitly disabled */
   if (process.env.DATABASE_URL && process.env.SYNC_DISABLED !== 'true') {
-    /* Every 5 min — pulls deltas from CC + Recharge + Subi */
+    /* Every 5 min — pulls deltas from CC + Recharge */
     cron.schedule('*/5 * * * *', function() {
       adminSync.runSyncCycle({ full: false }).catch(function(err) {
         console.error('[sync-cron] error:', err.message);

@@ -1,6 +1,6 @@
 /* ════════════════════════════════════════════════════
-   admin/sync.js — pulls from CC + Recharge + Subi
-   into Postgres. Run every 15 min by node-cron.
+   admin/sync.js — pulls from CC + Recharge into Postgres.
+   Run every 5 min by node-cron.
    ════════════════════════════════════════════════════ */
 
 const fetch = require('node-fetch');
@@ -8,7 +8,6 @@ const db    = require('./db');
 
 const CC_BASE       = 'https://api.checkoutchamp.com';
 const RECHARGE_BASE = 'https://api.rechargeapps.com';
-const SUBI_BASE     = 'https://api.subi.co/public/v1.0';
 
 /* ────────────────────────────────────────────────
    Helpers
@@ -446,111 +445,6 @@ async function upsertRechargeCharge(c) {
 }
 
 /* ════════════════════════════════════════════════════
-   SUBI SYNC
-   ════════════════════════════════════════════════════ */
-
-async function syncSubi(opts) {
-  if (!process.env.SUBI_API_KEY) {
-    throw new Error('SUBI_API_KEY not set');
-  }
-
-  const headers = { 'X-Api-Key': process.env.SUBI_API_KEY, 'Content-Type': 'application/json' };
-
-  let subsTouched = 0;
-  let page = 1;
-  const limit = 100;
-  while (page <= 50) {
-    const url = SUBI_BASE + '/subscription-contracts/?limit=' + limit + '&page=' + page;
-    const r   = await fetch(url, { headers });
-    if (!r.ok) {
-      console.error('[sync:subi] HTTP', r.status, await r.text().then(function(t){ return t.substring(0,200); }));
-      break;
-    }
-    const d    = await r.json();
-    const data = d.results || [];
-    for (const c of data) await upsertSubiContract(c);
-    subsTouched += data.length;
-    console.log('[sync:subi] page', page, '| got', data.length, '| total', subsTouched);
-    if (data.length < limit) break;
-    page++;
-  }
-
-  console.log('[sync:subi] done | subs:', subsTouched);
-  return { subs: subsTouched };
-}
-
-async function upsertSubiContract(c) {
-  /* Subi contracts include customer_email on the contract itself in most schemas;
-     fall back to customer lookup if not. */
-  let email = c.customer_email || c.email || null;
-  if (!email && c.customer_id) {
-    /* lookup */
-    const r = await fetch(SUBI_BASE + '/subscribers/' + c.customer_id + '/', {
-      headers: { 'X-Api-Key': process.env.SUBI_API_KEY }
-    });
-    if (r.ok) {
-      const d = await r.json();
-      email = d.email || (d.results && d.results[0] && d.results[0].email) || null;
-    }
-  }
-  email = (email || '').trim().toLowerCase();
-  if (!email) return;
-
-  const customerId = await db.upsertCustomer({
-    email:   email,
-    subi_id: c.customer_id ? String(c.customer_id) : null
-  });
-
-  const id          = 'subi:' + c.id;
-  const status      = (c.status || 'ACTIVE').toUpperCase();
-  const priceCents  = toCents(c.total_price);
-  const product     = (c.lines && c.lines[0] && (c.lines[0].title || c.lines[0].variant_title)) || 'Subscription';
-  const frequency   = c.billing_policy_interval_count && c.billing_policy_interval
-    ? 'Every ' + c.billing_policy_interval_count + ' ' + c.billing_policy_interval
-    : null;
-  const nextBillAt  = parseDate(c.next_billing_date);
-  const startedAt   = parseDate(c.created_at);
-  const cancelledAt = parseDate(c.cancelled_at);
-
-  const existing = await db.one('SELECT id, status FROM subscriptions WHERE id = $1', [id]);
-  const isNew    = !existing;
-  const becameCancelled = existing && existing.status !== 'CANCELLED' && status === 'CANCELLED';
-
-  await db.query(`
-    INSERT INTO subscriptions
-      (id, source, native_id, customer_id, customer_email, product,
-       status, price_cents, currency, frequency, next_bill_at, started_at, cancelled_at, raw, last_synced_at)
-    VALUES ($1,'subi',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
-    ON CONFLICT (id) DO UPDATE SET
-      customer_id    = EXCLUDED.customer_id,
-      customer_email = EXCLUDED.customer_email,
-      product        = EXCLUDED.product,
-      status         = EXCLUDED.status,
-      price_cents    = EXCLUDED.price_cents,
-      frequency      = EXCLUDED.frequency,
-      next_bill_at   = EXCLUDED.next_bill_at,
-      cancelled_at   = EXCLUDED.cancelled_at,
-      raw            = EXCLUDED.raw,
-      last_synced_at = NOW(),
-      last_billed_at = CASE
-        WHEN subscriptions.next_bill_at IS NOT NULL
-             AND subscriptions.next_bill_at < NOW()
-             AND EXCLUDED.next_bill_at > subscriptions.next_bill_at
-        THEN NOW()
-        ELSE subscriptions.last_billed_at
-      END
-  `, [
-    id, String(c.id), customerId, email,
-    product, status, priceCents,
-    c.currency_code || 'USD',
-    frequency, nextBillAt, startedAt, cancelledAt, c
-  ]);
-
-  if (isNew)            await db.recordEvent('sub_created',   'subi', email, { product: product, price: c.total_price });
-  if (becameCancelled)  await db.recordEvent('sub_cancelled', 'subi', email, { product: product });
-}
-
-/* ════════════════════════════════════════════════════
    TODAY'S BILLINGS SYNC
    Queries CC order/query for today's date to catch
    any subscriptions billed today that the 30-day
@@ -653,7 +547,7 @@ async function runSyncCycle(opts) {
   console.log('[sync] starting cycle | full:', opts.full === true);
 
   const results = {};
-  const sources = ['cc', 'recharge', 'subi'];
+  const sources = ['cc', 'recharge'];
 
   for (const source of sources) {
     const start = Date.now();
@@ -661,7 +555,6 @@ async function runSyncCycle(opts) {
       let r;
       if (source === 'cc')       r = await syncCC(opts);
       if (source === 'recharge') r = await syncRecharge(opts);
-      if (source === 'subi')     r = await syncSubi(opts);
       results[source] = Object.assign({ ok: true, ms: Date.now() - start }, r);
       await setSyncState(source, opts.full
         ? { last_full_sync_at: new Date(), last_delta_sync_at: new Date(), last_error: null }
@@ -691,6 +584,5 @@ module.exports = {
   runSyncCycle:       runSyncCycle,
   syncCC:             syncCC,
   syncRecharge:       syncRecharge,
-  syncSubi:           syncSubi,
   syncTodayBillings:  syncTodayBillings
 };
