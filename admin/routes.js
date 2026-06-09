@@ -1130,7 +1130,9 @@ router.get('/api/activity-feed', auth.requireAdmin, async function(req, res) {
           const d = await r.json();
           const subs = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
           subs.forEach(function(s) {
-            var ts = ccParseDate(s.dateUpdated || s.cancelDate || s.dateCreated || '');
+            /* Only use dateUpdated/cancelDate — never dateCreated.
+               A sub created recently but cancelled months ago must not appear. */
+            var ts = ccParseDate(s.dateUpdated || s.cancelDate || '');
             if (!ts || ts < since) return;
             var email = (s.emailAddress || '').trim().toLowerCase();
             if (!email || TEST_EMAILS.has(email)) return;
@@ -1254,8 +1256,9 @@ router.get('/api/activity-feed', auth.requireAdmin, async function(req, res) {
           const batch = d.subscriptions || [];
           batch.forEach(function(s) {
             if (!s.customer_id) return;
-            var cancelTs = s.cancelled_at || s.updated_at;
-            if (!cancelTs || new Date(cancelTs) < since) return;
+            /* Require actual cancelled_at in window — updated_at can be recent
+               even for subs cancelled months ago, which would cause false entries. */
+            if (!s.cancelled_at || new Date(s.cancelled_at) < since) return;
             subs.push(s);
           });
           if (batch.length < 250) break;
@@ -1274,7 +1277,7 @@ router.get('/api/activity-feed', auth.requireAdmin, async function(req, res) {
             kind:    'sub_cancelled',
             source:  'recharge',
             email:   email,
-            ts:      s.cancelled_at || s.updated_at,
+            ts:      s.cancelled_at,
             payload: { product: s.product_title || null, reason: s.cancellation_reason || null }
           });
         });
