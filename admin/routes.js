@@ -901,8 +901,7 @@ router.get('/api/today-orders', async function(req, res) {
             const d = await r.json();
             const subs = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
             subs.forEach(function(s) {
-              /* CC purchase/query returns nextBillDate in MM/DD/YYYY format */
-              if (s.nextBillDate !== ccTodayStr) return;
+              if (s.nextBillDate !== todayUTC) return;
               var merchant = (s.merchant || '').trim();
               if (!merchant || /paypal/i.test(merchant)) return;
               var email = (s.emailAddress || '').trim().toLowerCase();
