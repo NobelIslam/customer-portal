@@ -1289,7 +1289,7 @@ function renderTodayOrders() {
         var d = o.next_bill_at || o.last_billed_at || '';
         if (!d) return '<span style="opacity:.4">—</span>';
         var dt = new Date(d);
-        return isNaN(dt) ? esc(d) : dt.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+        return isNaN(dt) ? esc(d) : dt.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric', timeZone: 'Europe/Amsterdam' });
       })() + '</td>' +
       '<td class="tod-action">' +
         '<button class="mini-btn manage" onclick="manageCustomer(' + globalIdx + ',this)">Manage →</button>' +

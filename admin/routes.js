@@ -857,14 +857,18 @@ router.get('/api/today-orders', async function(req, res) {
               var email = (t.emailAddress || '').trim().toLowerCase();
               if (!email || seenEmails.includes(email) || TEST_EMAILS.has(email)) return;
               seenEmails.push(email);
+              /* transactions/query uses campaignName for the product; productName is also
+                 present on some accounts — try both. Convert dateCreated (CC EDT) to UTC
+                 so the frontend can display it in Amsterdam time without ambiguity. */
+              var chargedAt = ds ? (ccParseDate(ds) || now) : now;
               rows.push({
                 source: 'cc', native_id: t.orderId || null,
                 customer_email: email,
-                product: t.productName || null,
+                product: t.productName || t.campaignName || null,
                 price_cents: Math.round(parseFloat(t.amount || t.totalAmount || 0) * 100),
                 next_bill_at: null, cc_charge_status: 'CHARGED', status: 'ACTIVE',
                 first_name: t.firstName || null, last_name: t.lastName || null,
-                frequency: null, last_billed_at: ds || now.toISOString()
+                frequency: null, last_billed_at: chargedAt.toISOString()
               });
             });
             if (txns.length < 200) break;
