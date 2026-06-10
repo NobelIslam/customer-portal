@@ -1023,7 +1023,7 @@ router.get('/api/today-orders', async function(req, res) {
 router.get('/api/activity-feed', auth.requireAdmin, async function(req, res) {
   try {
     const now   = new Date();
-    const hours = Math.min(parseInt(req.query.hours || '48', 10), 72);
+    const hours = Math.min(parseInt(req.query.hours || '24', 10), 72);
     const since = new Date(now.getTime() - hours * 3600000);
 
     /* CC API takes MM/DD/YYYY. Add 1-day margin on start side so timezone
