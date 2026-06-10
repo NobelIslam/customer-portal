@@ -234,8 +234,8 @@ router.get('/api/overview', async function(req, res) {
                FROM subscriptions WHERE cancelled_at >= $1 ${NO_PAYPAL}
                GROUP BY TO_CHAR(DATE(cancelled_at), 'YYYY-MM-DD'), source ORDER BY day ASC`, [periodAgo]),
       db.many(`SELECT id, customer_email, product, source, price_cents, cancelled_at, cancel_reason
-               FROM subscriptions WHERE cancelled_at IS NOT NULL ${NO_PAYPAL}
-               ORDER BY cancelled_at DESC LIMIT 10`),
+               FROM subscriptions WHERE cancelled_at >= $1 ${NO_PAYPAL}
+               ORDER BY cancelled_at DESC LIMIT 500`, [periodAgo]),
       Promise.resolve([]),  /* recentEvents removed — activity feed has its own live endpoint */
       db.many(`SELECT product, source, COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS mrr_cents
                FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW() AND product IS NOT NULL ${NO_PAYPAL}
