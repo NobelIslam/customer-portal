@@ -244,8 +244,10 @@
     /* ── Pagination ── */
     .pag-bar {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 10px 0 0; margin-top: 6px;
+      padding: 10px 0 2px; margin-top: 6px;
       border-top: 1px solid var(--border);
+      position: sticky; bottom: 0;
+      background: var(--bg2); z-index: 2;
     }
     .pag-btn {
       background: var(--bg3); border: 1px solid var(--border2); color: var(--muted2);
@@ -462,7 +464,7 @@
           <span class="panel-title">Subscriptions billing today — CC · Recharge</span>
           <span id="today-count" style="font-size:11px;color:var(--muted2);margin-left:auto"></span>
         </div>
-        <div id="today-orders-wrap"><div class="empty">Loading…</div></div>
+        <div id="today-orders-wrap" class="feed-scroll"><div class="empty">Loading…</div></div>
       </div>
 
       <!-- Tomorrow's Scheduled Orders -->
@@ -472,7 +474,7 @@
           <span class="panel-title">All sources — CC + Recharge</span>
           <span id="tomorrow-count" style="font-size:11px;color:var(--muted2);margin-left:auto"></span>
         </div>
-        <div id="tomorrow-list"></div>
+        <div id="tomorrow-list" class="feed-scroll"></div>
       </div>
 
       <!-- Gateway breakdown — full width -->
@@ -1112,24 +1114,24 @@ function renderProductsPage() {
 
   if (!total) { el.innerHTML = '<div class="empty">No product data yet</div>'; return; }
 
-  var html = '<div class="panel-head"><span class="panel-title">Active subscriptions by product</span><span class="pag-info">' + total + ' products</span></div>' +
-    slice.map(function(p) {
-      var src = p.source ? '<span class="src-tag tag-' + (p.source==='recharge'?'rc':p.source) + '">' + p.source + '</span>' : '';
-      return '<div class="prod-row">' +
-        '<div class="prod-name">' + esc(p.product) + src + '</div>' +
-        '<div class="prod-right"><span class="prod-count">' + $n(p.n) + ' subs</span><span class="prod-mrr">' + $m(Number(p.mrr_cents)) + '/mo</span></div>' +
-      '</div>';
-    }).join('');
-
-  if (pages > 1) {
-    html += '<div class="pag-bar">' +
-      '<button class="pag-btn" onclick="productsPage(' + (pageProducts-1) + ')" ' + (pageProducts <= 1 ? 'disabled' : '') + '>← Prev</button>' +
-      '<span class="pag-info">Page ' + pageProducts + ' of ' + pages + '</span>' +
-      '<button class="pag-btn" onclick="productsPage(' + (pageProducts+1) + ')" ' + (pageProducts >= pages ? 'disabled' : '') + '>Next →</button>' +
+  var rows = slice.map(function(p) {
+    var src = p.source ? '<span class="src-tag tag-' + (p.source==='recharge'?'rc':p.source) + '">' + p.source + '</span>' : '';
+    return '<div class="prod-row">' +
+      '<div class="prod-name">' + esc(p.product) + src + '</div>' +
+      '<div class="prod-right"><span class="prod-count">' + $n(p.n) + ' subs</span><span class="prod-mrr">' + $m(Number(p.mrr_cents)) + '/mo</span></div>' +
     '</div>';
-  }
+  }).join('');
 
-  el.innerHTML = html;
+  var pagBar = pages > 1
+    ? '<div class="pag-bar">' +
+        '<button class="pag-btn" onclick="productsPage(' + (pageProducts-1) + ')" ' + (pageProducts <= 1 ? 'disabled' : '') + '>← Prev</button>' +
+        '<span class="pag-info">Page ' + pageProducts + ' of ' + pages + '</span>' +
+        '<button class="pag-btn" onclick="productsPage(' + (pageProducts+1) + ')" ' + (pageProducts >= pages ? 'disabled' : '') + '>Next →</button>' +
+      '</div>'
+    : '';
+
+  el.innerHTML = '<div class="panel-head"><span class="panel-title">Active subscriptions by product</span><span class="pag-info">' + total + ' products</span></div>' +
+    '<div class="feed-scroll">' + rows + pagBar + '</div>';
 }
 
 function productsPage(p) {
@@ -1155,30 +1157,30 @@ function renderGatewayPage() {
 
   var grandTotal = allGateway.reduce(function(s, g) { return s + g.n; }, 0);
 
-  var html = '<div class="panel-head"><span class="panel-title">CheckoutChamp — active subscriptions by gateway (future bill date only)</span><span class="pag-info">' + total + ' gateways</span></div>' +
-    slice.map(function(g) {
-      var pct = grandTotal ? ((g.n / grandTotal) * 100).toFixed(1) : 0;
-      var bar = '<div style="height:4px;border-radius:2px;background:var(--border);margin-top:4px">' +
-        '<div style="height:4px;border-radius:2px;background:var(--accent);width:' + pct + '%"></div></div>';
-      return '<div class="prod-row">' +
-        '<div class="prod-name">' + esc(g.gateway) + '</div>' +
-        '<div style="flex:1;padding:0 16px">' + bar + '</div>' +
-        '<div class="prod-right">' +
-          '<span class="prod-count">' + $n(g.n) + ' subs (' + pct + '%)</span>' +
-          '<span class="prod-mrr">' + $m(Number(g.mrr_cents)) + '/mo</span>' +
-        '</div>' +
-      '</div>';
-    }).join('');
-
-  if (pages > 1) {
-    html += '<div class="pag-bar">' +
-      '<button class="pag-btn" onclick="gatewayPage(' + (pageGateway-1) + ')" ' + (pageGateway <= 1 ? 'disabled' : '') + '>← Prev</button>' +
-      '<span class="pag-info">Page ' + pageGateway + ' of ' + pages + '</span>' +
-      '<button class="pag-btn" onclick="gatewayPage(' + (pageGateway+1) + ')" ' + (pageGateway >= pages ? 'disabled' : '') + '>Next →</button>' +
+  var rows = slice.map(function(g) {
+    var pct = grandTotal ? ((g.n / grandTotal) * 100).toFixed(1) : 0;
+    var bar = '<div style="height:4px;border-radius:2px;background:var(--border);margin-top:4px">' +
+      '<div style="height:4px;border-radius:2px;background:var(--accent);width:' + pct + '%"></div></div>';
+    return '<div class="prod-row">' +
+      '<div class="prod-name">' + esc(g.gateway) + '</div>' +
+      '<div style="flex:1;padding:0 16px">' + bar + '</div>' +
+      '<div class="prod-right">' +
+        '<span class="prod-count">' + $n(g.n) + ' subs (' + pct + '%)</span>' +
+        '<span class="prod-mrr">' + $m(Number(g.mrr_cents)) + '/mo</span>' +
+      '</div>' +
     '</div>';
-  }
+  }).join('');
 
-  el.innerHTML = html;
+  var pagBar = pages > 1
+    ? '<div class="pag-bar">' +
+        '<button class="pag-btn" onclick="gatewayPage(' + (pageGateway-1) + ')" ' + (pageGateway <= 1 ? 'disabled' : '') + '>← Prev</button>' +
+        '<span class="pag-info">Page ' + pageGateway + ' of ' + pages + '</span>' +
+        '<button class="pag-btn" onclick="gatewayPage(' + (pageGateway+1) + ')" ' + (pageGateway >= pages ? 'disabled' : '') + '>Next →</button>' +
+      '</div>'
+    : '';
+
+  el.innerHTML = '<div class="panel-head"><span class="panel-title">CheckoutChamp — active subscriptions by gateway (future bill date only)</span><span class="pag-info">' + total + ' gateways</span></div>' +
+    '<div class="feed-scroll">' + rows + pagBar + '</div>';
 }
 
 function gatewayPage(p) {
