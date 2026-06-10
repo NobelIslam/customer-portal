@@ -1063,12 +1063,12 @@ router.get('/api/activity-feed', auth.requireAdmin, async function(req, res) {
             var email = (t.emailAddress || '').trim().toLowerCase();
             if (!email || TEST_EMAILS.has(email)) return;
             events.push({
-              kind:    t.billType === 'RECURRING' ? 'rebill' : 'sub_created',
+              kind:    (t.orderType === 'RECURRING' || t.billingCycleNumber > 1) ? 'rebill' : 'sub_created',
               source:  'cc',
               email:   email,
               ts:      ts.toISOString(),
               payload: {
-                amount:  t.amount || t.totalAmount || null,
+                amount:  t.totalAmount || t.amount || null,
                 product: t.productName || t.campaignName || null
               }
             });
@@ -1161,7 +1161,7 @@ router.get('/api/activity-feed', auth.requireAdmin, async function(req, res) {
           const d = await r.json();
           const charges = d.charges || [];
           charges.forEach(function(c) {
-            var email = (c.email || '').trim().toLowerCase();
+            var email = ((c.customer && c.customer.email) || c.email || '').trim().toLowerCase();
             if (!email) return;
             events.push({
               kind:    c.type === 'recurring' ? 'rebill' : 'sub_created',
@@ -1191,7 +1191,7 @@ router.get('/api/activity-feed', auth.requireAdmin, async function(req, res) {
           const d = await r.json();
           const charges = d.charges || [];
           charges.forEach(function(c) {
-            var email = (c.email || '').trim().toLowerCase();
+            var email = ((c.customer && c.customer.email) || c.email || '').trim().toLowerCase();
             if (!email) return;
             events.push({
               kind:    'failed_charge',

@@ -898,7 +898,7 @@ function eventKey(e) {
 }
 
 function loadActivityFeed() {
-  fetch('/admin/api/activity-feed')
+  fetch('/admin/api/activity-feed', { headers: H })
     .then(function(r) { return r.json(); })
     .then(function(data) {
       var events = data.events || [];
