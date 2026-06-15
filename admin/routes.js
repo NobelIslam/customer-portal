@@ -2062,17 +2062,25 @@ router.post('/api/integrations/:name/test', auth.requireAdmin, async function(re
     } else if (name === 'whop') {
       var wkey = creds['WHOP_API_KEY'];
       if (!wkey) return res.json({ ok: false, message: 'WHOP_API_KEY not configured' });
-      var r5 = await fetch('https://api.whop.com/api/v2/products?per_page=1', {
-        headers: { 'Authorization': 'Bearer ' + wkey, 'accept': 'application/json' }
-      });
-      if (r5.ok) {
-        var d5 = await r5.json();
-        var count = (d5.pagination && d5.pagination.total_count) || 0;
-        ok = true; message = 'Connected — ' + count + ' product' + (count !== 1 ? 's' : '') + ' found';
-      } else if (r5.status === 401) {
-        message = 'Invalid API key — check your Whop API key and try again';
+      var whopH = { 'Authorization': 'Bearer ' + wkey, 'accept': 'application/json' };
+      /* Test 1: products (basic key check) */
+      var r5 = await fetch('https://api.whop.com/api/v2/products?per_page=1', { headers: whopH });
+      if (!r5.ok) {
+        message = r5.status === 401
+          ? 'Invalid API key — check your Whop API key and try again'
+          : 'API returned HTTP ' + r5.status;
       } else {
-        message = 'API returned HTTP ' + r5.status;
+        /* Test 2: memberships (required for sync) */
+        var r5b = await fetch('https://api.whop.com/api/v2/memberships?per_page=1&status=active', { headers: whopH });
+        if (r5b.ok) {
+          var d5b = await r5b.json();
+          var mCount = (d5b.pagination && d5b.pagination.total_count) || 0;
+          ok = true; message = 'Connected — ' + mCount + ' active membership' + (mCount !== 1 ? 's' : '') + ' readable';
+        } else if (r5b.status === 401 || r5b.status === 403) {
+          message = 'API key cannot read memberships (HTTP ' + r5b.status + ') — in your Whop dashboard, regenerate the API key and enable Memberships read permission';
+        } else {
+          message = 'Products OK but memberships returned HTTP ' + r5b.status;
+        }
       }
 
     } else {
