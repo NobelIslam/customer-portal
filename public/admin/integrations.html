@@ -9,7 +9,6 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
     :root {
       --bg:      #faf8f5;
       --bg2:     #ffffff;
@@ -22,9 +21,7 @@
       --accent:  #f04e00;
       --green:   #16a34a;
       --red:     #dc2626;
-      --yellow:  #d97706;
     }
-
     html, body {
       background: var(--bg);
       color: var(--text);
@@ -32,373 +29,388 @@
       font-size: 13px;
       line-height: 1.5;
       -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
     }
 
     /* ── Topbar ── */
     .topbar {
       position: sticky; top: 0; z-index: 100;
-      display: flex; align-items: center; gap: 10px;
-      padding: 0 16px; height: 52px;
+      display: flex; align-items: center; gap: 12px;
+      padding: 0 24px; height: 52px;
       background: var(--bg2);
       border-bottom: 1px solid var(--border);
     }
-    .brand { display: flex; align-items: center; flex-shrink: 0; }
-    .brand img { height: 32px; width: auto; display: block; }
-    .topbar-title {
-      font-size: 14px; font-weight: 600; color: var(--text);
-      flex: 1;
-    }
+    .brand img { height: 30px; width: auto; display: block; }
+    .topbar-sep { width: 1px; height: 20px; background: var(--border); }
+    .topbar-title { font-size: 14px; font-weight: 600; }
     .topbar-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-
     .btn {
       font-size: 12px; font-weight: 500; font-family: inherit;
-      padding: 7px 14px; border-radius: 7px; cursor: pointer;
+      padding: 6px 14px; border-radius: 7px; cursor: pointer;
       border: 1px solid var(--border2);
       background: var(--bg3); color: var(--muted2);
       transition: all 0.12s;
-      text-decoration: none; display: inline-flex; align-items: center;
+      text-decoration: none; display: inline-flex; align-items: center; gap: 5px;
     }
     .btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(240,78,0,.05); }
 
-    /* ── Layout ── */
-    .layout { display: flex; height: calc(100vh - 52px); }
-
-    /* ── Sidebar ── */
-    .sidebar {
-      width: 196px; flex-shrink: 0;
-      background: var(--bg2);
-      border-right: 1px solid var(--border);
-      padding: 8px 8px 16px;
-      overflow-y: auto;
-    }
-    .nav-section {
-      font-size: 10px; font-weight: 600; letter-spacing: .07em;
-      text-transform: uppercase; color: var(--muted);
-      padding: 12px 8px 4px;
-    }
-    .nav-section:first-child { margin-top: 4px; }
-    .nav-item {
-      display: flex; align-items: center; gap: 8px;
-      padding: 7px 10px; border-radius: 7px;
-      color: var(--muted2); font-size: 12.5px;
-      cursor: pointer; text-decoration: none;
-      transition: all 0.12s;
-    }
-    .nav-item:hover { background: var(--bg3); color: var(--text); }
-    .nav-item.on { background: var(--bg3); color: var(--text); font-weight: 500; }
-    .nav-dot { width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: 0.5; flex-shrink: 0; }
-
-    /* ── Main ── */
+    /* ── Main content ── */
     .main {
-      flex: 1; overflow-y: auto;
-      padding: 24px 28px;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 36px 24px 60px;
     }
 
     /* ── Page header ── */
-    .page-head {
-      margin-bottom: 24px;
-    }
+    .page-head { margin-bottom: 32px; }
     .page-head h1 {
       font-family: 'Oswald', sans-serif;
-      font-size: 22px; font-weight: 600;
-      letter-spacing: .02em;
-      color: var(--text);
+      font-size: 24px; font-weight: 600;
+      letter-spacing: .02em; color: var(--text);
     }
-    .page-head p {
-      color: var(--muted); font-size: 12.5px;
-      margin-top: 4px;
-    }
+    .page-head p { color: var(--muted); font-size: 13px; margin-top: 5px; }
 
-    /* ── Category section ── */
-    .cat-label {
-      font-size: 10px; font-weight: 600; letter-spacing: .07em;
-      text-transform: uppercase; color: var(--muted);
-      display: flex; align-items: center; gap: 8px;
-      margin-bottom: 12px; margin-top: 24px;
-    }
-    .cat-label:first-of-type { margin-top: 0; }
-    .cat-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
-
-    /* ── Integration grid ── */
+    /* ── Grid ── */
     .int-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 14px;
-      margin-bottom: 6px;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 16px;
     }
 
-    /* ── Integration card ── */
+    /* ── Card ── */
     .int-card {
       background: var(--bg2);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 18px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
+      border: 1.5px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
       transition: box-shadow 0.15s, border-color 0.15s;
     }
-    .int-card:hover { box-shadow: 0 2px 12px rgba(0,0,0,.07); border-color: var(--border2); }
-    .int-card-top {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    .int-logo {
-      width: 44px; height: 44px;
-      border-radius: 12px;
-      display: flex; align-items: center; justify-content: center;
-      font-weight: 700; font-size: 14px;
-      color: #fff; flex-shrink: 0;
-      letter-spacing: -0.5px;
-    }
-    .int-title { flex: 1; min-width: 0; }
-    .int-name  { font-size: 14px; font-weight: 600; color: var(--text); }
-    .int-cat   { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .int-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.07); }
+    .int-card.connected { border-color: #d1fae5; }
 
-    /* Toggle switch */
-    .tgl-switch {
-      position: relative; width: 38px; height: 22px;
-      cursor: pointer; flex-shrink: 0;
+    /* Card header strip (color accent) */
+    .int-card-strip { height: 4px; }
+
+    /* Card body */
+    .int-card-body { padding: 20px 20px 16px; }
+
+    /* Logo + name row */
+    .int-top { display: flex; align-items: flex-start; gap: 14px; }
+    .int-logo {
+      width: 52px; height: 52px; border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
     }
+    .int-logo svg { width: 26px; height: 26px; }
+    .int-meta { flex: 1; min-width: 0; padding-top: 2px; }
+    .int-name { font-size: 15px; font-weight: 600; line-height: 1.3; }
+    .int-desc { font-size: 12px; color: var(--muted); margin-top: 3px; line-height: 1.45; }
+
+    /* Toggle */
+    .tgl-wrap { padding-top: 3px; }
+    .tgl-switch { position: relative; width: 40px; height: 22px; cursor: pointer; display: block; }
     .tgl-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
     .tgl-rail {
       position: absolute; inset: 0;
-      background: var(--border2);
-      border-radius: 22px;
+      background: var(--border2); border-radius: 22px;
       transition: background 0.2s;
     }
     .tgl-rail::before {
       content: '';
       position: absolute;
-      width: 16px; height: 16px;
-      left: 3px; top: 3px;
-      background: #fff;
-      border-radius: 50%;
+      width: 16px; height: 16px; left: 3px; top: 3px;
+      background: #fff; border-radius: 50%;
       transition: transform 0.2s;
       box-shadow: 0 1px 3px rgba(0,0,0,.25);
     }
     .tgl-switch input:checked ~ .tgl-rail { background: var(--green); }
-    .tgl-switch input:checked ~ .tgl-rail::before { transform: translateX(16px); }
-    .tgl-switch input:disabled ~ .tgl-rail { opacity: 0.4; cursor: not-allowed; }
+    .tgl-switch input:checked ~ .tgl-rail::before { transform: translateX(18px); }
 
-    /* Card body */
-    .int-desc { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
-
-    .int-status {
-      display: flex; align-items: center; gap: 7px;
+    /* Status row */
+    .int-status-row {
+      display: flex; align-items: center; gap: 8px;
+      margin-top: 14px;
+    }
+    .status-badge {
+      display: inline-flex; align-items: center; gap: 5px;
       font-size: 12px; font-weight: 500;
+      padding: 4px 9px; border-radius: 20px;
     }
-    .int-status .st-dot {
-      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
-    }
-    .int-status.connected    { color: var(--green); }
-    .int-status.connected .st-dot    { background: var(--green); box-shadow: 0 0 0 3px rgba(22,163,74,.15); }
-    .int-status.disconnected { color: var(--muted); }
-    .int-status.disconnected .st-dot { background: var(--border2); }
+    .status-badge .dot { width: 6px; height: 6px; border-radius: 50%; }
+    .status-badge.connected { background: #dcfce7; color: var(--green); }
+    .status-badge.connected .dot { background: var(--green); }
+    .status-badge.disconnected { background: var(--bg3); color: var(--muted2); }
+    .status-badge.disconnected .dot { background: var(--border2); }
 
-    .int-keys {
-      font-size: 11.5px;
-      background: var(--bg3);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 8px 10px;
-      font-family: 'Courier New', monospace;
-      color: var(--muted2);
-      line-height: 1.8;
-      white-space: pre;
-      overflow: hidden;
-      text-overflow: ellipsis;
+    /* Action buttons */
+    .int-actions {
+      display: flex; gap: 8px;
+      padding: 0 20px 16px;
     }
-    .int-keys.empty {
-      color: var(--muted); font-style: italic;
-      font-family: 'Inter', sans-serif; font-size: 12px;
-    }
-
-    .int-footer {
-      display: flex; flex-direction: column; gap: 8px;
-      margin-top: 2px;
-    }
-    .int-test-btn {
-      width: 100%;
-      font-size: 12px; padding: 8px 12px;
-      border-radius: 8px;
-      border: 1px solid var(--border2);
-      background: var(--bg3);
-      color: var(--muted2);
-      cursor: pointer; font-family: inherit; font-weight: 500;
+    .btn-configure {
+      flex: 1;
+      font-size: 12px; font-weight: 500; font-family: inherit;
+      padding: 8px 14px; border-radius: 8px; cursor: pointer;
+      border: 1.5px solid var(--border2);
+      background: var(--bg3); color: var(--muted2);
       transition: all 0.12s;
+      display: flex; align-items: center; justify-content: center; gap: 5px;
     }
-    .int-test-btn:hover:not(:disabled) {
-      border-color: var(--accent); color: var(--accent);
-      background: rgba(240,78,0,.05);
+    .btn-configure:hover { border-color: var(--accent); color: var(--accent); background: rgba(240,78,0,.05); }
+    .btn-configure.open { border-color: var(--accent); color: var(--accent); background: rgba(240,78,0,.05); }
+    .btn-test {
+      font-size: 12px; font-weight: 500; font-family: inherit;
+      padding: 8px 14px; border-radius: 8px; cursor: pointer;
+      border: 1.5px solid var(--border2);
+      background: var(--bg2); color: var(--muted2);
+      transition: all 0.12s; white-space: nowrap;
     }
-    .int-test-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .int-test-result {
-      font-size: 12px; padding: 8px 10px;
-      border-radius: 8px; display: none;
-      line-height: 1.45;
-    }
-    .int-test-result.ok   { background: #dcfce7; color: var(--green); display: block; }
-    .int-test-result.fail { background: #fee2e2; color: var(--red);   display: block; }
+    .btn-test:hover:not(:disabled) { border-color: var(--green); color: var(--green); background: #f0fdf4; }
+    .btn-test:disabled { opacity: 0.5; cursor: not-allowed; }
 
-    /* ── Loading / error states ── */
-    .state-box {
-      padding: 40px; text-align: center;
-      color: var(--muted); font-size: 13px;
+    /* Configure panel */
+    .int-configure {
+      border-top: 1px solid var(--border);
+      padding: 18px 20px 20px;
+      background: var(--bg);
+      display: none;
     }
+    .int-configure.open { display: block; }
+    .configure-title {
+      font-size: 11px; font-weight: 600; letter-spacing: .06em;
+      text-transform: uppercase; color: var(--muted);
+      margin-bottom: 14px;
+    }
+
+    /* Form fields */
+    .field-row { margin-bottom: 12px; }
+    .field-row:last-of-type { margin-bottom: 16px; }
+    .field-label {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 12px; font-weight: 500; color: var(--muted2);
+      margin-bottom: 5px;
+    }
+    .field-source {
+      font-size: 10px; font-weight: 400; color: var(--muted);
+      background: var(--bg3); border-radius: 4px;
+      padding: 2px 6px;
+    }
+    .field-source.env { color: var(--accent); background: rgba(240,78,0,.08); }
+    .field-source.db  { color: var(--green);  background: #dcfce7; }
+    .field-input-wrap { position: relative; }
+    .field-input {
+      width: 100%; font-family: 'Courier New', monospace;
+      font-size: 12.5px; color: var(--text);
+      background: var(--bg2); border: 1.5px solid var(--border);
+      border-radius: 8px; padding: 8px 38px 8px 10px;
+      outline: none; transition: border-color 0.15s;
+    }
+    .field-input::placeholder { font-family: 'Inter', sans-serif; font-size: 12px; color: var(--muted); }
+    .field-input:focus { border-color: var(--border2); }
+    .field-eye {
+      position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; cursor: pointer;
+      color: var(--muted); padding: 2px; display: flex; align-items: center;
+    }
+    .field-eye:hover { color: var(--muted2); }
+    .field-eye svg { width: 15px; height: 15px; }
+    .field-hint {
+      font-size: 11px; color: var(--muted); margin-top: 4px;
+      font-family: 'Courier New', monospace;
+    }
+
+    /* Save button */
+    .btn-save {
+      width: 100%;
+      font-size: 13px; font-weight: 600; font-family: inherit;
+      padding: 10px; border-radius: 8px; cursor: pointer;
+      border: none;
+      background: var(--green); color: #fff;
+      transition: background 0.15s;
+    }
+    .btn-save:hover:not(:disabled) { background: #15803d; }
+    .btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Save result */
+    .save-result {
+      margin-top: 10px; font-size: 12px;
+      padding: 9px 11px; border-radius: 8px;
+      display: none; line-height: 1.45;
+    }
+    .save-result.ok   { background: #dcfce7; color: var(--green); display: block; }
+    .save-result.fail { background: #fee2e2; color: var(--red);   display: block; }
+
+    /* Loading / error states */
+    .state-box { padding: 60px 20px; text-align: center; color: var(--muted); }
     .state-box.error { color: var(--red); }
   </style>
 </head>
 <body>
 
-<!-- ── Topbar ── -->
 <div class="topbar">
   <div class="brand">
     <img src="/admin/tgp-logo.png" alt="TGP" onerror="this.style.display='none'">
   </div>
+  <div class="topbar-sep"></div>
   <div class="topbar-title">Integrations</div>
   <div class="topbar-right">
-    <a href="/admin/" class="btn">← Dashboard</a>
+    <a href="/admin/" class="btn">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      Dashboard
+    </a>
     <button class="btn" onclick="logout()">Sign out</button>
   </div>
 </div>
 
-<!-- ── Layout ── -->
-<div class="layout">
-
-  <!-- Sidebar -->
-  <nav class="sidebar">
-    <div class="nav-section">Dashboard</div>
-    <a href="/admin/" class="nav-item"><span class="nav-dot"></span>Overview</a>
-
-    <div class="nav-section">System</div>
-    <a href="/admin/integrations" class="nav-item on"><span class="nav-dot"></span>Integrations</a>
-    <a href="/admin/login" class="nav-item" onclick="logout();return false;"><span class="nav-dot"></span>Sign out</a>
-  </nav>
-
-  <!-- Main -->
-  <div class="main">
-    <div class="page-head">
-      <h1>Integrations</h1>
-      <p>Manage your connected platforms. Toggle integrations on or off and test API connections.</p>
-    </div>
-
-    <div id="int-page-content">
-      <div class="state-box">Loading integrations…</div>
-    </div>
+<div class="main">
+  <div class="page-head">
+    <h1>Integrations</h1>
+    <p>Connect your platforms. Enter credentials here to activate each integration — changes take effect immediately.</p>
+  </div>
+  <div id="int-grid" class="int-grid">
+    <div class="state-box">Loading…</div>
   </div>
 </div>
 
 <script>
 /* ── Auth ── */
 (function() {
-  if (location.hash.indexOf('session=') !== -1) {
-    var m = location.hash.match(/session=([^&]+)/);
-    if (m) { localStorage.setItem('tgp_admin_session', m[1]); history.replaceState(null, '', location.pathname); }
-  }
+  var m = location.hash.match(/session=([^&]+)/);
+  if (m) { localStorage.setItem('tgp_admin_session', m[1]); history.replaceState(null,'',location.pathname); }
   if (!localStorage.getItem('tgp_admin_session')) location.href = '/admin/login';
 })();
 
 var SESSION = localStorage.getItem('tgp_admin_session');
 var H = { 'Authorization': 'Bearer ' + SESSION, 'Cache-Control': 'no-cache, no-store', 'Pragma': 'no-cache' };
-
 function logout() { localStorage.removeItem('tgp_admin_session'); location.href = '/admin/login'; }
-
 function esc(s) {
   return String(s == null ? '' : s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
-var INT_ABBR = {
-  checkoutchamp: 'CC',
-  recharge:      'RC',
-  shopify:       'SH',
-  klaviyo:       'KL',
-  whop:          'WP',
+/* ── SVG logos per integration ── */
+var LOGOS = {
+  checkoutchamp: '<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/><line x1="5" y1="15" x2="9" y2="15"/><line x1="13" y1="15" x2="17" y2="15"/></svg>',
+
+  recharge: '<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10M23 14l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>',
+
+  shopify: '<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>',
+
+  klaviyo: '<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>',
+
+  whop: '<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>',
 };
 
-var CATEGORIES = ['Subscription', 'Ecommerce', 'Marketing', 'Payments'];
-
-/* ── Load & render ── */
+/* ── Load ── */
 async function loadIntegrations() {
-  var wrap = document.getElementById('int-page-content');
+  var grid = document.getElementById('int-grid');
   try {
     var r = await fetch('/admin/api/integrations', { headers: H });
     if (r.status === 401) { logout(); return; }
     if (!r.ok) throw new Error('HTTP ' + r.status);
     var d = await r.json();
-    renderIntegrations(d.integrations || [], wrap);
+    renderGrid(d.integrations || [], grid);
   } catch(e) {
-    wrap.innerHTML = '<div class="state-box error">Failed to load integrations: ' + esc(e.message) + '</div>';
+    grid.innerHTML = '<div class="state-box error">Failed to load: ' + esc(e.message) + '</div>';
   }
 }
 
-function renderIntegrations(integrations, wrap) {
-  if (!integrations.length) {
-    wrap.innerHTML = '<div class="state-box">No integrations found.</div>';
-    return;
-  }
-
-  /* Group by category */
-  var byCat = {};
-  integrations.forEach(function(int) {
-    var c = int.category || 'Other';
-    if (!byCat[c]) byCat[c] = [];
-    byCat[c].push(int);
-  });
-
-  var order = CATEGORIES.filter(function(c) { return byCat[c]; });
-  Object.keys(byCat).forEach(function(c) { if (order.indexOf(c) === -1) order.push(c); });
-
-  var html = '';
-  order.forEach(function(cat) {
-    html += '<div class="cat-label">' + esc(cat) + '</div>';
-    html += '<div class="int-grid">';
-    byCat[cat].forEach(function(int) {
-      html += cardHTML(int);
-    });
-    html += '</div>';
-  });
-
-  wrap.innerHTML = html;
+function renderGrid(integrations, grid) {
+  grid.innerHTML = integrations.map(function(int) { return cardHTML(int); }).join('');
 }
 
 function cardHTML(int) {
-  var abbr   = INT_ABBR[int.name] || int.name.substring(0, 2).toUpperCase();
-  var keys   = int.maskedKeys || {};
-  var keyLines = Object.entries(keys).map(function(kv) { return kv[0] + ': ' + kv[1]; }).join('\n');
+  var logo    = LOGOS[int.name] || '';
+  var fields  = int.fields || [];
 
-  return '<div class="int-card" id="int-card-' + esc(int.name) + '">' +
-    '<div class="int-card-top">' +
-      '<div class="int-logo" style="background:' + esc(int.color) + '">' + abbr + '</div>' +
-      '<div class="int-title">' +
-        '<div class="int-name">' + esc(int.label) + '</div>' +
-        '<div class="int-cat">' + esc(int.category) + '</div>' +
+  var fieldRows = fields.map(function(f) {
+    var isPass  = f.type === 'password';
+    var eyeId   = 'eye-' + int.name + '-' + f.key;
+    var inputId = 'inp-' + int.name + '-' + f.key;
+    var srcLabel = f.source === 'db' ? '<span class="field-source db">saved</span>'
+                 : f.source === 'env' ? '<span class="field-source env">env var</span>'
+                 : '';
+    return '<div class="field-row">' +
+      '<div class="field-label">' + esc(f.label) + srcLabel + '</div>' +
+      '<div class="field-input-wrap">' +
+        '<input id="' + inputId + '" class="field-input"' +
+          ' type="' + (isPass ? 'password' : 'text') + '"' +
+          ' placeholder="' + esc(f.placeholder) + '"' +
+          ' autocomplete="off" spellcheck="false">' +
+        (isPass ? '<button class="field-eye" id="' + eyeId + '" type="button" onclick="toggleEye(\'' + inputId + '\',\'' + eyeId + '\')" title="Show/hide">' +
+          '<svg id="eye-icon-' + inputId + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>' +
+          '</button>' : '') +
       '</div>' +
-      '<label class="tgl-switch" title="' + (int.enabled ? 'Disable ' : 'Enable ') + esc(int.label) + '">' +
-        '<input type="checkbox"' + (int.enabled ? ' checked' : '') + ' onchange="toggleIntegration(\'' + int.name + '\', this.checked)">' +
-        '<span class="tgl-rail"></span>' +
-      '</label>' +
+      (f.masked ? '<div class="field-hint">Current: ' + esc(f.masked) + '</div>' : '') +
+    '</div>';
+  }).join('');
+
+  return '<div class="int-card' + (int.configured ? ' connected' : '') + '" id="card-' + int.name + '">' +
+    '<div class="int-card-strip" style="background:' + esc(int.color) + '"></div>' +
+    '<div class="int-card-body">' +
+      '<div class="int-top">' +
+        '<div class="int-logo" style="background:' + esc(int.color) + '">' + logo + '</div>' +
+        '<div class="int-meta">' +
+          '<div class="int-name">' + esc(int.label) + '</div>' +
+          '<div class="int-desc">' + esc(int.description) + '</div>' +
+        '</div>' +
+        '<div class="tgl-wrap">' +
+          '<label class="tgl-switch" title="' + (int.enabled ? 'Disable' : 'Enable') + '">' +
+            '<input type="checkbox"' + (int.enabled ? ' checked' : '') + ' onchange="toggleInt(\'' + int.name + '\', this.checked)">' +
+            '<span class="tgl-rail"></span>' +
+          '</label>' +
+        '</div>' +
+      '</div>' +
+      '<div class="int-status-row">' +
+        '<span class="status-badge ' + (int.configured ? 'connected' : 'disconnected') + '" id="badge-' + int.name + '">' +
+          '<span class="dot"></span>' +
+          (int.configured ? 'Connected' : 'Not connected') +
+        '</span>' +
+      '</div>' +
     '</div>' +
-    '<div class="int-desc">' + esc(int.description) + '</div>' +
-    '<div class="int-status ' + (int.configured ? 'connected' : 'disconnected') + '">' +
-      '<span class="st-dot"></span>' +
-      (int.configured ? 'Connected' : 'Not configured — add API key to environment variables') +
+    '<div class="int-actions">' +
+      '<button class="btn-configure" id="cfg-btn-' + int.name + '" onclick="toggleConfigure(\'' + int.name + '\')">' +
+        '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>' +
+        'Configure' +
+      '</button>' +
+      '<button class="btn-test" id="test-btn-' + int.name + '" onclick="testInt(\'' + int.name + '\', this)">Test</button>' +
     '</div>' +
-    (keyLines
-      ? '<div class="int-keys">' + esc(keyLines) + '</div>'
-      : '<div class="int-keys empty">No API credentials configured</div>') +
-    '<div class="int-footer">' +
-      '<button class="int-test-btn" onclick="testIntegration(\'' + int.name + '\', this)">Test connection</button>' +
-      '<div class="int-test-result" id="int-result-' + esc(int.name) + '"></div>' +
+    '<div class="int-configure" id="cfg-' + int.name + '">' +
+      '<div class="configure-title">API Credentials</div>' +
+      fieldRows +
+      '<button class="btn-save" onclick="saveInt(\'' + int.name + '\', this)">Save &amp; Connect</button>' +
+      '<div class="save-result" id="save-result-' + int.name + '"></div>' +
     '</div>' +
   '</div>';
 }
 
-/* ── Toggle ── */
-async function toggleIntegration(name, enabled) {
+/* ── Toggle configure panel ── */
+function toggleConfigure(name) {
+  var panel  = document.getElementById('cfg-' + name);
+  var btn    = document.getElementById('cfg-btn-' + name);
+  var isOpen = panel.classList.contains('open');
+  panel.classList.toggle('open', !isOpen);
+  btn.classList.toggle('open', !isOpen);
+  btn.querySelector('span') && (btn.lastChild.textContent = isOpen ? 'Configure' : 'Close');
+}
+
+/* ── Show/hide password ── */
+function toggleEye(inputId, eyeId) {
+  var inp = document.getElementById(inputId);
+  if (!inp) return;
+  var show = inp.type === 'password';
+  inp.type = show ? 'text' : 'password';
+  var icon = document.getElementById('eye-icon-' + inputId);
+  if (icon) {
+    icon.innerHTML = show
+      ? '<path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19M1 1l22 22"/><path d="M1 12s4-8 11-8 11 8 11 8"/>'
+      : '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+  }
+}
+
+/* ── Toggle enable/disable ── */
+async function toggleInt(name, enabled) {
   try {
     await fetch('/admin/api/integrations/' + encodeURIComponent(name) + '/toggle', {
       method: 'POST',
@@ -408,12 +420,77 @@ async function toggleIntegration(name, enabled) {
   } catch(e) {}
 }
 
-/* ── Test connection ── */
-async function testIntegration(name, btn) {
-  var result = document.getElementById('int-result-' + name);
+/* ── Save credentials ── */
+async function saveInt(name, btn) {
+  var result = document.getElementById('save-result-' + name);
   btn.disabled = true;
-  btn.textContent = 'Testing…';
-  if (result) { result.className = 'int-test-result'; result.textContent = ''; }
+  btn.textContent = 'Saving…';
+  if (result) { result.className = 'save-result'; result.textContent = ''; }
+
+  /* Collect all input values for this integration */
+  var creds = {};
+  var card  = document.getElementById('card-' + name);
+  card.querySelectorAll('.field-input').forEach(function(inp) {
+    var key = inp.id.replace('inp-' + name + '-', '');
+    if (inp.value.trim()) creds[key] = inp.value.trim();
+  });
+
+  try {
+    /* Save */
+    var r = await fetch('/admin/api/integrations/' + encodeURIComponent(name) + '/credentials', {
+      method: 'POST',
+      headers: Object.assign({}, H, { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ creds: creds })
+    });
+    var d = await r.json();
+    if (!d.ok) throw new Error(d.error || 'Save failed');
+
+    /* Auto-test after save */
+    btn.textContent = 'Testing…';
+    var r2 = await fetch('/admin/api/integrations/' + encodeURIComponent(name) + '/test', {
+      method: 'POST', headers: H
+    });
+    var d2 = await r2.json();
+
+    if (result) {
+      result.className = 'save-result ' + (d2.ok ? 'ok' : 'fail');
+      result.textContent = d2.ok
+        ? '✓ Saved & connected — ' + (d2.message || 'OK')
+        : '✗ Saved, but test failed: ' + (d2.message || 'unknown error');
+    }
+
+    /* Update status badge */
+    if (d2.ok) {
+      var badge = document.getElementById('badge-' + name);
+      if (badge) {
+        badge.className = 'status-badge connected';
+        badge.innerHTML = '<span class="dot"></span>Connected';
+      }
+      var card2 = document.getElementById('card-' + name);
+      if (card2) card2.classList.add('connected');
+    }
+  } catch(e) {
+    if (result) {
+      result.className = 'save-result fail';
+      result.textContent = '✗ ' + e.message;
+    }
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Save & Connect';
+}
+
+/* ── Test connection ── */
+async function testInt(name, btn) {
+  btn.disabled = true;
+  btn.textContent = '…';
+  var result = document.getElementById('save-result-' + name);
+  if (result) { result.className = 'save-result'; result.textContent = ''; }
+
+  var panel = document.getElementById('cfg-' + name);
+  if (!panel.classList.contains('open')) {
+    document.getElementById('cfg-btn-' + name).click();
+  }
 
   try {
     var r = await fetch('/admin/api/integrations/' + encodeURIComponent(name) + '/test', {
@@ -421,18 +498,18 @@ async function testIntegration(name, btn) {
     });
     var d = await r.json();
     if (result) {
-      result.className = 'int-test-result ' + (d.ok ? 'ok' : 'fail');
-      result.textContent = d.message || (d.ok ? 'Connection successful' : 'Test failed');
+      result.className = 'save-result ' + (d.ok ? 'ok' : 'fail');
+      result.textContent = d.ok ? '✓ ' + (d.message || 'Connected') : '✗ ' + (d.message || 'Test failed');
+    }
+    if (d.ok) {
+      var badge = document.getElementById('badge-' + name);
+      if (badge) { badge.className = 'status-badge connected'; badge.innerHTML = '<span class="dot"></span>Connected'; }
     }
   } catch(e) {
-    if (result) {
-      result.className = 'int-test-result fail';
-      result.textContent = e.message;
-    }
+    if (result) { result.className = 'save-result fail'; result.textContent = '✗ ' + e.message; }
   }
-
   btn.disabled = false;
-  btn.textContent = 'Test connection';
+  btn.textContent = 'Test';
 }
 
 loadIntegrations();

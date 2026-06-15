@@ -1830,73 +1830,103 @@ const INTEGRATIONS_META = [
     name:        'checkoutchamp',
     label:       'CheckoutChamp',
     description: 'Subscription billing & order management platform',
-    category:    'Subscription',
     color:       '#2563eb',
-    envVars:     ['CC_LOGIN_ID', 'CC_API_PASSWORD', 'CC_CLUB_ID'],
+    fields: [
+      { key: 'CC_LOGIN_ID',     label: 'Login ID',    type: 'text',     placeholder: 'e.g. TGPAPI' },
+      { key: 'CC_API_PASSWORD', label: 'API Password', type: 'password', placeholder: 'Your CC password' },
+      { key: 'CC_CLUB_ID',      label: 'Club ID',      type: 'text',     placeholder: 'e.g. 12' },
+    ],
   },
   {
     name:        'recharge',
     label:       'Recharge',
     description: 'Subscription management & recurring billing',
-    category:    'Subscription',
     color:       '#16a34a',
-    envVars:     ['RECHARGE_API_KEY'],
+    fields: [
+      { key: 'RECHARGE_API_KEY', label: 'API Key', type: 'password', placeholder: 'sk_1x_...' },
+    ],
   },
   {
     name:        'shopify',
     label:       'Shopify',
     description: 'E-commerce storefront & product catalog',
-    category:    'Ecommerce',
-    color:       '#96bf48',
-    envVars:     ['SHOPIFY_STORE', 'SHOPIFY_ACCESS_TOKEN'],
+    color:       '#5a8a3c',
+    fields: [
+      { key: 'SHOPIFY_STORE',        label: 'Store Domain',  type: 'text',     placeholder: 'yourstore.myshopify.com' },
+      { key: 'SHOPIFY_ACCESS_TOKEN', label: 'Access Token',  type: 'password', placeholder: 'shpat_...' },
+    ],
   },
   {
     name:        'klaviyo',
     label:       'Klaviyo',
     description: 'Email marketing & automation',
-    category:    'Marketing',
     color:       '#9333ea',
-    envVars:     ['KLAVIYO_API_KEY'],
+    fields: [
+      { key: 'KLAVIYO_API_KEY', label: 'Private API Key', type: 'password', placeholder: 'pk_...' },
+    ],
   },
   {
     name:        'whop',
     label:       'Whop',
     description: 'Membership, digital products & payments',
-    category:    'Payments',
-    color:       '#f04e00',
-    envVars:     ['WHOP_API_KEY'],
+    color:       '#000000',
+    fields: [
+      { key: 'WHOP_API_KEY', label: 'API Key', type: 'password', placeholder: 'Your Whop API key' },
+    ],
   },
 ];
 
+/* ── Resolve credential: DB first, then env var ───── */
+async function resolveCredentials(integrationName) {
+  var meta = INTEGRATIONS_META.find(function(i) { return i.name === integrationName; });
+  if (!meta) return {};
+  var dbCreds = {};
+  try {
+    var row = await db.one('SELECT creds FROM integration_credentials WHERE name = $1', [integrationName]);
+    if (row && row.creds) dbCreds = row.creds;
+  } catch(e) {}
+  var result = {};
+  meta.fields.forEach(function(f) {
+    result[f.key] = dbCreds[f.key] || process.env[f.key] || '';
+  });
+  return result;
+}
+
 /* ── GET /admin/api/integrations ─────────────────── */
 router.get('/api/integrations', auth.requireAdmin, async function(req, res) {
-  var dbMap = {};
+  var stateMap = {}, credMap = {};
   try {
-    var rows = await db.many('SELECT name, enabled, updated_at FROM integrations');
-    rows.forEach(function(r) { dbMap[r.name] = r; });
-  } catch (e) { /* table might not exist yet on first boot */ }
+    var [stateRows, credRows] = await Promise.all([
+      db.many('SELECT name, enabled, updated_at FROM integrations'),
+      db.many('SELECT name, creds FROM integration_credentials'),
+    ]);
+    stateRows.forEach(function(r) { stateMap[r.name] = r; });
+    credRows.forEach(function(r)  { credMap[r.name]  = r.creds || {}; });
+  } catch(e) {}
 
   var result = INTEGRATIONS_META.map(function(int) {
-    var configured = int.envVars.some(function(v) { return !!process.env[v]; });
-    var dbRow = dbMap[int.name];
-    var enabled = dbRow != null ? dbRow.enabled : configured;
+    var dbCreds    = credMap[int.name] || {};
+    var stateRow   = stateMap[int.name];
+    var configured = int.fields.some(function(f) { return !!(dbCreds[f.key] || process.env[f.key]); });
+    var enabled    = stateRow != null ? stateRow.enabled : configured;
 
-    var maskedKeys = {};
-    int.envVars.forEach(function(v) {
-      var val = process.env[v];
-      if (val) maskedKeys[v] = val.substring(0, 4) + '···' + val.slice(-4);
+    /* Build field list with masked current value */
+    var fieldStatus = int.fields.map(function(f) {
+      var val = dbCreds[f.key] || process.env[f.key] || '';
+      var source = dbCreds[f.key] ? 'db' : (process.env[f.key] ? 'env' : 'none');
+      var masked = val ? val.substring(0, 4) + '···' + val.slice(-4) : '';
+      return { key: f.key, label: f.label, type: f.type, placeholder: f.placeholder, masked: masked, source: source };
     });
 
     return {
       name:        int.name,
       label:       int.label,
       description: int.description,
-      category:    int.category,
       color:       int.color,
       configured:  configured,
       enabled:     enabled,
-      maskedKeys:  maskedKeys,
-      lastUpdated: dbRow ? dbRow.updated_at : null,
+      fields:      fieldStatus,
+      lastUpdated: stateRow ? stateRow.updated_at : null,
     };
   });
 
@@ -1919,14 +1949,48 @@ router.post('/api/integrations/:name/toggle', auth.requireAdmin, async function(
   }
 });
 
+/* ── POST /admin/api/integrations/:name/credentials ─ */
+router.post('/api/integrations/:name/credentials', auth.requireAdmin, async function(req, res) {
+  var name = req.params.name;
+  var meta = INTEGRATIONS_META.find(function(i) { return i.name === name; });
+  if (!meta) return res.status(400).json({ error: 'Unknown integration' });
+
+  var incoming = req.body.creds || {};
+  /* Fetch existing DB creds so we don't wipe fields the user didn't touch */
+  var existing = {};
+  try {
+    var row = await db.one('SELECT creds FROM integration_credentials WHERE name = $1', [name]);
+    if (row && row.creds) existing = row.creds;
+  } catch(e) {}
+
+  var merged = Object.assign({}, existing);
+  meta.fields.forEach(function(f) {
+    var v = (incoming[f.key] || '').trim();
+    if (v) merged[f.key] = v;       /* only overwrite if user typed something */
+  });
+
+  try {
+    await db.query(
+      `INSERT INTO integration_credentials (name, creds, updated_at) VALUES ($1, $2, NOW())
+       ON CONFLICT (name) DO UPDATE SET creds = $2, updated_at = NOW()`,
+      [name, JSON.stringify(merged)]
+    );
+    res.json({ ok: true });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 /* ── POST /admin/api/integrations/:name/test ──────── */
 router.post('/api/integrations/:name/test', auth.requireAdmin, async function(req, res) {
   var name = req.params.name;
   try {
+    /* Resolve credentials: DB first, then env vars */
+    var creds = await resolveCredentials(name);
     var ok = false, message = '';
 
     if (name === 'recharge') {
-      var key = process.env.RECHARGE_API_KEY;
+      var key = creds['RECHARGE_API_KEY'];
       if (!key) return res.json({ ok: false, message: 'RECHARGE_API_KEY not configured' });
       var r = await fetch('https://api.rechargeapps.com/shop', {
         headers: { 'X-Recharge-Access-Token': key, 'X-Recharge-Version': '2021-11' }
@@ -1940,8 +2004,8 @@ router.post('/api/integrations/:name/test', auth.requireAdmin, async function(re
       }
 
     } else if (name === 'checkoutchamp') {
-      var loginId = process.env.CC_LOGIN_ID, pw = process.env.CC_API_PASSWORD;
-      if (!loginId || !pw) return res.json({ ok: false, message: 'CC_LOGIN_ID or CC_API_PASSWORD not configured' });
+      var loginId = creds['CC_LOGIN_ID'], pw = creds['CC_API_PASSWORD'];
+      if (!loginId || !pw) return res.json({ ok: false, message: 'Login ID and API Password are required' });
       var r2 = await fetch(CC_API_BASE + '/purchase/query/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1955,8 +2019,9 @@ router.post('/api/integrations/:name/test', auth.requireAdmin, async function(re
       }
 
     } else if (name === 'shopify') {
-      var store = SHOPIFY_STORE, token = SHOPIFY_TOKEN;
-      if (!token) return res.json({ ok: false, message: 'SHOPIFY_ACCESS_TOKEN not configured' });
+      var store = creds['SHOPIFY_STORE'] || SHOPIFY_STORE;
+      var token = creds['SHOPIFY_ACCESS_TOKEN'] || SHOPIFY_TOKEN;
+      if (!token) return res.json({ ok: false, message: 'Access Token not configured' });
       var r3 = await fetch('https://' + store + '/admin/api/2024-01/shop.json', {
         headers: { 'X-Shopify-Access-Token': token }
       });
@@ -1968,7 +2033,7 @@ router.post('/api/integrations/:name/test', auth.requireAdmin, async function(re
       }
 
     } else if (name === 'klaviyo') {
-      var kkey = process.env.KLAVIYO_API_KEY;
+      var kkey = creds['KLAVIYO_API_KEY'];
       if (!kkey) return res.json({ ok: false, message: 'KLAVIYO_API_KEY not configured' });
       var r4 = await fetch('https://a.klaviyo.com/api/accounts/', {
         headers: { 'Authorization': 'Klaviyo-API-Key ' + kkey, 'revision': '2024-10-15', 'accept': 'application/json' }
@@ -1980,8 +2045,8 @@ router.post('/api/integrations/:name/test', auth.requireAdmin, async function(re
       }
 
     } else if (name === 'whop') {
-      var wkey = process.env.WHOP_API_KEY;
-      if (!wkey) return res.json({ ok: false, message: 'WHOP_API_KEY not set — add it to Render environment variables' });
+      var wkey = creds['WHOP_API_KEY'];
+      if (!wkey) return res.json({ ok: false, message: 'WHOP_API_KEY not configured' });
       var r5 = await fetch('https://api.whop.com/v5/me', {
         headers: { 'Authorization': 'Bearer ' + wkey, 'accept': 'application/json' }
       });
