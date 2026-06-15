@@ -1372,12 +1372,33 @@ async function loadSyncState() {
     if (!r.ok) return;
     var d = await r.json();
     var states = d.sync || [];
+    var whop = d.whop || {};
     var latest = states.map(function(s){ return s.last_delta_sync_at ? new Date(s.last_delta_sync_at) : null; }).filter(Boolean).sort(function(a,b){return b-a;})[0];
     var errors = states.filter(function(s){ return s.last_error; });
     var dot = document.getElementById('sync-dot'), txt = document.getElementById('sync-text');
-    if (errors.length)  { dot.className='err'; txt.textContent=errors.length+' source error'+(errors.length>1?'s':''); }
-    else if (latest)    { dot.className='ok';  txt.textContent='Synced '+ago(latest.toISOString()); }
-    else                { dot.className='';    txt.textContent='Never synced'; }
+
+    /* Build a readable error summary */
+    if (errors.length) {
+      var errSummary = errors.map(function(s){
+        var msg = s.last_error || 'unknown error';
+        if (msg.indexOf('401') !== -1 || msg.toLowerCase().indexOf('unauthorized') !== -1) msg = 'invalid API key';
+        if (msg.indexOf('not configured') !== -1) msg = 'API key not set';
+        return s.source + ': ' + msg.substring(0, 60);
+      }).join(' | ');
+      dot.className = 'err';
+      txt.textContent = errSummary;
+      txt.title = errors.map(function(s){ return s.source + ': ' + s.last_error; }).join('\n');
+    } else if (whop.total_rows === 0 && !whop.api_key_in_db && !whop.api_key_in_env) {
+      dot.className = 'err';
+      txt.textContent = 'Whop API key not configured — go to Integrations';
+    } else if (latest) {
+      var whopNote = whop.total_rows > 0 ? ' | Whop: ' + whop.active_rows + ' active' : '';
+      dot.className = 'ok';
+      txt.textContent = 'Synced ' + ago(latest.toISOString()) + whopNote;
+    } else {
+      dot.className = '';
+      txt.textContent = 'Never synced';
+    }
   } catch(e) {}
 }
 
