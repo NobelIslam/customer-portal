@@ -233,7 +233,8 @@ router.get('/api/overview', async function(req, res) {
       db.many(`SELECT TO_CHAR(DATE(cancelled_at), 'YYYY-MM-DD') AS day, source, COUNT(*)::int AS n
                FROM subscriptions WHERE cancelled_at >= $1 ${NO_PAYPAL}
                GROUP BY TO_CHAR(DATE(cancelled_at), 'YYYY-MM-DD'), source ORDER BY day ASC`, [periodAgo]),
-      db.many(`SELECT id, customer_email, product, source, price_cents, cancelled_at, cancel_reason
+      db.many(`SELECT id, customer_email, product, source, price_cents, cancelled_at,
+               COALESCE(cancel_reason, CASE WHEN status = 'RECYCLE_FAILED' THEN 'Payment failed' END) AS cancel_reason
                FROM subscriptions WHERE cancelled_at >= $1 ${NO_PAYPAL}
                ORDER BY cancelled_at DESC LIMIT 500`, [periodAgo]),
       Promise.resolve([]),  /* recentEvents removed — activity feed has its own live endpoint */
