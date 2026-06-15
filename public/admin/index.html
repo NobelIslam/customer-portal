@@ -1832,10 +1832,12 @@ function renderIntradayChart(d) {
   document.getElementById('bk-rows').innerHTML = [
     { label: 'CheckoutChamp',  val: '$' + (totals.cc_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
     { label: 'Recharge',       val: '$' + (totals.rc_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
+    { label: 'Whop',           val: '$' + ((totals.wh_cents || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), color: '#7c3aed' },
     { label: 'Total sales',    val: '$' + (totals.revenue_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), bold: true }
   ].map(function(r) {
     return '<div class="bk-row' + (r.bold ? ' bold' : '') + '">' +
-      '<span>' + r.label + '</span><span class="bk-val">' + r.val + '</span>' +
+      '<span' + (r.color ? ' style="color:'+r.color+';font-weight:600"' : '') + '>' + r.label + '</span>' +
+      '<span class="bk-val">' + r.val + '</span>' +
     '</div>';
   }).join('');
 

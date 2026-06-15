@@ -1628,8 +1628,8 @@ router.get('/api/today-revenue', async function(req, res) {
     const ccStart   = pm + '/' + pd + '/' + py;
     const ccEnd     = tm + '/' + td + '/' + ty;
 
-    /* ── Fetch CC recurring transactions + Recharge charges + yesterday DB in parallel ── */
-    const [ccRows, rcRows, yesterday] = await Promise.all([
+    /* ── Fetch CC recurring transactions + Recharge charges + yesterday DB + Whop DB in parallel ── */
+    const [ccRows, rcRows, yesterday, whopRow] = await Promise.all([
 
       /* CC live: today's RECURRING charged transactions */
       (async function() {
@@ -1681,7 +1681,17 @@ router.get('/api/today-revenue', async function(req, res) {
 
       /* Yesterday totals from DB for delta */
       db.one(`SELECT COALESCE(SUM(amount_cents),0)::bigint AS revenue_cents, COUNT(*)::int AS orders
-              FROM orders WHERE created_at >= $1 AND created_at < $2`, [yesterStart, todayStart])
+              FROM orders WHERE created_at >= $1 AND created_at < $2`, [yesterStart, todayStart]),
+
+      /* Whop: subscriptions renewing today (from local DB) */
+      db.one(`SELECT COALESCE(SUM(price_cents),0)::bigint AS wh_cents,
+                     COUNT(*)::int AS wh_orders
+              FROM subscriptions
+              WHERE source = 'whop'
+                AND status IN ('ACTIVE','TRIALING')
+                AND next_bill_at >= $1 AND next_bill_at < $2`,
+        [todayStart, todayEnd])
+        .catch(function() { return { wh_cents: '0', wh_orders: 0 }; })
     ]);
 
     /* Aggregate by Amsterdam hour */
@@ -1698,8 +1708,10 @@ router.get('/api/today-revenue', async function(req, res) {
     const full24 = Array.from({ length: 24 }, function(_, h) {
       return { hour: h, revenue_cents: (hourMap[h] || {}).revenue_cents || 0, orders: (hourMap[h] || {}).orders || 0 };
     });
-    const totalOrders = ccRows.length + rcRows.length;
-    const totalCents  = ccCents + rcCents;
+    const whCents     = Number(whopRow.wh_cents)  || 0;
+    const whOrders    = Number(whopRow.wh_orders) || 0;
+    const totalOrders = ccRows.length + rcRows.length + whOrders;
+    const totalCents  = ccCents + rcCents + whCents;
 
     res.json({
       hourly: full24,
@@ -1710,6 +1722,8 @@ router.get('/api/today-revenue', async function(req, res) {
         cc_cents:      ccCents,
         rc_orders:     rcRows.length,
         rc_cents:      rcCents,
+        wh_orders:     whOrders,
+        wh_cents:      whCents,
         recurring:     totalOrders,
         new_orders:    0
       },
