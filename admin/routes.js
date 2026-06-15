@@ -2047,11 +2047,14 @@ router.post('/api/integrations/:name/test', auth.requireAdmin, async function(re
     } else if (name === 'whop') {
       var wkey = creds['WHOP_API_KEY'];
       if (!wkey) return res.json({ ok: false, message: 'WHOP_API_KEY not configured' });
-      var r5 = await fetch('https://api.whop.com/v5/me', {
+      var r5 = await fetch('https://api.whop.com/api/v2/me', {
         headers: { 'Authorization': 'Bearer ' + wkey, 'accept': 'application/json' }
       });
       if (r5.ok) {
-        ok = true; message = 'Connected — Whop API OK';
+        var d5 = await r5.json();
+        ok = true; message = 'Connected — ' + ((d5.business && d5.business.title) || 'Whop API OK');
+      } else if (r5.status === 401) {
+        message = 'Invalid API key — check your Whop API key and try again';
       } else {
         message = 'API returned HTTP ' + r5.status;
       }
