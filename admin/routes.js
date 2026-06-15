@@ -1570,6 +1570,68 @@ router.get('/api/debug/billed-and-exported', async function(req, res) {
   }
 });
 
+/* ── /admin/api/today-revenue — intraday hourly breakdown ── */
+router.get('/api/today-revenue', async function(req, res) {
+  try {
+    const now          = new Date();
+    const todayStart   = amsMidnightUTC(now);
+    const todayEnd     = new Date(todayStart.getTime() + 24 * 3600 * 1000);
+    const yesterStart  = new Date(todayStart.getTime() - 24 * 3600 * 1000);
+
+    const [hourly, totals, yesterday] = await Promise.all([
+      db.many(`
+        SELECT EXTRACT(HOUR FROM (created_at AT TIME ZONE 'Europe/Amsterdam'))::int AS hour,
+               COALESCE(SUM(amount_cents),0)::bigint AS revenue_cents,
+               COUNT(*)::int AS orders
+        FROM orders WHERE created_at >= $1 AND created_at < $2
+        GROUP BY 1 ORDER BY 1
+      `, [todayStart, todayEnd]),
+
+      db.one(`
+        SELECT COALESCE(SUM(amount_cents),0)::bigint AS revenue_cents,
+               COUNT(*)::int AS orders,
+               COUNT(CASE WHEN source='cc'       THEN 1 END)::int AS cc_orders,
+               COALESCE(SUM(CASE WHEN source='cc'       THEN amount_cents ELSE 0 END),0)::bigint AS cc_cents,
+               COUNT(CASE WHEN source='recharge' THEN 1 END)::int AS rc_orders,
+               COALESCE(SUM(CASE WHEN source='recharge' THEN amount_cents ELSE 0 END),0)::bigint AS rc_cents,
+               COUNT(CASE WHEN type='rebill'  THEN 1 END)::int AS recurring,
+               COUNT(CASE WHEN type='initial' THEN 1 END)::int AS new_orders
+        FROM orders WHERE created_at >= $1 AND created_at < $2
+      `, [todayStart, todayEnd]),
+
+      db.one(`
+        SELECT COALESCE(SUM(amount_cents),0)::bigint AS revenue_cents,
+               COUNT(*)::int AS orders
+        FROM orders WHERE created_at >= $1 AND created_at < $2
+      `, [yesterStart, todayStart])
+    ]);
+
+    const hourMap = {};
+    hourly.forEach(function(r) { hourMap[r.hour] = { revenue_cents: Number(r.revenue_cents), orders: r.orders }; });
+    const full24 = Array.from({ length: 24 }, function(_, h) {
+      return { hour: h, revenue_cents: (hourMap[h] || {}).revenue_cents || 0, orders: (hourMap[h] || {}).orders || 0 };
+    });
+
+    res.json({
+      hourly: full24,
+      totals: {
+        revenue_cents: Number(totals.revenue_cents),
+        orders:        totals.orders,
+        cc_orders:     totals.cc_orders,
+        cc_cents:      Number(totals.cc_cents),
+        rc_orders:     totals.rc_orders,
+        rc_cents:      Number(totals.rc_cents),
+        recurring:     totals.recurring,
+        new_orders:    totals.new_orders
+      },
+      yesterday: { revenue_cents: Number(yesterday.revenue_cents), orders: yesterday.orders }
+    });
+  } catch (err) {
+    console.error('[admin/api/today-revenue]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* ── GET /admin/api/debug/today-breakdown
    Side-by-side comparison: DB subscriptions scheduled for today
    vs CC API recurring orders charged today.

@@ -11,23 +11,23 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:      #faf8f5;
-      --bg2:     #ffffff;
-      --bg3:     #f2efe9;
-      --border:  #e4dfd7;
-      --border2: #ccc7be;
-      --text:    #1c1917;
-      --muted:   #78716c;
-      --muted2:  #57534e;
+      --bg:      #0a0a0a;
+      --bg2:     #111111;
+      --bg3:     #1a1a1a;
+      --border:  #2a2a2a;
+      --border2: #3a3a3a;
+      --text:    #f0ede8;
+      --muted:   #888888;
+      --muted2:  #aaaaaa;
       --accent:  #f04e00;
       --accent2: #ff6b35;
-      --green:   #16a34a;
-      --red:     #dc2626;
+      --green:   #22c55e;
+      --red:     #ef4444;
       --yellow:  #d97706;
-      --blue:    #2563eb;
+      --blue:    #3b82f6;
       --purple:  #9333ea;
-      --cc:      #2563eb;
-      --rc:      #16a34a;
+      --cc:      #3b82f6;
+      --rc:      #22c55e;
     }
 
     html, body {
@@ -166,6 +166,119 @@
     .kpi.pos .kpi-value { color: var(--green); }
     .kpi.neg { border-color: rgba(239,68,68,.25); }
     .kpi.neg .kpi-value { color: var(--red); }
+
+    /* ── Dark welcome / greeting ── */
+    .welcome-wrap {
+      padding: 28px 0 20px;
+    }
+    .welcome-greeting {
+      font-size: 36px; font-weight: 700; color: var(--text);
+      letter-spacing: -0.02em; line-height: 1.1; margin-bottom: 6px;
+    }
+    .welcome-greeting em { font-style: italic; color: #e0dbd4; }
+    .welcome-sub { font-size: 12px; color: var(--muted); }
+    .welcome-right { display: flex; align-items: center; gap: 12px; }
+    .date-badge {
+      display: flex; align-items: center; gap: 6px;
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 7px; padding: 5px 10px; font-size: 12px; color: var(--text);
+    }
+    .live-badge {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 11px; color: var(--muted2);
+    }
+    .live-badge .live-dot { background: #22c55e; }
+    .live-badge strong { color: #22c55e; font-weight: 600; }
+
+    /* ── Dark KPI cards (welcome row) ── */
+    .dkpi {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 12px; padding: 16px 18px 14px;
+      position: relative; overflow: hidden;
+    }
+    .dkpi-label {
+      font-size: 9px; color: var(--muted); text-transform: uppercase;
+      letter-spacing: 0.08em; font-weight: 600; margin-bottom: 10px;
+    }
+    .dkpi-value {
+      font-family: 'Oswald', sans-serif; font-size: 30px; font-weight: 600;
+      color: var(--text); line-height: 1;
+    }
+    .dkpi-spark {
+      position: absolute; top: 10px; right: 10px;
+      width: 100px; height: 36px;
+    }
+    .dkpi-period {
+      position: absolute; top: 10px; right: 10px;
+      font-size: 9px; color: var(--muted); letter-spacing: 0.05em;
+    }
+
+    /* ── Intraday panel ── */
+    .intraday-wrap {
+      display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-bottom: 12px;
+    }
+    .dark-panel {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 12px; padding: 20px 22px;
+    }
+    .intraday-head {
+      display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 4px;
+    }
+    .intraday-label {
+      font-size: 10px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600;
+    }
+    .intraday-label .today-badge {
+      display: inline-block; background: #3b82f6; color: #fff;
+      font-size: 9px; font-weight: 700; border-radius: 4px; padding: 1px 5px;
+      letter-spacing: 0.06em; margin-left: 6px; vertical-align: middle;
+    }
+    .intraday-big {
+      font-size: 52px; font-weight: 700; color: #fff;
+      line-height: 1; margin: 6px 0 4px; letter-spacing: -0.02em;
+    }
+    .intraday-delta {
+      display: inline-flex; align-items: center;
+      background: rgba(239,68,68,.25); color: #fca5a5;
+      border-radius: 6px; padding: 2px 8px; font-size: 11px; font-weight: 500;
+      margin-bottom: 14px;
+    }
+    .intraday-delta.pos { background: rgba(34,197,94,.2); color: #86efac; }
+    .chart-tabs {
+      display: flex; gap: 0; background: var(--bg3);
+      border: 1px solid var(--border); border-radius: 20px; padding: 2px; overflow: hidden;
+    }
+    .chart-tab {
+      font-size: 11px; padding: 4px 12px; border-radius: 18px; color: var(--muted);
+      cursor: pointer; font-weight: 500; transition: all 0.15s; white-space: nowrap;
+      background: none; border: none; font-family: inherit;
+    }
+    .chart-tab.on { background: var(--bg2); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.5); }
+    .intraday-chart-wrap { height: 220px; position: relative; }
+
+    /* ── Breakdown panel ── */
+    .bk-total {
+      font-size: 28px; font-weight: 700; color: #fff; margin: 8px 0 16px;
+      letter-spacing: -0.01em;
+    }
+    .bk-label {
+      font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--muted); font-weight: 600; margin-bottom: 10px;
+    }
+    .bk-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 6px 0; border-bottom: 1px solid var(--border);
+      font-size: 12px; color: var(--muted2);
+    }
+    .bk-row:last-child { border-bottom: none; }
+    .bk-row.bold { font-weight: 600; color: var(--text); }
+    .bk-val { font-weight: 500; color: var(--text); }
+    .bk-stats {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 4px 12px; margin-top: 14px; padding-top: 12px;
+      border-top: 1px solid var(--border); font-size: 11px; color: var(--muted2);
+    }
+    .bk-stats span { color: var(--text); font-weight: 500; }
+
     .up   { color: var(--green); }
     .down { color: var(--red); }
     .neutral { color: var(--muted); }
@@ -358,22 +471,58 @@
     <div id="page-loading" class="page-loading"><div class="spinner"></div></div>
     <div id="content" style="display:none">
 
-      <!-- Page head -->
-      <div class="page-head" id="s-overview">
+      <!-- Welcome header -->
+      <div class="page-head welcome-wrap" id="s-overview">
         <div>
-          <h1 class="page-title">Overview</h1>
-          <div class="page-sub" id="page-sub">All sources · 30 days</div>
+          <div class="welcome-greeting" id="greeting-text">Good morning, <em>Md.Nobel</em>.</div>
+          <div class="welcome-sub" id="greeting-sub"></div>
+        </div>
+        <div class="welcome-right">
+          <div class="date-badge">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <span id="header-date">Jun 15, 2026</span>
+          </div>
+          <div class="live-badge">
+            <span class="live-dot" style="width:6px;height:6px;border-radius:50%;background:#22c55e;display:inline-block;animation:pulse 2s infinite"></span>
+            <strong>LIVE</strong> · <span id="header-updated">Updated just now</span>
+          </div>
+          <button class="btn" onclick="loadData()" title="Refresh" style="padding:5px 8px">↻</button>
         </div>
       </div>
 
-      <!-- KPI row 1 — with sparklines -->
-      <div class="grid-4" id="kpi-row1"></div>
+      <!-- KPI row 1 — dark style -->
+      <div class="grid-4" id="kpi-row1" style="margin-bottom:12px"></div>
 
-      <!-- KPI row 2 — supporting stats -->
-      <div class="grid-4" id="kpi-row2"></div>
+      <!-- Intraday chart + breakdown -->
+      <div class="intraday-wrap" id="s-revenue">
+        <!-- Left: intraday area chart -->
+        <div class="dark-panel">
+          <div class="intraday-head">
+            <div>
+              <div class="intraday-label">Orders <span class="today-badge">TODAY</span></div>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
+                <div class="intraday-big" id="intraday-big">—</div>
+                <div class="intraday-delta" id="intraday-delta">—</div>
+              </div>
+            </div>
+            <div class="chart-tabs">
+              <button class="chart-tab" id="tab-revenue" onclick="setIntradayTab('revenue')">Revenue</button>
+              <button class="chart-tab on" id="tab-orders" onclick="setIntradayTab('orders')">Orders</button>
+            </div>
+          </div>
+          <div class="intraday-chart-wrap"><canvas id="intraday-chart"></canvas></div>
+        </div>
+        <!-- Right: breakdown -->
+        <div class="dark-panel">
+          <div class="bk-label">Total sales breakdown</div>
+          <div class="bk-total" id="bk-total">—</div>
+          <div id="bk-rows"></div>
+          <div class="bk-stats" id="bk-stats"></div>
+        </div>
+      </div>
 
       <!-- Revenue & Forecast -->
-      <div class="section-label" id="s-revenue">Revenue &amp; forecast</div>
+      <div class="section-label">Revenue &amp; forecast</div>
       <div class="row-2">
         <div class="panel">
           <div class="panel-head">
@@ -700,25 +849,23 @@ function renderKpis(k, sources) {
     '<span style="color:#22c55e;font-weight:600">Recharge</span> ' + $n(bySrc.recharge) +
     '</span>';
   document.getElementById('kpi-row1').innerHTML = [
-    { label: 'MRR',                  value: $m(k.mrrCents),    delta: 'monthly recurring revenue', cls: 'accent', sparkId: 'sp-mrr',     sparkColor: '#f04e00' },
-    { label: 'Active subscriptions', value: $n(k.activeSubs),  delta: srcDelta,                    cls: '',       sparkId: 'sp-subs',    sparkColor: '#3b82f6' },
-    { label: 'New today',            value: $n(k.newToday),    delta: dayDelta(k.newToday, k.newYesterday),         sparkId: 'sp-new',     sparkColor: '#22c55e' },
-    { label: 'Cancels today',        value: $n(k.cancelsToday), delta: (function() {
-        var d=(k.cancelsToday||0)-(k.cancelsYesterday||0), s=d>=0?'+':'', c=d>0?'down':d<0?'up':'neutral';
-        return '<span class="'+c+'">'+s+d+' vs yesterday</span>';
-      })(), cls: '', sparkId: 'sp-cancels', sparkColor: '#ef4444' }
+    { label: 'Gross sales',          value: $m(k.todayRevenueCents), sparkId: 'sp-mrr',     sparkColor: '#f04e00' },
+    { label: 'MRR',                  value: $m(k.mrrCents),          sparkId: 'sp-subs',    sparkColor: '#3b82f6' },
+    { label: 'Orders today',         value: $n(k.todayOrders),       sparkId: 'sp-new',     sparkColor: '#22c55e' },
+    { label: 'Active subscriptions', value: $n(k.activeSubs),        sparkId: 'sp-cancels', sparkColor: '#888888' }
   ].map(function(c) {
-    return '<div class="kpi' + (c.cls ? ' ' + c.cls : '') + '">' +
-      '<div class="kpi-label">' + c.label + '</div>' +
-      '<div class="kpi-value">' + c.value + '</div>' +
-      '<div class="kpi-delta">' + c.delta + '</div>' +
-      '<div class="kpi-spark"><canvas id="' + c.sparkId + '"></canvas></div>' +
+    return '<div class="dkpi">' +
+      '<div class="dkpi-period">30D</div>' +
+      '<div class="dkpi-label">' + c.label + '</div>' +
+      '<div class="dkpi-value">' + c.value + '</div>' +
+      '<div class="dkpi-spark"><canvas id="' + c.sparkId + '"></canvas></div>' +
     '</div>';
   }).join('');
 
   /* Row 2: supporting stats */
   var net = k.netToday || 0;
-  document.getElementById('kpi-row2').innerHTML = [
+  var r2el = document.getElementById('kpi-row2');
+  if (r2el) r2el.innerHTML = [
     { label: 'Net today',          value: (net >= 0 ? '+' : '') + $n(net), delta: 'new minus cancelled',  cls: net > 0 ? 'pos' : net < 0 ? 'neg' : '' },
     { label: "Tomorrow's rebills", value: $m(k.tomorrowForecastCents),     delta: $n(k.tomorrowRebillCount) + ' subscriptions due', cls: 'accent' },
     { label: 'New this week',      value: $n(k.newThisWeek),               delta: weekDelta(k.newThisWeek, k.newLastWeek), cls: '' },
@@ -1210,7 +1357,8 @@ function updateSubtitle() {
   from.setDate(from.getDate() - currentDays);
   var activePill = document.querySelector('.dr-pill.on');
   var label = activePill ? activePill.textContent : currentDays + 'd';
-  document.getElementById('page-sub').textContent =
+  var psubEl = document.getElementById('page-sub');
+  if (psubEl) psubEl.textContent =
     'All sources · ' + label + ' · ' +
     from.toLocaleDateString('en-US',{month:'short',day:'numeric'}) +
     ' — ' + now.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
@@ -1254,6 +1402,8 @@ async function loadData() {
 
     renderKpis(d.kpis, d.sourceBreakdown || []);
     renderSparklines(d.newSubsTrend, d.cancelsTrend, d.revenueTrend);
+    loadTodayRevenue();
+    renderGreeting();
     renderRevChart(d.revenueTrend);
     renderForecastChart(d.forecast7d);
     renderGrowthCharts(d.newSubsTrend, d.cancelsTrend);
@@ -1577,6 +1727,154 @@ function debugRcCharges(email) {
   var tok = localStorage.getItem('tgp_admin_session') || '';
   var url = '/admin/api/debug/rc-charges?email=' + encodeURIComponent(email) + '&token=' + encodeURIComponent(tok);
   window.open(url, '_blank');
+}
+
+/* ── Intraday chart (today revenue / orders) ── */
+var intradayChart = null;
+var intradayData  = null;
+var intradayTab   = 'orders';
+
+function setIntradayTab(tab) {
+  intradayTab = tab;
+  document.getElementById('tab-revenue').classList.toggle('on', tab === 'revenue');
+  document.getElementById('tab-orders').classList.toggle('on', tab === 'orders');
+  if (intradayData) renderIntradayChart(intradayData);
+}
+
+function renderIntradayChart(d) {
+  intradayData = d;
+  var hourly   = d.hourly || [];
+  var totals   = d.totals || {};
+  var yest     = d.yesterday || {};
+
+  /* Big number + delta */
+  var isRev = intradayTab === 'revenue';
+  var todayVal  = isRev ? totals.revenue_cents / 100 : (totals.orders || 0);
+  var yesterVal = isRev ? yest.revenue_cents / 100    : (yest.orders || 0);
+  var bigEl = document.getElementById('intraday-big');
+  bigEl.textContent = isRev ? '$' + todayVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : todayVal.toLocaleString();
+
+  var deltaEl = document.getElementById('intraday-delta');
+  if (yesterVal > 0) {
+    var pct = ((todayVal - yesterVal) / yesterVal * 100).toFixed(1);
+    var neg = pct < 0;
+    deltaEl.textContent = (neg ? '' : '+') + pct + '% vs yesterday';
+    deltaEl.className   = 'intraday-delta' + (neg ? '' : ' pos');
+  } else {
+    deltaEl.textContent = 'vs yesterday';
+    deltaEl.className   = 'intraday-delta';
+  }
+
+  /* Breakdown panel */
+  document.getElementById('bk-total').textContent = '$' + (totals.revenue_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  document.getElementById('bk-rows').innerHTML = [
+    { label: 'CheckoutChamp',  val: '$' + (totals.cc_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
+    { label: 'Recharge',       val: '$' + (totals.rc_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
+    { label: 'Total sales',    val: '$' + (totals.revenue_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), bold: true }
+  ].map(function(r) {
+    return '<div class="bk-row' + (r.bold ? ' bold' : '') + '">' +
+      '<span>' + r.label + '</span><span class="bk-val">' + r.val + '</span>' +
+    '</div>';
+  }).join('');
+
+  document.getElementById('bk-stats').innerHTML =
+    'Orders <span>' + (totals.orders || 0) + '</span>' +
+    'Fulfilled <span>' + (totals.orders || 0) + '</span>' +
+    'New <span>' + (totals.new_orders || 0) + '</span>' +
+    'Recurring <span>' + (totals.recurring || 0) + '</span>';
+
+  /* Chart data */
+  var labels = hourly.map(function(h) {
+    return String(h.hour).padStart(2, '0') + ':00';
+  });
+  var dataPoints = hourly.map(function(h) {
+    return isRev ? h.revenue_cents / 100 : h.orders;
+  });
+
+  /* Gradient fill */
+  var canvas = document.getElementById('intraday-chart');
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+  var grad = ctx.createLinearGradient(0, 0, 0, 200);
+  grad.addColorStop(0,   'rgba(0,230,118,0.35)');
+  grad.addColorStop(0.7, 'rgba(0,230,118,0.05)');
+  grad.addColorStop(1,   'rgba(0,230,118,0)');
+
+  if (intradayChart) intradayChart.destroy();
+  intradayChart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        data:            dataPoints,
+        borderColor:     '#00e676',
+        backgroundColor: grad,
+        fill:            true,
+        tension:         0.4,
+        pointRadius:     0,
+        borderWidth:     2.5
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          mode: 'index', intersect: false,
+          backgroundColor: '#1a1a1a', borderColor: '#3a3a3a', borderWidth: 1,
+          titleColor: '#aaa', bodyColor: '#fff',
+          callbacks: {
+            label: function(c) {
+              return isRev ? '$' + c.parsed.y.toFixed(2) : c.parsed.y + ' orders';
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#555', font: { size: 10 }, maxTicksLimit: 12 },
+          grid:  { color: 'rgba(255,255,255,0.04)' }
+        },
+        y: {
+          ticks: { color: '#555', font: { size: 10 } },
+          grid:  { color: 'rgba(255,255,255,0.04)' },
+          beginAtZero: true
+        }
+      }
+    }
+  });
+}
+
+async function loadTodayRevenue() {
+  try {
+    var r = await fetch('/admin/api/today-revenue', { headers: H });
+    if (!r.ok) return;
+    var d = await r.json();
+    renderIntradayChart(d);
+  } catch(e) { console.error('[today-revenue]', e); }
+}
+
+/* ── Greeting ── */
+function renderGreeting() {
+  var h = new Date().getHours();
+  var greeting = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+  var el = document.getElementById('greeting-text');
+  if (el) el.innerHTML = greeting + ', <em>Md.Nobel</em>.';
+
+  var sub = document.getElementById('greeting-sub');
+  if (sub) {
+    var days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    var now = new Date();
+    sub.textContent = days[now.getDay()] + ', ' + months[now.getMonth()] + ' ' + now.getDate() + ' · TGP™ · Europe/Amsterdam';
+  }
+
+  var hd = document.getElementById('header-date');
+  if (hd) {
+    var n = new Date();
+    hd.textContent = n.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
 }
 </script>
 </body>
