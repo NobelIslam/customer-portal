@@ -236,7 +236,7 @@ router.get('/api/overview', async function(req, res) {
       db.many(`SELECT id, customer_email, product, source, price_cents, cancelled_at,
                COALESCE(cancel_reason, CASE WHEN status = 'RECYCLE_FAILED' THEN 'Payment failed' END) AS cancel_reason
                FROM subscriptions WHERE cancelled_at >= $1 ${NO_PAYPAL}
-               ORDER BY cancelled_at DESC LIMIT 500`, [periodAgo]),
+               ORDER BY cancelled_at DESC LIMIT 2000`, [periodAgo]),
       Promise.resolve([]),  /* recentEvents removed — activity feed has its own live endpoint */
       db.many(`SELECT product, source, COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS mrr_cents
                FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW() AND product IS NOT NULL ${NO_PAYPAL}
@@ -282,6 +282,7 @@ router.get('/api/overview', async function(req, res) {
       newSubsTrend:      newSubsTrend,
       cancelsTrend:      cancelsTrend,
       recentCancels:       recentCancels,
+      cancelTotal:         cancelsTrend.reduce(function(s, r) { return s + r.n; }, 0),
       recentEvents:        recentEvents,
       tomorrowRebillsList: tomorrowRebillsList,
       gatewayBreakdown:    gatewayBreakdown

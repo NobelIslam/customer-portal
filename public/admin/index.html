@@ -981,10 +981,11 @@ function feedPage(p) {
 }
 
 /* ── Cancels ── */
-function renderCancels(cancels) {
+function renderCancels(cancels, total) {
   allCancels = cancels || [];
   var label = currentDays === 1 ? 'today' : 'last ' + currentDays + 'd';
-  document.getElementById('cancels-count').textContent = allCancels.length + ' cancellations · ' + label;
+  var count = (total != null ? total : allCancels.length);
+  document.getElementById('cancels-count').textContent = count + ' cancellations · ' + label;
   applyCancelsFilter();
 }
 
@@ -1256,7 +1257,7 @@ async function loadData() {
     renderForecastChart(d.forecast7d);
     renderGrowthCharts(d.newSubsTrend, d.cancelsTrend);
     /* Activity feed is loaded separately via loadActivityFeed() */
-    renderCancels(d.recentCancels);
+    renderCancels(d.recentCancels, d.cancelTotal);
     renderTomorrowRebills(d.tomorrowRebillsList);
     renderProducts(d.productBreakdown);
     renderGateway(d.gatewayBreakdown);
