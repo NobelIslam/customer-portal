@@ -407,106 +407,6 @@
     .mini-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); background: rgba(240,78,0,.05); }
     .mini-btn.manage { background: var(--bg3); border-color: var(--border2); color: var(--muted2); }
     .mini-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-    /* ── Integrations ─────────────────────────────── */
-    .int-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
-      gap: 12px;
-      margin-bottom: 16px;
-    }
-    .int-card {
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      transition: box-shadow 0.15s;
-    }
-    .int-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.06); }
-    .int-card-top {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .int-logo {
-      width: 40px; height: 40px;
-      border-radius: 10px;
-      display: flex; align-items: center; justify-content: center;
-      font-weight: 700; font-size: 13px;
-      color: #fff; flex-shrink: 0;
-      letter-spacing: -0.5px;
-    }
-    .int-title { flex: 1; min-width: 0; }
-    .int-name  { font-size: 13px; font-weight: 600; color: var(--text); }
-    .int-cat   { font-size: 11px; color: var(--muted); margin-top: 1px; }
-    /* Toggle switch */
-    .tgl-switch { position: relative; width: 36px; height: 20px; cursor: pointer; flex-shrink: 0; }
-    .tgl-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
-    .tgl-rail {
-      position: absolute; inset: 0;
-      background: var(--border2);
-      border-radius: 20px;
-      transition: background 0.2s;
-    }
-    .tgl-rail::before {
-      content: '';
-      position: absolute;
-      width: 14px; height: 14px;
-      left: 3px; top: 3px;
-      background: #fff;
-      border-radius: 50%;
-      transition: transform 0.2s;
-      box-shadow: 0 1px 3px rgba(0,0,0,.2);
-    }
-    .tgl-switch input:checked ~ .tgl-rail { background: var(--green); }
-    .tgl-switch input:checked ~ .tgl-rail::before { transform: translateX(16px); }
-    /* Card body */
-    .int-desc { font-size: 12px; color: var(--muted); line-height: 1.45; }
-    .int-status {
-      display: flex; align-items: center; gap: 6px;
-      font-size: 12px; font-weight: 500;
-    }
-    .int-status .st-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-    .int-status.connected    { color: var(--green); }
-    .int-status.connected .st-dot    { background: var(--green); }
-    .int-status.disconnected { color: var(--muted); }
-    .int-status.disconnected .st-dot { background: var(--border2); }
-    .int-keys {
-      font-size: 11px;
-      background: var(--bg3);
-      border-radius: 6px;
-      padding: 7px 9px;
-      font-family: monospace;
-      color: var(--muted2);
-      line-height: 1.7;
-      white-space: pre;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .int-keys.empty { color: var(--muted); font-style: italic; font-family: inherit; }
-    .int-actions { display: flex; gap: 6px; }
-    .int-test-btn {
-      flex: 1;
-      font-size: 11px; padding: 7px 10px;
-      border-radius: 6px;
-      border: 1px solid var(--border2);
-      background: var(--bg3);
-      color: var(--muted2);
-      cursor: pointer; font-family: inherit; font-weight: 500;
-      transition: all 0.12s;
-    }
-    .int-test-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); background: rgba(240,78,0,.05); }
-    .int-test-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .int-test-result {
-      font-size: 11px; padding: 7px 9px;
-      border-radius: 6px; display: none;
-      line-height: 1.4;
-    }
-    .int-test-result.ok   { background: #dcfce7; color: var(--green); display: block; }
-    .int-test-result.fail { background: #fee2e2; color: var(--red);   display: block; }
   </style>
 </head>
 <body>
@@ -562,7 +462,7 @@
     <a href="#s-gateway"   class="nav-item"><span class="nav-dot"></span>By gateway</a>
 
     <div class="nav-section">System</div>
-    <a href="#s-integrations" class="nav-item"><span class="nav-dot"></span>Integrations</a>
+    <a href="/admin/integrations" class="nav-item"><span class="nav-dot"></span>Integrations</a>
     <a href="#" class="nav-item" onclick="runSync();return false;"><span class="nav-dot"></span>Sync now</a>
     <a href="/admin/login" class="nav-item" onclick="logout();return false;"><span class="nav-dot"></span>Sign out</a>
   </nav>
@@ -731,12 +631,6 @@
       <!-- Gateway breakdown — full width -->
       <div class="section-label" id="s-gateway">Active subscriptions by gateway</div>
       <div class="panel mb10" id="gateway-panel"></div>
-
-      <!-- Integrations -->
-      <div class="section-label" id="s-integrations">Integrations</div>
-      <div id="int-grid" class="int-grid">
-        <div style="padding:20px;color:var(--muted);font-size:13px">Loading integrations…</div>
-      </div>
 
     </div><!-- /#content -->
   </div><!-- /.main -->
@@ -1535,7 +1429,6 @@ async function loadData() {
 
 loadData();
 loadActivityFeed();
-loadIntegrations();
 setInterval(loadSyncState, 60000);
 setInterval(loadActivityFeed, 30000);
 setInterval(updateFeedMeta, 15000);
@@ -1985,107 +1878,7 @@ function renderGreeting() {
   }
 }
 
-/* ════════════════════════════════════════════════════
-   Integrations
-   ════════════════════════════════════════════════════ */
 
-var INT_LOGO = {
-  checkoutchamp: 'CC',
-  recharge:      'RC',
-  shopify:       'SH',
-  klaviyo:       'KL',
-  whop:          'WP',
-};
-
-async function loadIntegrations() {
-  try {
-    var r = await fetch('/admin/api/integrations', { headers: H });
-    if (!r.ok) return;
-    var d = await r.json();
-    renderIntegrations(d.integrations || []);
-  } catch(e) {
-    var g = document.getElementById('int-grid');
-    if (g) g.innerHTML = '<div style="padding:20px;color:var(--red);font-size:12px">Failed to load integrations: ' + esc(e.message) + '</div>';
-  }
-}
-
-function renderIntegrations(integrations) {
-  var grid = document.getElementById('int-grid');
-  if (!grid) return;
-
-  if (!integrations.length) {
-    grid.innerHTML = '<div style="padding:20px;color:var(--muted);font-size:13px">No integrations configured.</div>';
-    return;
-  }
-
-  grid.innerHTML = integrations.map(function(int) {
-    var abbr    = INT_LOGO[int.name] || int.name.substring(0, 2).toUpperCase();
-    var keys    = int.maskedKeys || {};
-    var keyLines = Object.entries(keys).map(function(kv) { return kv[0] + ': ' + kv[1]; }).join('\n');
-
-    return '<div class="int-card" id="int-card-' + esc(int.name) + '">' +
-      '<div class="int-card-top">' +
-        '<div class="int-logo" style="background:' + esc(int.color) + '">' + abbr + '</div>' +
-        '<div class="int-title">' +
-          '<div class="int-name">' + esc(int.label) + '</div>' +
-          '<div class="int-cat">' + esc(int.category) + '</div>' +
-        '</div>' +
-        '<label class="tgl-switch" title="' + (int.enabled ? 'Disable' : 'Enable') + ' ' + esc(int.label) + '">' +
-          '<input type="checkbox" ' + (int.enabled ? 'checked' : '') + ' onchange="toggleIntegration(\'' + int.name + '\', this.checked)">' +
-          '<span class="tgl-rail"></span>' +
-        '</label>' +
-      '</div>' +
-      '<div class="int-desc">' + esc(int.description) + '</div>' +
-      '<div class="int-status ' + (int.configured ? 'connected' : 'disconnected') + '">' +
-        '<span class="st-dot"></span>' +
-        (int.configured ? 'Connected' : 'Not configured') +
-      '</div>' +
-      (keyLines
-        ? '<div class="int-keys">' + esc(keyLines) + '</div>'
-        : '<div class="int-keys empty">No API key configured</div>') +
-      '<div class="int-actions">' +
-        '<button class="int-test-btn" onclick="testIntegration(\'' + int.name + '\', this)">Test connection</button>' +
-      '</div>' +
-      '<div class="int-test-result" id="int-result-' + esc(int.name) + '"></div>' +
-    '</div>';
-  }).join('');
-}
-
-async function toggleIntegration(name, enabled) {
-  try {
-    await fetch('/admin/api/integrations/' + encodeURIComponent(name) + '/toggle', {
-      method: 'POST',
-      headers: Object.assign({}, H, { 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ enabled: enabled })
-    });
-  } catch(e) {}
-}
-
-async function testIntegration(name, btn) {
-  var result = document.getElementById('int-result-' + name);
-  btn.disabled = true;
-  btn.textContent = 'Testing…';
-  if (result) { result.className = 'int-test-result'; result.textContent = ''; }
-
-  try {
-    var r = await fetch('/admin/api/integrations/' + encodeURIComponent(name) + '/test', {
-      method: 'POST', headers: H
-    });
-    var d = await r.json();
-    if (result) {
-      result.className = 'int-test-result ' + (d.ok ? 'ok' : 'fail');
-      result.textContent = d.message || (d.ok ? 'Connection OK' : 'Test failed');
-    }
-  } catch(e) {
-    if (result) {
-      result.className = 'int-test-result fail';
-      result.textContent = e.message;
-    }
-  }
-
-  btn.disabled = false;
-  btn.textContent = 'Test connection';
-}
 </script>
 </body>
 </html>

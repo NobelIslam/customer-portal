@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=1280, initial-scale=1"/>
+  <title>TGP Admin — Integrations</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #faf8f5;
+      --bg2:     #ffffff;
+      --bg3:     #f2efe9;
+      --border:  #e4dfd7;
+      --border2: #ccc7be;
+      --text:    #1c1917;
+      --muted:   #78716c;
+      --muted2:  #57534e;
+      --accent:  #f04e00;
+      --green:   #16a34a;
+      --red:     #dc2626;
+      --yellow:  #d97706;
+    }
+
+    html, body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, system-ui, sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Topbar ── */
+    .topbar {
+      position: sticky; top: 0; z-index: 100;
+      display: flex; align-items: center; gap: 10px;
+      padding: 0 16px; height: 52px;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+    }
+    .brand { display: flex; align-items: center; flex-shrink: 0; }
+    .brand img { height: 32px; width: auto; display: block; }
+    .topbar-title {
+      font-size: 14px; font-weight: 600; color: var(--text);
+      flex: 1;
+    }
+    .topbar-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+
+    .btn {
+      font-size: 12px; font-weight: 500; font-family: inherit;
+      padding: 7px 14px; border-radius: 7px; cursor: pointer;
+      border: 1px solid var(--border2);
+      background: var(--bg3); color: var(--muted2);
+      transition: all 0.12s;
+      text-decoration: none; display: inline-flex; align-items: center;
+    }
+    .btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(240,78,0,.05); }
+
+    /* ── Layout ── */
+    .layout { display: flex; height: calc(100vh - 52px); }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 196px; flex-shrink: 0;
+      background: var(--bg2);
+      border-right: 1px solid var(--border);
+      padding: 8px 8px 16px;
+      overflow-y: auto;
+    }
+    .nav-section {
+      font-size: 10px; font-weight: 600; letter-spacing: .07em;
+      text-transform: uppercase; color: var(--muted);
+      padding: 12px 8px 4px;
+    }
+    .nav-section:first-child { margin-top: 4px; }
+    .nav-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 10px; border-radius: 7px;
+      color: var(--muted2); font-size: 12.5px;
+      cursor: pointer; text-decoration: none;
+      transition: all 0.12s;
+    }
+    .nav-item:hover { background: var(--bg3); color: var(--text); }
+    .nav-item.on { background: var(--bg3); color: var(--text); font-weight: 500; }
+    .nav-dot { width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: 0.5; flex-shrink: 0; }
+
+    /* ── Main ── */
+    .main {
+      flex: 1; overflow-y: auto;
+      padding: 24px 28px;
+    }
+
+    /* ── Page header ── */
+    .page-head {
+      margin-bottom: 24px;
+    }
+    .page-head h1 {
+      font-family: 'Oswald', sans-serif;
+      font-size: 22px; font-weight: 600;
+      letter-spacing: .02em;
+      color: var(--text);
+    }
+    .page-head p {
+      color: var(--muted); font-size: 12.5px;
+      margin-top: 4px;
+    }
+
+    /* ── Category section ── */
+    .cat-label {
+      font-size: 10px; font-weight: 600; letter-spacing: .07em;
+      text-transform: uppercase; color: var(--muted);
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 12px; margin-top: 24px;
+    }
+    .cat-label:first-of-type { margin-top: 0; }
+    .cat-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+    /* ── Integration grid ── */
+    .int-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 14px;
+      margin-bottom: 6px;
+    }
+
+    /* ── Integration card ── */
+    .int-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: box-shadow 0.15s, border-color 0.15s;
+    }
+    .int-card:hover { box-shadow: 0 2px 12px rgba(0,0,0,.07); border-color: var(--border2); }
+    .int-card-top {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .int-logo {
+      width: 44px; height: 44px;
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 14px;
+      color: #fff; flex-shrink: 0;
+      letter-spacing: -0.5px;
+    }
+    .int-title { flex: 1; min-width: 0; }
+    .int-name  { font-size: 14px; font-weight: 600; color: var(--text); }
+    .int-cat   { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    /* Toggle switch */
+    .tgl-switch {
+      position: relative; width: 38px; height: 22px;
+      cursor: pointer; flex-shrink: 0;
+    }
+    .tgl-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+    .tgl-rail {
+      position: absolute; inset: 0;
+      background: var(--border2);
+      border-radius: 22px;
+      transition: background 0.2s;
+    }
+    .tgl-rail::before {
+      content: '';
+      position: absolute;
+      width: 16px; height: 16px;
+      left: 3px; top: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s;
+      box-shadow: 0 1px 3px rgba(0,0,0,.25);
+    }
+    .tgl-switch input:checked ~ .tgl-rail { background: var(--green); }
+    .tgl-switch input:checked ~ .tgl-rail::before { transform: translateX(16px); }
+    .tgl-switch input:disabled ~ .tgl-rail { opacity: 0.4; cursor: not-allowed; }
+
+    /* Card body */
+    .int-desc { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+
+    .int-status {
+      display: flex; align-items: center; gap: 7px;
+      font-size: 12px; font-weight: 500;
+    }
+    .int-status .st-dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    }
+    .int-status.connected    { color: var(--green); }
+    .int-status.connected .st-dot    { background: var(--green); box-shadow: 0 0 0 3px rgba(22,163,74,.15); }
+    .int-status.disconnected { color: var(--muted); }
+    .int-status.disconnected .st-dot { background: var(--border2); }
+
+    .int-keys {
+      font-size: 11.5px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-family: 'Courier New', monospace;
+      color: var(--muted2);
+      line-height: 1.8;
+      white-space: pre;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .int-keys.empty {
+      color: var(--muted); font-style: italic;
+      font-family: 'Inter', sans-serif; font-size: 12px;
+    }
+
+    .int-footer {
+      display: flex; flex-direction: column; gap: 8px;
+      margin-top: 2px;
+    }
+    .int-test-btn {
+      width: 100%;
+      font-size: 12px; padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border2);
+      background: var(--bg3);
+      color: var(--muted2);
+      cursor: pointer; font-family: inherit; font-weight: 500;
+      transition: all 0.12s;
+    }
+    .int-test-btn:hover:not(:disabled) {
+      border-color: var(--accent); color: var(--accent);
+      background: rgba(240,78,0,.05);
+    }
+    .int-test-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .int-test-result {
+      font-size: 12px; padding: 8px 10px;
+      border-radius: 8px; display: none;
+      line-height: 1.45;
+    }
+    .int-test-result.ok   { background: #dcfce7; color: var(--green); display: block; }
+    .int-test-result.fail { background: #fee2e2; color: var(--red);   display: block; }
+
+    /* ── Loading / error states ── */
+    .state-box {
+      padding: 40px; text-align: center;
+      color: var(--muted); font-size: 13px;
+    }
+    .state-box.error { color: var(--red); }
+  </style>
+</head>
+<body>
+
+<!-- ── Topbar ── -->
+<div class="topbar">
+  <div class="brand">
+    <img src="/admin/tgp-logo.png" alt="TGP" onerror="this.style.display='none'">
+  </div>
+  <div class="topbar-title">Integrations</div>
+  <div class="topbar-right">
+    <a href="/admin/" class="btn">← Dashboard</a>
+    <button class="btn" onclick="logout()">Sign out</button>
+  </div>
+</div>
+
+<!-- ── Layout ── -->
+<div class="layout">
+
+  <!-- Sidebar -->
+  <nav class="sidebar">
+    <div class="nav-section">Dashboard</div>
+    <a href="/admin/" class="nav-item"><span class="nav-dot"></span>Overview</a>
+
+    <div class="nav-section">System</div>
+    <a href="/admin/integrations" class="nav-item on"><span class="nav-dot"></span>Integrations</a>
+    <a href="/admin/login" class="nav-item" onclick="logout();return false;"><span class="nav-dot"></span>Sign out</a>
+  </nav>
+
+  <!-- Main -->
+  <div class="main">
+    <div class="page-head">
+      <h1>Integrations</h1>
+      <p>Manage your connected platforms. Toggle integrations on or off and test API connections.</p>
+    </div>
+
+    <div id="int-page-content">
+      <div class="state-box">Loading integrations…</div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── Auth ── */
+(function() {
+  if (location.hash.indexOf('session=') !== -1) {
+    var m = location.hash.match(/session=([^&]+)/);
+    if (m) { localStorage.setItem('tgp_admin_session', m[1]); history.replaceState(null, '', location.pathname); }
+  }
+  if (!localStorage.getItem('tgp_admin_session')) location.href = '/admin/login';
+})();
+
+var SESSION = localStorage.getItem('tgp_admin_session');
+var H = { 'Authorization': 'Bearer ' + SESSION, 'Cache-Control': 'no-cache, no-store', 'Pragma': 'no-cache' };
+
+function logout() { localStorage.removeItem('tgp_admin_session'); location.href = '/admin/login'; }
+
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+var INT_ABBR = {
+  checkoutchamp: 'CC',
+  recharge:      'RC',
+  shopify:       'SH',
+  klaviyo:       'KL',
+  whop:          'WP',
+};
+
+var CATEGORIES = ['Subscription', 'Ecommerce', 'Marketing', 'Payments'];
+
+/* ── Load & render ── */
+async function loadIntegrations() {
+  var wrap = document.getElementById('int-page-content');
+  try {
+    var r = await fetch('/admin/api/integrations', { headers: H });
+    if (r.status === 401) { logout(); return; }
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    var d = await r.json();
+    renderIntegrations(d.integrations || [], wrap);
+  } catch(e) {
+    wrap.innerHTML = '<div class="state-box error">Failed to load integrations: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderIntegrations(integrations, wrap) {
+  if (!integrations.length) {
+    wrap.innerHTML = '<div class="state-box">No integrations found.</div>';
+    return;
+  }
+
+  /* Group by category */
+  var byCat = {};
+  integrations.forEach(function(int) {
+    var c = int.category || 'Other';
+    if (!byCat[c]) byCat[c] = [];
+    byCat[c].push(int);
+  });
+
+  var order = CATEGORIES.filter(function(c) { return byCat[c]; });
+  Object.keys(byCat).forEach(function(c) { if (order.indexOf(c) === -1) order.push(c); });
+
+  var html = '';
+  order.forEach(function(cat) {
+    html += '<div class="cat-label">' + esc(cat) + '</div>';
+    html += '<div class="int-grid">';
+    byCat[cat].forEach(function(int) {
+      html += cardHTML(int);
+    });
+    html += '</div>';
+  });
+
+  wrap.innerHTML = html;
+}
+
+function cardHTML(int) {
+  var abbr   = INT_ABBR[int.name] || int.name.substring(0, 2).toUpperCase();
+  var keys   = int.maskedKeys || {};
+  var keyLines = Object.entries(keys).map(function(kv) { return kv[0] + ': ' + kv[1]; }).join('\n');
+
+  return '<div class="int-card" id="int-card-' + esc(int.name) + '">' +
+    '<div class="int-card-top">' +
+      '<div class="int-logo" style="background:' + esc(int.color) + '">' + abbr + '</div>' +
+      '<div class="int-title">' +
+        '<div class="int-name">' + esc(int.label) + '</div>' +
+        '<div class="int-cat">' + esc(int.category) + '</div>' +
+      '</div>' +
+      '<label class="tgl-switch" title="' + (int.enabled ? 'Disable ' : 'Enable ') + esc(int.label) + '">' +
+        '<input type="checkbox"' + (int.enabled ? ' checked' : '') + ' onchange="toggleIntegration(\'' + int.name + '\', this.checked)">' +
+        '<span class="tgl-rail"></span>' +
+      '</label>' +
+    '</div>' +
+    '<div class="int-desc">' + esc(int.description) + '</div>' +
+    '<div class="int-status ' + (int.configured ? 'connected' : 'disconnected') + '">' +
+      '<span class="st-dot"></span>' +
+      (int.configured ? 'Connected' : 'Not configured — add API key to environment variables') +
+    '</div>' +
+    (keyLines
+      ? '<div class="int-keys">' + esc(keyLines) + '</div>'
+      : '<div class="int-keys empty">No API credentials configured</div>') +
+    '<div class="int-footer">' +
+      '<button class="int-test-btn" onclick="testIntegration(\'' + int.name + '\', this)">Test connection</button>' +
+      '<div class="int-test-result" id="int-result-' + esc(int.name) + '"></div>' +
+    '</div>' +
+  '</div>';
+}
+
+/* ── Toggle ── */
+async function toggleIntegration(name, enabled) {
+  try {
+    await fetch('/admin/api/integrations/' + encodeURIComponent(name) + '/toggle', {
+      method: 'POST',
+      headers: Object.assign({}, H, { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ enabled: enabled })
+    });
+  } catch(e) {}
+}
+
+/* ── Test connection ── */
+async function testIntegration(name, btn) {
+  var result = document.getElementById('int-result-' + name);
+  btn.disabled = true;
+  btn.textContent = 'Testing…';
+  if (result) { result.className = 'int-test-result'; result.textContent = ''; }
+
+  try {
+    var r = await fetch('/admin/api/integrations/' + encodeURIComponent(name) + '/test', {
+      method: 'POST', headers: H
+    });
+    var d = await r.json();
+    if (result) {
+      result.className = 'int-test-result ' + (d.ok ? 'ok' : 'fail');
+      result.textContent = d.message || (d.ok ? 'Connection successful' : 'Test failed');
+    }
+  } catch(e) {
+    if (result) {
+      result.className = 'int-test-result fail';
+      result.textContent = e.message;
+    }
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Test connection';
+}
+
+loadIntegrations();
+</script>
+</body>
+</html>

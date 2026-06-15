@@ -149,6 +149,11 @@ router.get('/', function(req, res) {
   res.sendFile(path.join(__dirname, '..', 'public', 'admin', 'index.html'));
 });
 
+router.get('/integrations', function(req, res) {
+  res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.sendFile(path.join(__dirname, '..', 'public', 'admin', 'integrations.html'));
+});
+
 /* ════════════════════════════════════════════════════
    AUTHED API ENDPOINTS
    All endpoints below require a valid session token.
