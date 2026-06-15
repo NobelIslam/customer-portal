@@ -447,7 +447,10 @@
           <div class="feed-scroll" id="activity-feed"></div>
         </div>
         <div class="panel" id="s-cancels">
-          <div class="panel-head"><span class="panel-title">Recent cancellations</span></div>
+          <div class="panel-head">
+            <span class="panel-title">Recent cancellations</span>
+            <span class="panel-meta" id="cancels-count"></span>
+          </div>
           <div class="search-badge" id="cancels-search-badge"></div>
           <div class="feed-scroll" id="cancels-list"></div>
         </div>
@@ -978,6 +981,8 @@ function feedPage(p) {
 /* ── Cancels ── */
 function renderCancels(cancels) {
   allCancels = cancels || [];
+  var label = currentDays === 1 ? 'today' : 'last ' + currentDays + 'd';
+  document.getElementById('cancels-count').textContent = allCancels.length + ' cancellations · ' + label;
   applyCancelsFilter();
 }
 
@@ -992,11 +997,12 @@ function renderCancelsList(cancels) {
     html = '<div class="empty">No recent cancellations</div>';
   } else {
     html = slice.map(function(c) {
-      var src  = c.source ? '<span class="src-tag tag-' + (c.source==='recharge'?'rc':c.source) + '">' + c.source + '</span>' : '';
-      var when = c.cancelled_at ? ago(c.cancelled_at) : '';
+      var src    = c.source ? '<span class="src-tag tag-' + (c.source==='recharge'?'rc':c.source) + '">' + c.source + '</span>' : '';
+      var when   = c.cancelled_at ? ago(c.cancelled_at) : '';
+      var reason = c.cancel_reason ? ' · ' + esc(c.cancel_reason) : '';
       return '<div class="cancel-row">' +
         '<div><div class="cancel-name">' + esc(c.product||'Subscription') + src + '</div>' +
-        '<div class="cancel-meta">' + esc(c.customer_email||'') + (when?' · '+when:'') + '</div></div>' +
+        '<div class="cancel-meta">' + esc(c.customer_email||'') + (when?' · '+when:'') + reason + '</div></div>' +
         '<span class="cancel-amt">−' + $m(c.price_cents) + '</span>' +
       '</div>';
     }).join('');
