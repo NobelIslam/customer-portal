@@ -800,7 +800,7 @@ async function runSyncCycle(opts) {
   console.log('[sync] starting cycle | full:', opts.full === true);
 
   const results = {};
-  const sources = ['cc', 'recharge', 'whop'];
+  const sources = ['whop', 'cc', 'recharge'];
 
   for (const source of sources) {
     const start = Date.now();

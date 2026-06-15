@@ -435,6 +435,7 @@
     <span class="live-pill"><span class="live-dot"></span> Live</span>
     <span class="sync-info"><span id="sync-dot"></span><span id="sync-text">Loading…</span></span>
     <button class="btn primary" id="sync-btn" onclick="runSync()">↻ Sync now</button>
+    <button class="btn" id="sync-whop-btn" onclick="runWhopSync()" style="margin-left:6px;font-size:12px;padding:4px 10px;">⟳ Sync Whop</button>
     <button class="btn" onclick="logout()">Sign out</button>
   </div>
 </div>
@@ -1411,6 +1412,27 @@ async function runSync() {
     if (!r.ok) throw new Error('Sync failed');
     setTimeout(function() { loadData(); btn.disabled=false; btn.textContent='↻ Sync now'; }, 12000);
   } catch(e) { alert(e.message); btn.disabled=false; btn.textContent='↻ Sync now'; }
+}
+
+/* ── Sync Whop only ── */
+async function runWhopSync() {
+  var btn = document.getElementById('sync-whop-btn');
+  btn.disabled = true; btn.textContent = 'Syncing Whop…';
+  try {
+    var r = await fetch('/admin/sync/whop', { method: 'POST', headers: H });
+    if (!r.ok) throw new Error('Whop sync failed');
+    /* Whop sync: ~2-3 min for 62 pages. Poll every 15s for up to 4 min */
+    var polls = 0;
+    var poll = setInterval(function() {
+      polls++;
+      loadSyncState();
+      if (polls >= 16) {
+        clearInterval(poll);
+        loadData();
+        btn.disabled = false; btn.textContent = '⟳ Sync Whop';
+      }
+    }, 15000);
+  } catch(e) { alert(e.message); btn.disabled=false; btn.textContent='⟳ Sync Whop'; }
 }
 
 /* ── Main data load ── */

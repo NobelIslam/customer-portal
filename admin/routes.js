@@ -400,6 +400,30 @@ router.get('/api/sync-state', async function(req, res) {
   }
 });
 
+/* ── /admin/sync/whop — Whop-only sync trigger ── */
+
+router.post('/sync/whop', async function(req, res) {
+  try {
+    const full = req.query.full === '1' || req.body.full === true;
+    sync.syncWhop({ full: full })
+      .then(function(r) {
+        console.log('[admin] whop-only sync complete', r);
+        return db.query(
+          full
+            ? "UPDATE sync_state SET last_full_sync_at=NOW(), last_delta_sync_at=NOW(), last_error=NULL WHERE source='whop'"
+            : "UPDATE sync_state SET last_delta_sync_at=NOW(), last_error=NULL WHERE source='whop'"
+        );
+      })
+      .catch(function(e) {
+        console.error('[admin] whop-only sync error', e.message);
+        db.query("UPDATE sync_state SET last_error=$1, last_error_at=NOW() WHERE source='whop'", [e.message]).catch(function(){});
+      });
+    res.json({ started: true, full: full });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* ── /admin/sync/run — manual sync trigger ── */
 
 router.post('/sync/run', async function(req, res) {
