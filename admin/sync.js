@@ -216,6 +216,7 @@ async function upsertCCPurchase(p) {
   const nextBillAt  = parseDate(p.nextBillDate);
   const isCancelledStatus = status === 'CANCELLED' || status === 'INACTIVE' || status === 'RECYCLE_FAILED';
   const cancelledAt = isCancelledStatus ? parseDate(p.dateUpdated || p.cancelDate) : null;
+  const cancelReason = status === 'RECYCLE_FAILED' ? 'Payment failed' : (p.cancelReason || null);
 
   /* detect if this is a NEW row → fire sub_created event */
   const existing = await db.one('SELECT id, status FROM subscriptions WHERE id = $1', [id]);
@@ -255,7 +256,7 @@ async function upsertCCPurchase(p) {
     status, priceCents,
     p.billingIntervalDays ? String(p.billingIntervalDays) : null,
     nextBillAt, startedAt, cancelledAt,
-    p.cancelReason || null, p
+    cancelReason, p
   ]);
 
   if (isNew) await db.recordEvent('sub_created', 'cc', email, { product: p.productName, price: p.price });
