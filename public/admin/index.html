@@ -437,9 +437,10 @@
           </div>
           <div class="filter-bar" id="kind-filters">
             <span class="filter on"  data-kind="">All</span>
-            <span class="filter" data-kind="sub_created">New</span>
+            <span class="filter" data-kind="new_order">New orders</span>
+            <span class="filter" data-kind="sub_created">New subs</span>
+            <span class="filter" data-kind="rebill">Recurring</span>
             <span class="filter" data-kind="sub_cancelled">Cancels</span>
-            <span class="filter" data-kind="rebill">Rebills</span>
             <span class="filter" data-kind="failed_charge">Failed</span>
           </div>
           <div class="search-badge" id="feed-search-badge"></div>
@@ -882,10 +883,11 @@ function renderForecastChart(forecast) {
 
 /* ── Activity feed ── */
 var KIND_META = {
-  sub_created:   { lbl: 'New sub',       color: '#22c55e' },
-  sub_cancelled: { lbl: 'Cancelled',     color: '#ef4444' },
-  rebill:        { lbl: 'Rebill',        color: '#22c55e' },
-  failed_charge: { lbl: 'Failed charge', color: '#f59e0b' }
+  new_order:     { lbl: 'New order',       color: '#3b82f6' },
+  sub_created:   { lbl: 'New sub',         color: '#22c55e' },
+  sub_cancelled: { lbl: 'Cancelled',       color: '#ef4444' },
+  rebill:        { lbl: 'Recurring order', color: '#22c55e' },
+  failed_charge: { lbl: 'Failed charge',   color: '#f59e0b' }
 };
 
 /* Signatures of events already shown — used to animate newly-arrived rows */

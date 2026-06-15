@@ -1063,7 +1063,7 @@ router.get('/api/activity-feed', auth.requireAdmin, async function(req, res) {
             var email = (t.emailAddress || '').trim().toLowerCase();
             if (!email || TEST_EMAILS.has(email)) return;
             events.push({
-              kind:    (t.orderType === 'RECURRING' || t.billingCycleNumber > 1) ? 'rebill' : 'sub_created',
+              kind:    t.orderType === 'RECURRING' ? 'rebill' : 'new_order',
               source:  'cc',
               email:   email,
               ts:      ts.toISOString(),
