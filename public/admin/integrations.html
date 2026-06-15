@@ -58,6 +58,25 @@
     }
     .search-input::placeholder { color: var(--muted); }
     .search-input:focus { border-color: var(--border2); }
+    .search-clear {
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      font-size: 14px; color: var(--muted); cursor: pointer; display: none; line-height: 1;
+    }
+    .search-clear.visible { display: block; }
+
+    /* Date pills */
+    .date-range {
+      display: flex; gap: 2px;
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 7px; padding: 3px;
+    }
+    .dr-pill {
+      font-size: 11px; padding: 4px 9px;
+      border-radius: 5px; color: var(--muted);
+      cursor: pointer; white-space: nowrap; transition: all 0.12s;
+    }
+    .dr-pill:hover { color: var(--text); }
+    .dr-pill.on { background: var(--accent); color: #fff; font-weight: 500; }
 
     /* Right controls */
     .topbar-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
@@ -286,7 +305,17 @@
 
   <div class="search-wrap">
     <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="6.5" cy="6.5" r="5" stroke="#888" stroke-width="1.5"/><path d="M11 11l3 3" stroke="#888" stroke-width="1.5" stroke-linecap="round"/></svg>
-    <input type="text" class="search-input" placeholder="Search email, product, event..." autocomplete="off"/>
+    <input type="text" class="search-input" id="search-input" placeholder="Search email, product, event..." autocomplete="off"/>
+    <span class="search-clear" id="search-clear">✕</span>
+  </div>
+
+  <!-- Date range -->
+  <div class="date-range" id="date-range">
+    <span class="dr-pill" data-days="1">Today</span>
+    <span class="dr-pill" data-days="7">7d</span>
+    <span class="dr-pill on" data-days="30">30d</span>
+    <span class="dr-pill" data-days="90">90d</span>
+    <span class="dr-pill" data-days="ytd">YTD</span>
   </div>
 
   <div class="topbar-right">
