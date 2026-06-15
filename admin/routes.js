@@ -1570,59 +1570,106 @@ router.get('/api/debug/billed-and-exported', async function(req, res) {
   }
 });
 
-/* ── /admin/api/today-revenue — intraday hourly breakdown ── */
+/* ── /admin/api/today-revenue — intraday hourly breakdown (live CC + Recharge) ── */
 router.get('/api/today-revenue', async function(req, res) {
   try {
-    const now          = new Date();
-    const todayStart   = amsMidnightUTC(now);
-    const todayEnd     = new Date(todayStart.getTime() + 24 * 3600 * 1000);
-    const yesterStart  = new Date(todayStart.getTime() - 24 * 3600 * 1000);
+    const now         = new Date();
+    const todayStart  = amsMidnightUTC(now);
+    const todayEnd    = new Date(todayStart.getTime() + 24 * 3600 * 1000);
+    const yesterStart = new Date(todayStart.getTime() - 24 * 3600 * 1000);
 
-    const [hourly, totals, yesterday] = await Promise.all([
-      db.many(`
-        SELECT EXTRACT(HOUR FROM (created_at AT TIME ZONE 'Europe/Amsterdam'))::int AS hour,
-               COALESCE(SUM(amount_cents),0)::bigint AS revenue_cents,
-               COUNT(*)::int AS orders
-        FROM orders WHERE created_at >= $1 AND created_at < $2
-        GROUP BY 1 ORDER BY 1
-      `, [todayStart, todayEnd]),
+    /* CC date strings for the query window */
+    const todayAms  = amsDateStr(now);
+    const prevAms   = amsDateStr(new Date(todayStart.getTime() - 1));
+    const [ty, tm, td] = todayAms.split('-');
+    const [py, pm, pd] = prevAms.split('-');
+    const ccStart   = pm + '/' + pd + '/' + py;
+    const ccEnd     = tm + '/' + td + '/' + ty;
 
-      db.one(`
-        SELECT COALESCE(SUM(amount_cents),0)::bigint AS revenue_cents,
-               COUNT(*)::int AS orders,
-               COUNT(CASE WHEN source='cc'       THEN 1 END)::int AS cc_orders,
-               COALESCE(SUM(CASE WHEN source='cc'       THEN amount_cents ELSE 0 END),0)::bigint AS cc_cents,
-               COUNT(CASE WHEN source='recharge' THEN 1 END)::int AS rc_orders,
-               COALESCE(SUM(CASE WHEN source='recharge' THEN amount_cents ELSE 0 END),0)::bigint AS rc_cents,
-               COUNT(CASE WHEN type='rebill'  THEN 1 END)::int AS recurring,
-               COUNT(CASE WHEN type='initial' THEN 1 END)::int AS new_orders
-        FROM orders WHERE created_at >= $1 AND created_at < $2
-      `, [todayStart, todayEnd]),
+    /* ── Fetch CC recurring transactions + Recharge charges + yesterday DB in parallel ── */
+    const [ccRows, rcRows, yesterday] = await Promise.all([
 
-      db.one(`
-        SELECT COALESCE(SUM(amount_cents),0)::bigint AS revenue_cents,
-               COUNT(*)::int AS orders
-        FROM orders WHERE created_at >= $1 AND created_at < $2
-      `, [yesterStart, todayStart])
+      /* CC live: today's RECURRING charged transactions */
+      (async function() {
+        if (!process.env.CC_LOGIN_ID || !process.env.CC_API_PASSWORD) return [];
+        var rows = [], page = 1;
+        while (page <= 10) {
+          const p = new URLSearchParams({
+            loginId: process.env.CC_LOGIN_ID, password: process.env.CC_API_PASSWORD,
+            startDate: ccStart, endDate: ccEnd,
+            billType: 'RECURRING', txnType: 'SALE', responseType: 'SUCCESS',
+            resultsPerPage: 200, page: page
+          });
+          const r = await fetch(CC_API_BASE + '/transactions/query/?' + p.toString(), { method: 'POST' });
+          const d = await r.json();
+          const txns = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+          txns.forEach(function(t) {
+            var ts = ccParseDate(t.dateCreated || '');
+            if (!ts || ts < todayStart || ts >= todayEnd) return;
+            rows.push({ ts: ts, price_cents: Math.round(parseFloat(t.amount || t.totalAmount || 0) * 100), source: 'cc' });
+          });
+          if (txns.length < 200) break;
+          page++;
+        }
+        return rows;
+      })(),
+
+      /* Recharge live: today's successful recurring charges */
+      (async function() {
+        if (!process.env.RECHARGE_API_KEY) return [];
+        const headers = { 'X-Recharge-Access-Token': process.env.RECHARGE_API_KEY };
+        var rows = [], page = 1;
+        while (page <= 5) {
+          const url = RC_API_BASE + '/charges?limit=250&page=' + page +
+            '&created_at_min=' + encodeURIComponent(todayStart.toISOString()) +
+            '&created_at_max=' + encodeURIComponent(todayEnd.toISOString()) +
+            '&status=success';
+          const r = await fetch(url, { headers });
+          const d = await r.json();
+          (d.charges || []).forEach(function(c) {
+            if (c.type !== 'recurring') return;
+            var ts = new Date(c.created_at.endsWith('Z') ? c.created_at : c.created_at + 'Z');
+            rows.push({ ts: ts, price_cents: Math.round(parseFloat(c.total_price || 0) * 100), source: 'recharge' });
+          });
+          if ((d.charges || []).length < 250) break;
+          page++;
+        }
+        return rows;
+      })(),
+
+      /* Yesterday totals from DB for delta */
+      db.one(`SELECT COALESCE(SUM(amount_cents),0)::bigint AS revenue_cents, COUNT(*)::int AS orders
+              FROM orders WHERE created_at >= $1 AND created_at < $2`, [yesterStart, todayStart])
     ]);
 
+    /* Aggregate by Amsterdam hour */
     const hourMap = {};
-    hourly.forEach(function(r) { hourMap[r.hour] = { revenue_cents: Number(r.revenue_cents), orders: r.orders }; });
+    var ccCents = 0, rcCents = 0;
+    ccRows.concat(rcRows).forEach(function(o) {
+      var h = parseInt(o.ts.toLocaleString('en-US', { timeZone: 'Europe/Amsterdam', hour: 'numeric', hour12: false }));
+      if (!hourMap[h]) hourMap[h] = { revenue_cents: 0, orders: 0 };
+      hourMap[h].revenue_cents += o.price_cents;
+      hourMap[h].orders++;
+      if (o.source === 'cc') ccCents += o.price_cents; else rcCents += o.price_cents;
+    });
+
     const full24 = Array.from({ length: 24 }, function(_, h) {
       return { hour: h, revenue_cents: (hourMap[h] || {}).revenue_cents || 0, orders: (hourMap[h] || {}).orders || 0 };
     });
+    const totalOrders = ccRows.length + rcRows.length;
+    const totalCents  = ccCents + rcCents;
 
     res.json({
       hourly: full24,
       totals: {
-        revenue_cents: Number(totals.revenue_cents),
-        orders:        totals.orders,
-        cc_orders:     totals.cc_orders,
-        cc_cents:      Number(totals.cc_cents),
-        rc_orders:     totals.rc_orders,
-        rc_cents:      Number(totals.rc_cents),
-        recurring:     totals.recurring,
-        new_orders:    totals.new_orders
+        revenue_cents: totalCents,
+        orders:        totalOrders,
+        cc_orders:     ccRows.length,
+        cc_cents:      ccCents,
+        rc_orders:     rcRows.length,
+        rc_cents:      rcCents,
+        recurring:     totalOrders,
+        new_orders:    0
       },
       yesterday: { revenue_cents: Number(yesterday.revenue_cents), orders: yesterday.orders }
     });

@@ -175,7 +175,7 @@
       font-size: 36px; font-weight: 700; color: var(--text);
       letter-spacing: -0.02em; line-height: 1.1; margin-bottom: 6px;
     }
-    .welcome-greeting em { font-style: italic; color: #e0dbd4; }
+    .welcome-greeting em { font-style: italic; color: var(--muted); }
     .welcome-sub { font-size: 12px; color: var(--muted); }
     .welcome-right { display: flex; align-items: center; gap: 12px; }
     .date-badge {
@@ -849,10 +849,9 @@ function renderKpis(k, sources) {
     '<span style="color:#22c55e;font-weight:600">Recharge</span> ' + $n(bySrc.recharge) +
     '</span>';
   document.getElementById('kpi-row1').innerHTML = [
-    { label: 'Gross sales',          value: $m(k.todayRevenueCents), sparkId: 'sp-mrr',     sparkColor: '#f04e00' },
-    { label: 'MRR',                  value: $m(k.mrrCents),          sparkId: 'sp-subs',    sparkColor: '#3b82f6' },
-    { label: 'Orders today',         value: $n(k.todayOrders),       sparkId: 'sp-new',     sparkColor: '#22c55e' },
-    { label: 'Active subscriptions', value: $n(k.activeSubs),        sparkId: 'sp-cancels', sparkColor: '#888888' }
+    { label: 'MRR',                  value: $m(k.mrrCents),   sparkId: 'sp-subs',    sparkColor: '#f04e00' },
+    { label: 'Orders today',         value: $n(k.todayOrders),sparkId: 'sp-new',     sparkColor: '#22c55e' },
+    { label: 'Active subscriptions', value: $n(k.activeSubs), sparkId: 'sp-cancels', sparkColor: '#3b82f6' }
   ].map(function(c) {
     return '<div class="dkpi">' +
       '<div class="dkpi-period">30D</div>' +
@@ -861,6 +860,7 @@ function renderKpis(k, sources) {
       '<div class="dkpi-spark"><canvas id="' + c.sparkId + '"></canvas></div>' +
     '</div>';
   }).join('');
+  document.getElementById('kpi-row1').className = 'grid-3';
 
   /* Row 2: supporting stats */
   var net = k.netToday || 0;
