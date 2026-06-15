@@ -8,10 +8,13 @@ const db    = require('./db');
 
 const CC_BASE       = 'https://api.checkoutchamp.com';
 const RECHARGE_BASE = 'https://api.rechargeapps.com';
+const WHOP_BASE     = 'https://api.whop.com/api/v2';
 
 /* ────────────────────────────────────────────────
    Helpers
    ──────────────────────────────────────────────── */
+
+function delay(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
 
 function ccParams(extra) {
   const p = new URLSearchParams({
@@ -313,16 +316,27 @@ async function upsertCCOrder(o) {
    RECHARGE SYNC
    ════════════════════════════════════════════════════ */
 
+async function getRechargeKey() {
+  try {
+    const row = await db.one(
+      "SELECT creds FROM integration_credentials WHERE name = 'recharge'"
+    );
+    if (row && row.creds && row.creds['RECHARGE_API_KEY']) return row.creds['RECHARGE_API_KEY'];
+  } catch (e) { /* table may not exist yet */ }
+  return process.env.RECHARGE_API_KEY || '';
+}
+
 async function syncRecharge(opts) {
   opts = opts || {};
   const isFull = opts.full === true;
 
-  if (!process.env.RECHARGE_API_KEY) {
+  const rcKey = await getRechargeKey();
+  if (!rcKey) {
     throw new Error('RECHARGE_API_KEY not set');
   }
 
   const headers = {
-    'X-Recharge-Access-Token': process.env.RECHARGE_API_KEY,
+    'X-Recharge-Access-Token': rcKey,
     'Content-Type': 'application/json'
   };
 
@@ -429,8 +443,9 @@ async function getRechargeEmail(customerId) {
   const key = String(customerId);
   if (_rcEmailCache.has(key)) return _rcEmailCache.get(key);
 
+  const rcKey = await getRechargeKey();
   const r = await fetch(RECHARGE_BASE + '/customers/' + customerId, {
-    headers: { 'X-Recharge-Access-Token': process.env.RECHARGE_API_KEY }
+    headers: { 'X-Recharge-Access-Token': rcKey }
   });
   const d = await r.json();
   const email = d.customer && d.customer.email
@@ -477,6 +492,208 @@ async function upsertRechargeCharge(c) {
 
   if (isNew && type === 'rebill') {
     await db.recordEvent('rebill', 'recharge', email, { amount: c.total_price });
+  }
+}
+
+/* ════════════════════════════════════════════════════
+   WHOP SYNC
+   Pulls /memberships from Whop API v2 and upserts
+   into the subscriptions table.
+   ════════════════════════════════════════════════════ */
+
+async function getWhopKey() {
+  try {
+    const row = await db.one(
+      "SELECT creds FROM integration_credentials WHERE name = 'whop'"
+    );
+    if (row && row.creds && row.creds['WHOP_API_KEY']) return row.creds['WHOP_API_KEY'];
+  } catch (e) { /* table may not exist yet */ }
+  return process.env.WHOP_API_KEY || '';
+}
+
+async function syncWhop(opts) {
+  opts = opts || {};
+  const isFull = opts.full === true;
+
+  const key = await getWhopKey();
+  if (!key) throw new Error('WHOP_API_KEY not configured');
+
+  const headers = { 'Authorization': 'Bearer ' + key, 'accept': 'application/json' };
+
+  /* ── helper: fetch JSON and throw on HTTP error ── */
+  async function whopFetch(url) {
+    const r = await fetch(url, { headers });
+    if (!r.ok) {
+      let body = '';
+      try { body = JSON.stringify(await r.json()); } catch(e) { body = await r.text().catch(() => ''); }
+      throw new Error('Whop API HTTP ' + r.status + ' at ' + url + ' — ' + body.substring(0, 200));
+    }
+    return r.json();
+  }
+
+  /* ── 1. Pre-fetch all products for name lookup ── */
+  console.log('[sync:whop] loading product catalog...');
+  const productMap = {};
+  let pPage = 1, totalPPages = 1;
+  do {
+    const d = await whopFetch(WHOP_BASE + '/products?per_page=10&page=' + pPage);
+    (d.data || []).forEach(function(p) { productMap[p.id] = p.title || p.name || p.id; });
+    totalPPages = (d.pagination && d.pagination.total_page) || 1;
+    pPage++;
+    if (pPage <= totalPPages) await delay(150);
+  } while (pPage <= totalPPages);
+  console.log('[sync:whop] loaded', Object.keys(productMap).length, 'products');
+
+  /* ── 2. Plan cache — fetched on demand and memoised ── */
+  const planCache = {};
+  async function getPlan(planId) {
+    if (!planId) return { price: '0', billingDays: 30 };
+    if (planCache[planId]) return planCache[planId];
+    try {
+      const d = await whopFetch(WHOP_BASE + '/plans/' + planId);
+      planCache[planId] = {
+        price:       d.renewal_price || d.initial_price || '0',
+        billingDays: d.billing_period || 30
+      };
+    } catch (e) {
+      console.warn('[sync:whop] plan fetch failed for', planId, '—', e.message);
+      planCache[planId] = { price: '0', billingDays: 30 };
+    }
+    await delay(120);
+    return planCache[planId];
+  }
+
+  /* ── 3. Active memberships ── */
+  let touched = 0;
+  let page = 1, totalPages = 1;
+  do {
+    const d = await whopFetch(
+      WHOP_BASE + '/memberships?per_page=10&page=' + page + '&status=active'
+    );
+    const items = d.data || [];
+    totalPages = (d.pagination && d.pagination.total_page) || 1;
+
+    for (const m of items) {
+      const plan = await getPlan(m.plan);
+      await upsertWhopMembership(m, productMap, plan);
+      touched++;
+    }
+
+    console.log('[sync:whop] active page', page + '/' + totalPages, '| total', touched);
+    page++;
+    if (page <= totalPages) await delay(200);
+  } while (page <= totalPages);
+
+  /* ── 4. Cancelled/expired — full sync only (to seed historical data) ── */
+  let cancelledTouched = 0;
+  if (isFull) {
+    const cancelStatuses = ['expired', 'canceled'];
+    for (const cs of cancelStatuses) {
+      let cPage = 1, cTotalPages = 1;
+      do {
+        const d = await whopFetch(
+          WHOP_BASE + '/memberships?per_page=10&page=' + cPage + '&status=' + cs
+        );
+        const items = d.data || [];
+        cTotalPages = (d.pagination && d.pagination.total_page) || 1;
+
+        for (const m of items) {
+          const plan = await getPlan(m.plan);
+          await upsertWhopMembership(m, productMap, plan);
+          cancelledTouched++;
+        }
+
+        console.log('[sync:whop]', cs, 'page', cPage + '/' + cTotalPages, '| total', cancelledTouched);
+        cPage++;
+        if (cPage <= cTotalPages) await delay(200);
+      } while (cPage <= cTotalPages);
+    }
+  }
+
+  console.log('[sync:whop] done | active:', touched, '| cancelled:', cancelledTouched);
+  return { memberships: touched, cancelled: cancelledTouched };
+}
+
+function whopFrequency(billingDays) {
+  if (billingDays >= 355) return 'Yearly';
+  if (billingDays >= 80)  return 'Every 3 months';
+  if (billingDays >= 25)  return 'Monthly';
+  if (billingDays >= 6)   return 'Weekly';
+  return 'Every ' + billingDays + ' days';
+}
+
+async function upsertWhopMembership(m, productMap, plan) {
+  const email = (m.email || '').trim().toLowerCase();
+  if (!email) return;
+
+  const customerId = await db.upsertCustomer({ email: email });
+
+  const id = 'whop:' + m.id;
+
+  /* Status mapping */
+  const s = (m.status || '').toLowerCase();
+  let status;
+  if (s === 'active' || s === 'trialing' || s === 'past_due') {
+    status = 'ACTIVE';
+  } else if (s === 'completed' && m.valid) {
+    status = 'ACTIVE';
+  } else {
+    status = 'CANCELLED';
+  }
+
+  const isCancelled = status === 'CANCELLED';
+  const priceCents  = toCents(plan.price);
+
+  const nextBillAt = m.renewal_period_end
+    ? new Date(m.renewal_period_end * 1000).toISOString()
+    : null;
+  const startedAt  = m.created_at
+    ? new Date(m.created_at * 1000).toISOString()
+    : null;
+  const cancelledAt = isCancelled
+    ? (m.expires_at ? new Date(m.expires_at * 1000).toISOString() : startedAt)
+    : null;
+
+  const productName = productMap[m.product] || null;
+  const frequency   = whopFrequency(plan.billingDays);
+
+  const existing = await db.one('SELECT id, status FROM subscriptions WHERE id = $1', [id]);
+  const isNew    = !existing;
+  const becameCancelled = existing && existing.status !== 'CANCELLED' && isCancelled;
+
+  await db.query(`
+    INSERT INTO subscriptions
+      (id, source, native_id, customer_id, customer_email, product, product_id,
+       status, price_cents, frequency, next_bill_at, started_at, cancelled_at,
+       cancel_reason, raw, last_synced_at)
+    VALUES ($1,'whop',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())
+    ON CONFLICT (id) DO UPDATE SET
+      customer_id    = EXCLUDED.customer_id,
+      customer_email = EXCLUDED.customer_email,
+      product        = EXCLUDED.product,
+      product_id     = EXCLUDED.product_id,
+      status         = EXCLUDED.status,
+      price_cents    = EXCLUDED.price_cents,
+      frequency      = EXCLUDED.frequency,
+      next_bill_at   = EXCLUDED.next_bill_at,
+      cancelled_at   = EXCLUDED.cancelled_at,
+      cancel_reason  = EXCLUDED.cancel_reason,
+      raw            = EXCLUDED.raw,
+      last_synced_at = NOW()
+  `, [
+    id, m.id, customerId, email,
+    productName, m.product || null,
+    status, priceCents, frequency,
+    nextBillAt, startedAt, cancelledAt,
+    isCancelled ? (m.status || null) : null,
+    m
+  ]);
+
+  if (isNew && !isCancelled) {
+    await db.recordEvent('sub_created', 'whop', email, { product: productName, price: plan.price });
+  }
+  if (becameCancelled) {
+    await db.recordEvent('sub_cancelled', 'whop', email, { product: productName });
   }
 }
 
@@ -583,7 +800,7 @@ async function runSyncCycle(opts) {
   console.log('[sync] starting cycle | full:', opts.full === true);
 
   const results = {};
-  const sources = ['cc', 'recharge'];
+  const sources = ['cc', 'recharge', 'whop'];
 
   for (const source of sources) {
     const start = Date.now();
@@ -591,6 +808,7 @@ async function runSyncCycle(opts) {
       let r;
       if (source === 'cc')       r = await syncCC(opts);
       if (source === 'recharge') r = await syncRecharge(opts);
+      if (source === 'whop')     r = await syncWhop(opts);
       results[source] = Object.assign({ ok: true, ms: Date.now() - start }, r);
       await setSyncState(source, opts.full
         ? { last_full_sync_at: new Date(), last_delta_sync_at: new Date(), last_error: null }
@@ -620,5 +838,6 @@ module.exports = {
   runSyncCycle:       runSyncCycle,
   syncCC:             syncCC,
   syncRecharge:       syncRecharge,
+  syncWhop:           syncWhop,
   syncTodayBillings:  syncTodayBillings
 };

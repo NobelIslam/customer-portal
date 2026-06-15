@@ -1821,6 +1821,29 @@ router.get('/api/debug/today-breakdown', async function(req, res) {
   }
 });
 
+/* ── /admin/api/debug/whop-status — whop sync diagnostics ── */
+
+router.get('/api/debug/whop-status', auth.requireAdmin, async function(req, res) {
+  try {
+    const [totalRow, activeRow, syncRow, credRow] = await Promise.all([
+      db.one("SELECT COUNT(*)::int AS n FROM subscriptions WHERE source='whop'"),
+      db.one("SELECT COUNT(*)::int AS n FROM subscriptions WHERE source='whop' AND status='ACTIVE' AND next_bill_at >= NOW()"),
+      db.one("SELECT * FROM sync_state WHERE source='whop'"),
+      db.one("SELECT creds FROM integration_credentials WHERE name='whop'")
+    ]);
+    const hasKey = !!(credRow && credRow.creds && credRow.creds['WHOP_API_KEY']);
+    res.json({
+      total_rows:       totalRow  ? totalRow.n  : 0,
+      active_rows:      activeRow ? activeRow.n : 0,
+      sync_state:       syncRow   || null,
+      api_key_in_db:    hasKey,
+      api_key_in_env:   !!(process.env.WHOP_API_KEY)
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* ════════════════════════════════════════════════════
    INTEGRATIONS
    ════════════════════════════════════════════════════ */
