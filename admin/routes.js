@@ -1823,7 +1823,7 @@ router.get('/api/debug/today-breakdown', async function(req, res) {
 
 /* ── /admin/api/debug/whop-status — whop sync diagnostics ── */
 
-router.get('/api/debug/whop-status', async function(req, res) {
+router.get('/whop-status', async function(req, res) {
   try {
     const [totalRow, activeRow, syncRow, credRow] = await Promise.all([
       db.one("SELECT COUNT(*)::int AS n FROM subscriptions WHERE source='whop'"),
