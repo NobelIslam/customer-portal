@@ -1816,4 +1816,184 @@ router.get('/api/debug/today-breakdown', async function(req, res) {
   }
 });
 
+/* ════════════════════════════════════════════════════
+   INTEGRATIONS
+   ════════════════════════════════════════════════════ */
+
+const INTEGRATIONS_META = [
+  {
+    name:        'checkoutchamp',
+    label:       'CheckoutChamp',
+    description: 'Subscription billing & order management platform',
+    category:    'Subscription',
+    color:       '#2563eb',
+    envVars:     ['CC_LOGIN_ID', 'CC_API_PASSWORD', 'CC_CLUB_ID'],
+  },
+  {
+    name:        'recharge',
+    label:       'Recharge',
+    description: 'Subscription management & recurring billing',
+    category:    'Subscription',
+    color:       '#16a34a',
+    envVars:     ['RECHARGE_API_KEY'],
+  },
+  {
+    name:        'shopify',
+    label:       'Shopify',
+    description: 'E-commerce storefront & product catalog',
+    category:    'Ecommerce',
+    color:       '#96bf48',
+    envVars:     ['SHOPIFY_STORE', 'SHOPIFY_ACCESS_TOKEN'],
+  },
+  {
+    name:        'klaviyo',
+    label:       'Klaviyo',
+    description: 'Email marketing & automation',
+    category:    'Marketing',
+    color:       '#9333ea',
+    envVars:     ['KLAVIYO_API_KEY'],
+  },
+  {
+    name:        'whop',
+    label:       'Whop',
+    description: 'Membership, digital products & payments',
+    category:    'Payments',
+    color:       '#f04e00',
+    envVars:     ['WHOP_API_KEY'],
+  },
+];
+
+/* ── GET /admin/api/integrations ─────────────────── */
+router.get('/api/integrations', auth.requireAdmin, async function(req, res) {
+  var dbMap = {};
+  try {
+    var rows = await db.many('SELECT name, enabled, updated_at FROM integrations');
+    rows.forEach(function(r) { dbMap[r.name] = r; });
+  } catch (e) { /* table might not exist yet on first boot */ }
+
+  var result = INTEGRATIONS_META.map(function(int) {
+    var configured = int.envVars.some(function(v) { return !!process.env[v]; });
+    var dbRow = dbMap[int.name];
+    var enabled = dbRow != null ? dbRow.enabled : configured;
+
+    var maskedKeys = {};
+    int.envVars.forEach(function(v) {
+      var val = process.env[v];
+      if (val) maskedKeys[v] = val.substring(0, 4) + '···' + val.slice(-4);
+    });
+
+    return {
+      name:        int.name,
+      label:       int.label,
+      description: int.description,
+      category:    int.category,
+      color:       int.color,
+      configured:  configured,
+      enabled:     enabled,
+      maskedKeys:  maskedKeys,
+      lastUpdated: dbRow ? dbRow.updated_at : null,
+    };
+  });
+
+  res.json({ integrations: result });
+});
+
+/* ── POST /admin/api/integrations/:name/toggle ───── */
+router.post('/api/integrations/:name/toggle', auth.requireAdmin, async function(req, res) {
+  var name    = req.params.name;
+  var enabled = req.body.enabled !== false;
+  try {
+    await db.query(
+      `INSERT INTO integrations (name, enabled, updated_at) VALUES ($1, $2, NOW())
+       ON CONFLICT (name) DO UPDATE SET enabled = $2, updated_at = NOW()`,
+      [name, enabled]
+    );
+    res.json({ ok: true, name: name, enabled: enabled });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/* ── POST /admin/api/integrations/:name/test ──────── */
+router.post('/api/integrations/:name/test', auth.requireAdmin, async function(req, res) {
+  var name = req.params.name;
+  try {
+    var ok = false, message = '';
+
+    if (name === 'recharge') {
+      var key = process.env.RECHARGE_API_KEY;
+      if (!key) return res.json({ ok: false, message: 'RECHARGE_API_KEY not configured' });
+      var r = await fetch('https://api.rechargeapps.com/shop', {
+        headers: { 'X-Recharge-Access-Token': key, 'X-Recharge-Version': '2021-11' }
+      });
+      if (r.ok) {
+        var d = await r.json();
+        ok = true;
+        message = 'Connected — ' + ((d.shop && d.shop.name) || 'Recharge API OK');
+      } else {
+        message = 'API returned HTTP ' + r.status;
+      }
+
+    } else if (name === 'checkoutchamp') {
+      var loginId = process.env.CC_LOGIN_ID, pw = process.env.CC_API_PASSWORD;
+      if (!loginId || !pw) return res.json({ ok: false, message: 'CC_LOGIN_ID or CC_API_PASSWORD not configured' });
+      var r2 = await fetch(CC_API_BASE + '/purchase/query/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ loginId: loginId, password: pw, startDate: '01/01/2026', endDate: '01/01/2026', resultsPerPage: 1, page: 1 })
+      });
+      var d2 = await r2.json();
+      if (d2.result === 'SUCCESS' || Array.isArray(d2.data)) {
+        ok = true; message = 'Connected — CheckoutChamp API OK';
+      } else {
+        message = d2.message || ('API returned HTTP ' + r2.status);
+      }
+
+    } else if (name === 'shopify') {
+      var store = SHOPIFY_STORE, token = SHOPIFY_TOKEN;
+      if (!token) return res.json({ ok: false, message: 'SHOPIFY_ACCESS_TOKEN not configured' });
+      var r3 = await fetch('https://' + store + '/admin/api/2024-01/shop.json', {
+        headers: { 'X-Shopify-Access-Token': token }
+      });
+      if (r3.ok) {
+        var d3 = await r3.json();
+        ok = true; message = 'Connected — ' + ((d3.shop && d3.shop.name) || 'Shopify API OK');
+      } else {
+        message = 'API returned HTTP ' + r3.status;
+      }
+
+    } else if (name === 'klaviyo') {
+      var kkey = process.env.KLAVIYO_API_KEY;
+      if (!kkey) return res.json({ ok: false, message: 'KLAVIYO_API_KEY not configured' });
+      var r4 = await fetch('https://a.klaviyo.com/api/accounts/', {
+        headers: { 'Authorization': 'Klaviyo-API-Key ' + kkey, 'revision': '2024-10-15', 'accept': 'application/json' }
+      });
+      if (r4.ok) {
+        ok = true; message = 'Connected — Klaviyo API OK';
+      } else {
+        message = 'API returned HTTP ' + r4.status;
+      }
+
+    } else if (name === 'whop') {
+      var wkey = process.env.WHOP_API_KEY;
+      if (!wkey) return res.json({ ok: false, message: 'WHOP_API_KEY not set — add it to Render environment variables' });
+      var r5 = await fetch('https://api.whop.com/v5/me', {
+        headers: { 'Authorization': 'Bearer ' + wkey, 'accept': 'application/json' }
+      });
+      if (r5.ok) {
+        ok = true; message = 'Connected — Whop API OK';
+      } else {
+        message = 'API returned HTTP ' + r5.status;
+      }
+
+    } else {
+      return res.json({ ok: false, message: 'Unknown integration: ' + name });
+    }
+
+    res.json({ ok: ok, message: message });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
 module.exports = router;
