@@ -221,7 +221,9 @@
     .cancel-row:last-child { border-bottom: none; }
     .cancel-name { font-weight: 500; color: var(--text); }
     .cancel-meta { font-size: 10px; color: var(--muted); margin-top: 2px; }
-    .cancel-amt { color: var(--red); font-size: 13px; font-weight: 600; font-family: 'Oswald', sans-serif; flex-shrink: 0; }
+    .cancel-reason { display: inline-block; margin-top: 3px; font-size: 10px; color: var(--red); background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.2); border-radius: 4px; padding: 1px 6px; }
+    .cancel-right { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0; }
+    .cancel-amt { color: var(--red); font-size: 13px; font-weight: 600; font-family: 'Oswald', sans-serif; }
 
     /* ── Products table ── */
     .prod-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); gap: 10px; }
@@ -999,11 +1001,14 @@ function renderCancelsList(cancels) {
     html = slice.map(function(c) {
       var src    = c.source ? '<span class="src-tag tag-' + (c.source==='recharge'?'rc':c.source) + '">' + c.source + '</span>' : '';
       var when   = c.cancelled_at ? ago(c.cancelled_at) : '';
-      var reason = c.cancel_reason ? ' · ' + esc(c.cancel_reason) : '';
+      var reasonHtml = c.cancel_reason ? '<span class="cancel-reason">' + esc(c.cancel_reason) + '</span>' : '';
       return '<div class="cancel-row">' +
-        '<div><div class="cancel-name">' + esc(c.product||'Subscription') + src + '</div>' +
-        '<div class="cancel-meta">' + esc(c.customer_email||'') + (when?' · '+when:'') + reason + '</div></div>' +
-        '<span class="cancel-amt">−' + $m(c.price_cents) + '</span>' +
+        '<div style="min-width:0;flex:1">' +
+          '<div class="cancel-name">' + esc(c.product||'Subscription') + src + '</div>' +
+          '<div class="cancel-meta">' + esc(c.customer_email||'') + (when?' · '+when:'') + '</div>' +
+          (reasonHtml ? '<div>' + reasonHtml + '</div>' : '') +
+        '</div>' +
+        '<div class="cancel-right"><span class="cancel-amt">−' + $m(c.price_cents) + '</span></div>' +
       '</div>';
     }).join('');
   }
