@@ -139,6 +139,37 @@ async function syncCC(opts) {
     }
   }
 
+  /* ── 1c. All-time RECYCLE_FAILED subscriptions refresh ──
+     Same rationale as the ACTIVE pass: subs older than 90 days that
+     recently hit RECYCLE_FAILED won't appear in the date-windowed pass.
+     Fetching them all-time ensures cancelled_at is always populated so
+     they show up correctly in the Recent Cancellations panel.           */
+  if (!isFull) {
+    let rfPage = 1, rfTouched = 0;
+    while (rfPage <= 50) {
+      const r = await fetch(CC_BASE + '/purchase/query/?' + ccParams({
+        startDate:      '01/01/2015',
+        endDate:        endDate,
+        status:         'RECYCLE_FAILED',
+        resultsPerPage: perPage,
+        page:           rfPage
+      }), { method: 'POST' });
+      const text = await r.text();
+      let d;
+      try { d = JSON.parse(text); } catch (e) {
+        console.error('[sync:cc] non-JSON recycle-failed page', rfPage, ':', text.substring(0, 200));
+        break;
+      }
+      const data = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+      for (const p of data) await upsertCCPurchase(p);
+      rfTouched   += data.length;
+      subsTouched += data.length;
+      console.log('[sync:cc] recycle-failed page', rfPage, '| got', data.length, '| total', rfTouched);
+      if (data.length < perPage) break;
+      rfPage++;
+    }
+  }
+
   /* ── 2. Orders ── */
   let ordersTouched = 0;
   page = 1;
@@ -183,12 +214,14 @@ async function upsertCCPurchase(p) {
   const priceCents  = toCents(p.price);
   const startedAt   = parseDate(p.dateCreated);
   const nextBillAt  = parseDate(p.nextBillDate);
-  const cancelledAt = (status === 'CANCELLED' || status === 'INACTIVE') ? parseDate(p.dateUpdated || p.cancelDate) : null;
+  const isCancelledStatus = status === 'CANCELLED' || status === 'INACTIVE' || status === 'RECYCLE_FAILED';
+  const cancelledAt = isCancelledStatus ? parseDate(p.dateUpdated || p.cancelDate) : null;
 
   /* detect if this is a NEW row → fire sub_created event */
   const existing = await db.one('SELECT id, status FROM subscriptions WHERE id = $1', [id]);
   const isNew    = !existing;
-  const becameCancelled = existing && existing.status !== 'CANCELLED' && status === 'CANCELLED';
+  const wasCancelled = existing && (existing.status === 'CANCELLED' || existing.status === 'RECYCLE_FAILED');
+  const becameCancelled = existing && !wasCancelled && isCancelledStatus;
 
   await db.query(`
     INSERT INTO subscriptions
