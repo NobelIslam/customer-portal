@@ -28,6 +28,7 @@
       --purple:  #9333ea;
       --cc:      #2563eb;
       --rc:      #16a34a;
+      --wh:      #7c3aed;
     }
 
     html, body {
@@ -233,7 +234,7 @@
       letter-spacing: 0.06em; margin-left: 6px; vertical-align: middle;
     }
     .intraday-big {
-      font-size: 52px; font-weight: 700; color: #fff;
+      font-size: 52px; font-weight: 700; color: var(--text);
       line-height: 1; margin: 6px 0 4px; letter-spacing: -0.02em;
     }
     .intraday-delta {
@@ -257,7 +258,7 @@
 
     /* ── Breakdown panel ── */
     .bk-total {
-      font-size: 28px; font-weight: 700; color: #fff; margin: 8px 0 16px;
+      font-size: 28px; font-weight: 700; color: var(--text); margin: 8px 0 16px;
       letter-spacing: -0.01em;
     }
     .bk-label {
@@ -290,6 +291,7 @@
     .src-badge { font-size: 9px; padding: 2px 7px; border-radius: 20px; font-weight: 600; letter-spacing: 0.04em; }
     .badge-cc   { background: rgba(37,99,235,.08);  color: #1d4ed8; border: 1px solid rgba(37,99,235,.2); }
     .badge-rc   { background: rgba(22,163,74,.08);  color: #15803d; border: 1px solid rgba(22,163,74,.2); }
+    .badge-wh   { background: rgba(124,58,237,.08); color: #6d28d9; border: 1px solid rgba(124,58,237,.2); }
     .src-stats { display: flex; gap: 20px; margin-bottom: 10px; }
     .src-val { font-family: 'Oswald', sans-serif; font-size: 24px; font-weight: 500; color: var(--text); line-height: 1; }
     .src-lbl { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 3px; }
@@ -328,6 +330,7 @@
     .src-tag { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 9px; font-weight: 600; margin-left: 3px; letter-spacing: 0.04em; text-transform: uppercase; }
     .tag-cc   { background: rgba(37,99,235,.1);  color: #1d4ed8; }
     .tag-rc   { background: rgba(22,163,74,.1);  color: #15803d; }
+    .tag-wh   { background: rgba(124,58,237,.1); color: #6d28d9; }
 
     /* ── Cancels list ── */
     .cancel-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); gap: 10px; font-size: 12px; }
@@ -460,6 +463,7 @@
     <div class="nav-section">Orders</div>
     <a href="#s-today"     class="nav-item"><span class="nav-dot"></span>Today's orders</a>
     <a href="#s-tomorrow"  class="nav-item"><span class="nav-dot"></span>Tomorrow</a>
+    <a href="#s-sources"   class="nav-item"><span class="nav-dot"></span>By source</a>
     <a href="#s-gateway"   class="nav-item"><span class="nav-dot"></span>By gateway</a>
 
     <div class="nav-section">System</div>
@@ -550,6 +554,7 @@
             <div class="legend">
               <span class="legend-item"><span class="legend-dot" style="background:var(--cc)"></span>CC</span>
               <span class="legend-item"><span class="legend-dot" style="background:var(--rc)"></span>Recharge</span>
+              <span class="legend-item"><span class="legend-dot" style="background:var(--wh)"></span>Whop</span>
             </div>
           </div>
           <div class="chart-wrap h240"><canvas id="new-subs-chart"></canvas></div>
@@ -560,6 +565,7 @@
             <div class="legend">
               <span class="legend-item"><span class="legend-dot" style="background:var(--cc)"></span>CC</span>
               <span class="legend-item"><span class="legend-dot" style="background:var(--rc)"></span>Recharge</span>
+              <span class="legend-item"><span class="legend-dot" style="background:var(--wh)"></span>Whop</span>
             </div>
           </div>
           <div class="chart-wrap h240"><canvas id="cancels-chart"></canvas></div>
@@ -628,6 +634,10 @@
         </div>
         <div id="tomorrow-list" class="feed-scroll"></div>
       </div>
+
+      <!-- Source breakdown — CC / Recharge / Whop -->
+      <div class="section-label" id="s-sources">Active subscriptions by source</div>
+      <div class="grid-3 mb10" id="src-grid"></div>
 
       <!-- Gateway breakdown — full width -->
       <div class="section-label" id="s-gateway">Active subscriptions by gateway</div>
@@ -825,7 +835,7 @@ function parseDay(raw) {
 /* ── Pivot trend [{day,source,n}] → per-source arrays ── */
 function pivotTrend(trend, days) {
   var map = {};
-  days.forEach(function(d) { map[d] = { cc: 0, recharge: 0 }; });
+  days.forEach(function(d) { map[d] = { cc: 0, recharge: 0, whop: 0 }; });
   (trend || []).forEach(function(r) {
     /* Normalise the day key to YYYY-MM-DD regardless of pg return type */
     var raw = r.day;
@@ -836,19 +846,22 @@ function pivotTrend(trend, days) {
   });
   return {
     cc:       days.map(function(d) { return map[d].cc; }),
-    recharge: days.map(function(d) { return map[d].recharge; })
+    recharge: days.map(function(d) { return map[d].recharge; }),
+    whop:     days.map(function(d) { return map[d].whop; })
   };
 }
 
 /* ── KPI grid ── */
 function renderKpis(k, sources) {
   /* Row 1: primary metrics with sparklines */
-  var bySrc = { cc: 0, recharge: 0 };
+  var bySrc = { cc: 0, recharge: 0, whop: 0 };
   (sources || []).forEach(function(s) { if (bySrc[s.source] !== undefined) bySrc[s.source] = s.n; });
   var srcDelta = '<span style="font-size:10px;color:var(--muted)">' +
     '<span style="color:#3b82f6;font-weight:600">CC</span> ' + $n(bySrc.cc) +
     ' &nbsp;·&nbsp; ' +
     '<span style="color:#22c55e;font-weight:600">Recharge</span> ' + $n(bySrc.recharge) +
+    ' &nbsp;·&nbsp; ' +
+    '<span style="color:#7c3aed;font-weight:600">Whop</span> ' + $n(bySrc.whop) +
     '</span>';
   document.getElementById('kpi-row1').innerHTML = [
     { label: 'MRR',                  value: $m(k.mrrCents),   sparkId: 'sp-subs',    sparkColor: '#f04e00' },
@@ -890,11 +903,11 @@ function renderSparklines(newTrend, cancelTrend, revTrend) {
   var np = pivotTrend(newTrend, days30);
   var cp = pivotTrend(cancelTrend, days30);
 
-  var newTotals = days30.map(function(d, i) { return (np.cc[i]||0)+(np.recharge[i]||0); }).slice(-20);
-  var canTotals = days30.map(function(d, i) { return (cp.cc[i]||0)+(cp.recharge[i]||0); }).slice(-20);
+  var newTotals = days30.map(function(d, i) { return (np.cc[i]||0)+(np.recharge[i]||0)+(np.whop[i]||0); }).slice(-20);
+  var canTotals = days30.map(function(d, i) { return (cp.cc[i]||0)+(cp.recharge[i]||0)+(cp.whop[i]||0); }).slice(-20);
   var revTotals = (revTrend||[]).slice(-20).map(function(r) { return Number(r.cents)/100; });
   var cum = 0, subsTrend = days30.map(function(d, i) {
-    cum += ((np.cc[i]||0)+(np.recharge[i]||0)) - ((cp.cc[i]||0)+(cp.recharge[i]||0));
+    cum += ((np.cc[i]||0)+(np.recharge[i]||0)+(np.whop[i]||0)) - ((cp.cc[i]||0)+(cp.recharge[i]||0)+(cp.whop[i]||0));
     return cum;
   }).slice(-20);
 
@@ -919,14 +932,15 @@ function renderSparklines(newTrend, cancelTrend, revTrend) {
 /* ── Source cards ── */
 function renderSourceCards(sources) {
   var cfg = {
-    cc:       { label: 'CheckoutChamp', badge: 'badge-cc',   color: '#3b82f6' },
-    recharge: { label: 'Recharge',      badge: 'badge-rc',   color: '#22c55e' }
+    cc:       { label: 'CheckoutChamp', badge: 'badge-cc', color: '#3b82f6' },
+    recharge: { label: 'Recharge',      badge: 'badge-rc', color: '#22c55e' },
+    whop:     { label: 'Whop',          badge: 'badge-wh', color: '#7c3aed' }
   };
   var total = sources.reduce(function(a,s) { return a+s.n; }, 0);
-  var by = { cc: { n:0, mrr_cents:0 }, recharge: { n:0, mrr_cents:0 } };
+  var by = { cc: { n:0, mrr_cents:0 }, recharge: { n:0, mrr_cents:0 }, whop: { n:0, mrr_cents:0 } };
   sources.forEach(function(s) { if (by[s.source]) by[s.source] = s; });
 
-  document.getElementById('src-grid').innerHTML = ['cc','recharge'].map(function(src) {
+  document.getElementById('src-grid').innerHTML = ['cc','recharge','whop'].map(function(src) {
     var s = by[src], c = cfg[src], pct = total > 0 ? Math.round(s.n / total * 100) : 0;
     return '<div class="src-card">' +
       '<div class="src-head"><span class="src-name" style="color:'+c.color+'">'+c.label+'</span><span class="src-badge '+c.badge+'">'+pct+'% of total</span></div>' +
@@ -957,7 +971,8 @@ function renderGrowthCharts(newTrend, cancelTrend) {
     type: 'bar',
     data: { labels: labels, datasets: [
       { label: 'CC',       data: nd.cc,       backgroundColor: 'rgba(59,130,246,.8)',  stack: 's' },
-      { label: 'Recharge', data: nd.recharge, backgroundColor: 'rgba(34,197,94,.8)',   stack: 's' }
+      { label: 'Recharge', data: nd.recharge, backgroundColor: 'rgba(34,197,94,.8)',   stack: 's' },
+      { label: 'Whop',     data: nd.whop,     backgroundColor: 'rgba(124,58,237,.8)',  stack: 's' }
     ]},
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: TT }, scales: stackedScales }
   });
@@ -967,13 +982,14 @@ function renderGrowthCharts(newTrend, cancelTrend) {
     type: 'bar',
     data: { labels: labels, datasets: [
       { label: 'CC',       data: cd.cc,       backgroundColor: 'rgba(59,130,246,.65)', stack: 's' },
-      { label: 'Recharge', data: cd.recharge, backgroundColor: 'rgba(34,197,94,.65)',  stack: 's' }
+      { label: 'Recharge', data: cd.recharge, backgroundColor: 'rgba(34,197,94,.65)',  stack: 's' },
+      { label: 'Whop',     data: cd.whop,     backgroundColor: 'rgba(124,58,237,.65)', stack: 's' }
     ]},
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: TT }, scales: stackedScales }
   });
 
   var netData = days.map(function(d, i) {
-    return (nd.cc[i]+nd.recharge[i]) - (cd.cc[i]+cd.recharge[i]);
+    return (nd.cc[i]+nd.recharge[i]+(nd.whop[i]||0)) - (cd.cc[i]+cd.recharge[i]+(cd.whop[i]||0));
   });
   var netTotal = netData.reduce(function(a,v){return a+v;},0);
   document.getElementById('net-growth-summary').textContent = (netTotal >= 0 ? '+' : '') + netTotal + ' net this period';
@@ -1208,6 +1224,7 @@ function renderTomorrowPage() {
     var globalIdx = (pageTomorrow - 1) * PAGE_SIZE_TOMORROW + idx;
     var srcTag = r.source === 'cc'       ? '<span class="src-tag tag-cc">CC</span>'
                : r.source === 'recharge' ? '<span class="src-tag tag-rc">RC</span>'
+               : r.source === 'whop'     ? '<span class="src-tag tag-wh">Whop</span>'
                : '<span class="src-tag tag-rc">RC</span>';
     var price = r.price_cents ? '$' + (r.price_cents / 100).toFixed(2) : '—';
     return '<tr>' +
@@ -1455,6 +1472,7 @@ async function loadData() {
     renderCancels(d.recentCancels, d.cancelTotal);
     renderTomorrowRebills(d.tomorrowRebillsList);
     renderProducts(d.productBreakdown);
+    renderSourceCards(d.sourceBreakdown || []);
     renderGateway(d.gatewayBreakdown);
     updateSubtitle();
 
@@ -1518,8 +1536,9 @@ function renderTodayOrders() {
   var slice = allTodayOrders.slice((pageTodayOrders - 1) * PAGE_SIZE_TODAY, pageTodayOrders * PAGE_SIZE_TODAY);
 
   var rows = slice.map(function(o, idx) {
-    var srcTag = o.source === 'cc'      ? '<span class="src-tag tag-cc">CC</span>'
+    var srcTag = o.source === 'cc'       ? '<span class="src-tag tag-cc">CC</span>'
                : o.source === 'recharge' ? '<span class="src-tag tag-rc">RC</span>'
+               : o.source === 'whop'     ? '<span class="src-tag tag-wh">Whop</span>'
                : '<span class="src-tag tag-rc">RC</span>';
     var name = (o.first_name || o.last_name) ? esc((o.first_name || '') + ' ' + (o.last_name || '')).trim() : '';
     var globalIdx = (pageTodayOrders - 1) * PAGE_SIZE_TODAY + idx;
