@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
     :root {
       --bg:      #faf8f5;
       --bg2:     #ffffff;
@@ -19,9 +20,12 @@
       --muted:   #78716c;
       --muted2:  #57534e;
       --accent:  #f04e00;
+      --accent2: #ff6b35;
       --green:   #16a34a;
       --red:     #dc2626;
+      --yellow:  #d97706;
     }
+
     html, body {
       background: var(--bg);
       color: var(--text);
@@ -29,129 +33,165 @@
       font-size: 13px;
       line-height: 1.5;
       -webkit-font-smoothing: antialiased;
-      min-height: 100vh;
     }
 
     /* ── Topbar ── */
     .topbar {
       position: sticky; top: 0; z-index: 100;
-      display: flex; align-items: center; gap: 12px;
-      padding: 0 24px; height: 52px;
+      display: flex; align-items: center; gap: 10px;
+      padding: 0 16px; height: 52px;
       background: var(--bg2);
       border-bottom: 1px solid var(--border);
     }
-    .brand img { height: 30px; width: auto; display: block; }
-    .topbar-sep { width: 1px; height: 20px; background: var(--border); }
-    .topbar-title { font-size: 14px; font-weight: 600; }
+    .brand { display: flex; align-items: center; flex-shrink: 0; }
+    .brand img { height: 32px; width: auto; display: block; }
+
+    /* Search */
+    .search-wrap { position: relative; flex: 1; max-width: 260px; }
+    .search-wrap svg { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); opacity: 0.4; pointer-events: none; }
+    .search-input {
+      width: 100%; background: var(--bg3);
+      border: 1px solid var(--border); border-radius: 7px;
+      padding: 7px 10px 7px 30px;
+      font-size: 12px; color: var(--text); font-family: inherit;
+      outline: none; transition: border-color 0.15s;
+    }
+    .search-input::placeholder { color: var(--muted); }
+    .search-input:focus { border-color: var(--border2); }
+
+    /* Right controls */
     .topbar-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+    .live-pill {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: rgba(34,197,94,.12); color: var(--green);
+      padding: 3px 9px; border-radius: 999px; font-size: 10px; font-weight: 500;
+    }
+    .live-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .sync-info { color: var(--muted); font-size: 11px; display: flex; align-items: center; gap: 5px; }
+    #sync-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+    #sync-dot.ok  { background: var(--green); box-shadow: 0 0 5px rgba(34,197,94,.4); }
+    #sync-dot.err { background: var(--red); }
     .btn {
-      font-size: 12px; font-weight: 500; font-family: inherit;
-      padding: 6px 14px; border-radius: 7px; cursor: pointer;
-      border: 1px solid var(--border2);
-      background: var(--bg3); color: var(--muted2);
-      transition: all 0.12s;
-      text-decoration: none; display: inline-flex; align-items: center; gap: 5px;
+      background: var(--bg3); border: 1px solid var(--border2); color: var(--muted2);
+      padding: 6px 12px; border-radius: 6px; cursor: pointer;
+      font-family: inherit; font-size: 12px; font-weight: 500; transition: all 0.15s;
+      text-decoration: none; display: inline-flex; align-items: center;
     }
-    .btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(240,78,0,.05); }
+    .btn:hover { border-color: var(--accent); color: var(--accent); }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn.primary:hover { background: var(--accent2); }
+    .btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
-    /* ── Main content ── */
-    .main {
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 36px 24px 60px;
+    /* ── Layout ── */
+    .layout { display: flex; min-height: calc(100vh - 52px); }
+
+    /* Sidebar */
+    .sidebar {
+      width: 170px; flex-shrink: 0;
+      background: var(--bg2); border-right: 1px solid var(--border);
+      padding: 10px 8px;
+      position: sticky; top: 52px; height: calc(100vh - 52px); overflow-y: auto;
     }
-
-    /* ── Page header ── */
-    .page-head { margin-bottom: 32px; }
-    .page-head h1 {
-      font-family: 'Oswald', sans-serif;
-      font-size: 24px; font-weight: 600;
-      letter-spacing: .02em; color: var(--text);
+    .nav-section {
+      font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--muted); margin: 14px 10px 5px;
     }
-    .page-head p { color: var(--muted); font-size: 13px; margin-top: 5px; }
+    .nav-section:first-child { margin-top: 4px; }
+    .nav-item {
+      display: flex; align-items: center; gap: 7px;
+      padding: 6px 10px; border-radius: 6px; font-size: 12px;
+      color: var(--muted); cursor: pointer; margin-bottom: 1px;
+      text-decoration: none; transition: all 0.1s;
+    }
+    .nav-item:hover { background: var(--bg3); color: var(--text); }
+    .nav-item.on { background: var(--bg3); color: var(--text); font-weight: 500; }
+    .nav-dot { width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: 0.5; flex-shrink: 0; }
 
-    /* ── Grid ── */
+    /* Main content */
+    .main { flex: 1; min-width: 0; padding: 20px 24px 60px; }
+
+    /* ── Section label ── */
+    .section-label {
+      font-family: 'Oswald', sans-serif; font-size: 14px; font-weight: 500;
+      text-transform: uppercase; letter-spacing: 0.07em;
+      color: var(--text); margin: 0 0 18px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .section-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+    /* ── Integration grid ── */
     .int-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-      gap: 16px;
+      gap: 14px;
     }
 
     /* ── Card ── */
     .int-card {
       background: var(--bg2);
-      border: 1.5px solid var(--border);
-      border-radius: 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
       overflow: hidden;
       transition: box-shadow 0.15s, border-color 0.15s;
     }
-    .int-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.07); }
-    .int-card.connected { border-color: #d1fae5; }
-
-    /* Card header strip (color accent) */
-    .int-card-strip { height: 4px; }
-
-    /* Card body */
-    .int-card-body { padding: 20px 20px 16px; }
+    .int-card:hover { box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+    .int-card.connected { border-color: #bbf7d0; }
+    .int-card-strip { height: 3px; }
+    .int-card-body { padding: 16px 16px 12px; }
 
     /* Logo + name row */
-    .int-top { display: flex; align-items: flex-start; gap: 14px; }
+    .int-top { display: flex; align-items: flex-start; gap: 12px; }
     .int-logo {
-      width: 52px; height: 52px; border-radius: 14px;
+      width: 46px; height: 46px; border-radius: 10px;
       display: flex; align-items: center; justify-content: center;
       flex-shrink: 0;
     }
-    .int-logo svg { width: 26px; height: 26px; }
-    .int-meta { flex: 1; min-width: 0; padding-top: 2px; }
-    .int-name { font-size: 15px; font-weight: 600; line-height: 1.3; }
-    .int-desc { font-size: 12px; color: var(--muted); margin-top: 3px; line-height: 1.45; }
+    .int-logo svg { width: 24px; height: 24px; }
+    .int-meta { flex: 1; min-width: 0; padding-top: 1px; }
+    .int-name { font-size: 14px; font-weight: 600; line-height: 1.3; }
+    .int-desc { font-size: 11.5px; color: var(--muted); margin-top: 3px; line-height: 1.4; }
 
     /* Toggle */
-    .tgl-wrap { padding-top: 3px; }
-    .tgl-switch { position: relative; width: 40px; height: 22px; cursor: pointer; display: block; }
+    .tgl-wrap { padding-top: 2px; }
+    .tgl-switch { position: relative; width: 38px; height: 21px; cursor: pointer; display: block; }
     .tgl-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
     .tgl-rail {
       position: absolute; inset: 0;
-      background: var(--border2); border-radius: 22px;
+      background: var(--border2); border-radius: 21px;
       transition: background 0.2s;
     }
     .tgl-rail::before {
       content: '';
       position: absolute;
-      width: 16px; height: 16px; left: 3px; top: 3px;
+      width: 15px; height: 15px; left: 3px; top: 3px;
       background: #fff; border-radius: 50%;
       transition: transform 0.2s;
-      box-shadow: 0 1px 3px rgba(0,0,0,.25);
+      box-shadow: 0 1px 3px rgba(0,0,0,.2);
     }
     .tgl-switch input:checked ~ .tgl-rail { background: var(--green); }
-    .tgl-switch input:checked ~ .tgl-rail::before { transform: translateX(18px); }
+    .tgl-switch input:checked ~ .tgl-rail::before { transform: translateX(17px); }
 
-    /* Status row */
-    .int-status-row {
-      display: flex; align-items: center; gap: 8px;
-      margin-top: 14px;
-    }
+    /* Status */
+    .int-status-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
     .status-badge {
       display: inline-flex; align-items: center; gap: 5px;
-      font-size: 12px; font-weight: 500;
-      padding: 4px 9px; border-radius: 20px;
+      font-size: 11px; font-weight: 500;
+      padding: 3px 8px; border-radius: 20px;
     }
     .status-badge .dot { width: 6px; height: 6px; border-radius: 50%; }
-    .status-badge.connected { background: #dcfce7; color: var(--green); }
+    .status-badge.connected    { background: #dcfce7; color: var(--green); }
     .status-badge.connected .dot { background: var(--green); }
     .status-badge.disconnected { background: var(--bg3); color: var(--muted2); }
     .status-badge.disconnected .dot { background: var(--border2); }
 
     /* Action buttons */
-    .int-actions {
-      display: flex; gap: 8px;
-      padding: 0 20px 16px;
-    }
+    .int-actions { display: flex; gap: 7px; padding: 0 16px 14px; }
     .btn-configure {
       flex: 1;
-      font-size: 12px; font-weight: 500; font-family: inherit;
-      padding: 8px 14px; border-radius: 8px; cursor: pointer;
-      border: 1.5px solid var(--border2);
+      font-size: 11.5px; font-weight: 500; font-family: inherit;
+      padding: 7px 10px; border-radius: 6px; cursor: pointer;
+      border: 1px solid var(--border2);
       background: var(--bg3); color: var(--muted2);
       transition: all 0.12s;
       display: flex; align-items: center; justify-content: center; gap: 5px;
@@ -159,9 +199,9 @@
     .btn-configure:hover { border-color: var(--accent); color: var(--accent); background: rgba(240,78,0,.05); }
     .btn-configure.open { border-color: var(--accent); color: var(--accent); background: rgba(240,78,0,.05); }
     .btn-test {
-      font-size: 12px; font-weight: 500; font-family: inherit;
-      padding: 8px 14px; border-radius: 8px; cursor: pointer;
-      border: 1.5px solid var(--border2);
+      font-size: 11.5px; font-weight: 500; font-family: inherit;
+      padding: 7px 12px; border-radius: 6px; cursor: pointer;
+      border: 1px solid var(--border2);
       background: var(--bg2); color: var(--muted2);
       transition: all 0.12s; white-space: nowrap;
     }
@@ -171,61 +211,55 @@
     /* Configure panel */
     .int-configure {
       border-top: 1px solid var(--border);
-      padding: 18px 20px 20px;
+      padding: 16px;
       background: var(--bg);
       display: none;
     }
     .int-configure.open { display: block; }
     .configure-title {
-      font-size: 11px; font-weight: 600; letter-spacing: .06em;
+      font-size: 9px; font-weight: 600; letter-spacing: .08em;
       text-transform: uppercase; color: var(--muted);
-      margin-bottom: 14px;
+      margin-bottom: 12px;
     }
 
     /* Form fields */
-    .field-row { margin-bottom: 12px; }
-    .field-row:last-of-type { margin-bottom: 16px; }
+    .field-row { margin-bottom: 10px; }
     .field-label {
       display: flex; align-items: center; justify-content: space-between;
-      font-size: 12px; font-weight: 500; color: var(--muted2);
-      margin-bottom: 5px;
+      font-size: 11.5px; font-weight: 500; color: var(--muted2);
+      margin-bottom: 4px;
     }
     .field-source {
       font-size: 10px; font-weight: 400; color: var(--muted);
-      background: var(--bg3); border-radius: 4px;
-      padding: 2px 6px;
+      background: var(--bg3); border-radius: 3px; padding: 1px 5px;
     }
     .field-source.env { color: var(--accent); background: rgba(240,78,0,.08); }
     .field-source.db  { color: var(--green);  background: #dcfce7; }
     .field-input-wrap { position: relative; }
     .field-input {
       width: 100%; font-family: 'Courier New', monospace;
-      font-size: 12.5px; color: var(--text);
-      background: var(--bg2); border: 1.5px solid var(--border);
-      border-radius: 8px; padding: 8px 38px 8px 10px;
+      font-size: 12px; color: var(--text);
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 6px; padding: 7px 34px 7px 9px;
       outline: none; transition: border-color 0.15s;
     }
-    .field-input::placeholder { font-family: 'Inter', sans-serif; font-size: 12px; color: var(--muted); }
+    .field-input::placeholder { font-family: 'Inter', sans-serif; font-size: 11.5px; color: var(--muted); }
     .field-input:focus { border-color: var(--border2); }
     .field-eye {
-      position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
       background: none; border: none; cursor: pointer;
       color: var(--muted); padding: 2px; display: flex; align-items: center;
     }
     .field-eye:hover { color: var(--muted2); }
-    .field-eye svg { width: 15px; height: 15px; }
-    .field-hint {
-      font-size: 11px; color: var(--muted); margin-top: 4px;
-      font-family: 'Courier New', monospace;
-    }
+    .field-eye svg { width: 14px; height: 14px; }
+    .field-hint { font-size: 10.5px; color: var(--muted); margin-top: 3px; font-family: 'Courier New', monospace; }
 
     /* Save button */
     .btn-save {
-      width: 100%;
-      font-size: 13px; font-weight: 600; font-family: inherit;
-      padding: 10px; border-radius: 8px; cursor: pointer;
-      border: none;
-      background: var(--green); color: #fff;
+      width: 100%; margin-top: 4px;
+      font-size: 12.5px; font-weight: 600; font-family: inherit;
+      padding: 9px; border-radius: 6px; cursor: pointer;
+      border: none; background: var(--green); color: #fff;
       transition: background 0.15s;
     }
     .btn-save:hover:not(:disabled) { background: #15803d; }
@@ -233,44 +267,73 @@
 
     /* Save result */
     .save-result {
-      margin-top: 10px; font-size: 12px;
-      padding: 9px 11px; border-radius: 8px;
-      display: none; line-height: 1.45;
+      margin-top: 8px; font-size: 11.5px;
+      padding: 8px 10px; border-radius: 6px;
+      display: none; line-height: 1.4;
     }
     .save-result.ok   { background: #dcfce7; color: var(--green); display: block; }
     .save-result.fail { background: #fee2e2; color: var(--red);   display: block; }
 
-    /* Loading / error states */
-    .state-box { padding: 60px 20px; text-align: center; color: var(--muted); }
+    .state-box { padding: 40px 20px; text-align: center; color: var(--muted); }
     .state-box.error { color: var(--red); }
   </style>
 </head>
 <body>
 
+<!-- ── Topbar (identical to dashboard) ── -->
 <div class="topbar">
-  <div class="brand">
-    <img src="/admin/tgp-logo.png" alt="TGP" onerror="this.style.display='none'">
+  <div class="brand"><img src="https://assets.imagehub.io/9af52737-7d56-468f-b38c-baa38d5b7b0a/1765912829614_Logo_horizontal_black.png" alt="TGP Admin"/></div>
+
+  <div class="search-wrap">
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="6.5" cy="6.5" r="5" stroke="#888" stroke-width="1.5"/><path d="M11 11l3 3" stroke="#888" stroke-width="1.5" stroke-linecap="round"/></svg>
+    <input type="text" class="search-input" placeholder="Search email, product, event..." autocomplete="off"/>
   </div>
-  <div class="topbar-sep"></div>
-  <div class="topbar-title">Integrations</div>
+
   <div class="topbar-right">
-    <a href="/admin/" class="btn">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-      Dashboard
-    </a>
+    <span class="live-pill"><span class="live-dot"></span> Live</span>
+    <span class="sync-info"><span id="sync-dot"></span><span id="sync-text">Loading…</span></span>
+    <button class="btn primary" id="sync-btn" onclick="runSync()">↻ Sync now</button>
     <button class="btn" onclick="logout()">Sign out</button>
   </div>
 </div>
 
-<div class="main">
-  <div class="page-head">
-    <h1>Integrations</h1>
-    <p>Connect your platforms. Enter credentials here to activate each integration — changes take effect immediately.</p>
+<!-- ── Layout ── -->
+<div class="layout">
+
+  <!-- Sidebar (identical to dashboard, Integrations marked active) -->
+  <nav class="sidebar">
+    <div class="nav-section">Analytics</div>
+    <a href="/admin/#s-overview"  class="nav-item"><span class="nav-dot"></span>Overview</a>
+    <a href="/admin/#s-revenue"   class="nav-item"><span class="nav-dot"></span>Revenue</a>
+    <a href="/admin/#s-growth"    class="nav-item"><span class="nav-dot"></span>Growth</a>
+
+    <div class="nav-section">Subscribers</div>
+    <a href="/admin/#s-live"      class="nav-item"><span class="nav-dot"></span>Activity feed</a>
+    <a href="/admin/#s-cancels"   class="nav-item"><span class="nav-dot"></span>Cancellations</a>
+
+    <div class="nav-section">Catalog</div>
+    <a href="/admin/#s-products"  class="nav-item"><span class="nav-dot"></span>Products</a>
+
+    <div class="nav-section">Orders</div>
+    <a href="/admin/#s-today"     class="nav-item"><span class="nav-dot"></span>Today's orders</a>
+    <a href="/admin/#s-tomorrow"  class="nav-item"><span class="nav-dot"></span>Tomorrow</a>
+    <a href="/admin/#s-gateway"   class="nav-item"><span class="nav-dot"></span>By gateway</a>
+
+    <div class="nav-section">System</div>
+    <a href="/admin/integrations" class="nav-item on"><span class="nav-dot"></span>Integrations</a>
+    <a href="#" class="nav-item" onclick="runSync();return false;"><span class="nav-dot"></span>Sync now</a>
+    <a href="/admin/login" class="nav-item" onclick="logout();return false;"><span class="nav-dot"></span>Sign out</a>
+  </nav>
+
+  <!-- Main -->
+  <div class="main">
+    <div class="section-label">Integrations</div>
+    <div id="int-grid" class="int-grid">
+      <div class="state-box">Loading integrations…</div>
+    </div>
   </div>
-  <div id="int-grid" class="int-grid">
-    <div class="state-box">Loading…</div>
-  </div>
-</div>
+
+</div><!-- /.layout -->
 
 <script>
 /* ── Auth ── */
@@ -288,21 +351,52 @@ function esc(s) {
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
+function ago(iso) {
+  var ms = Date.now() - new Date(iso).getTime(), m = Math.floor(ms/60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return m + 'm ago';
+  var h = Math.floor(m/60);
+  if (h < 24) return h + 'h ago';
+  return Math.floor(h/24) + 'd ago';
+}
 
-/* ── SVG logos per integration ── */
+/* ── Sync state (topbar dot) ── */
+async function loadSyncState() {
+  try {
+    var r = await fetch('/admin/api/sync-state', { headers: H });
+    if (!r.ok) return;
+    var d = await r.json();
+    var states = d.sync || [];
+    var latest = states.map(function(s){ return s.last_delta_sync_at ? new Date(s.last_delta_sync_at) : null; }).filter(Boolean).sort(function(a,b){return b-a;})[0];
+    var errors = states.filter(function(s){ return s.last_error; });
+    var dot = document.getElementById('sync-dot'), txt = document.getElementById('sync-text');
+    if (errors.length)  { dot.className='err'; txt.textContent=errors.length+' source error'+(errors.length>1?'s':''); }
+    else if (latest)    { dot.className='ok';  txt.textContent='Synced '+ago(latest.toISOString()); }
+    else                { dot.className='';    txt.textContent='Never synced'; }
+  } catch(e) {}
+}
+
+/* ── Sync now ── */
+async function runSync() {
+  var btn = document.getElementById('sync-btn');
+  btn.disabled = true; btn.textContent = 'Syncing…';
+  try {
+    var r = await fetch('/admin/sync/run', { method: 'POST', headers: H });
+    if (!r.ok) throw new Error('Sync failed');
+    setTimeout(function() { loadSyncState(); btn.disabled=false; btn.textContent='↻ Sync now'; }, 12000);
+  } catch(e) { alert(e.message); btn.disabled=false; btn.textContent='↻ Sync now'; }
+}
+
+/* ── SVG logos ── */
 var LOGOS = {
   checkoutchamp: '<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/><line x1="5" y1="15" x2="9" y2="15"/><line x1="13" y1="15" x2="17" y2="15"/></svg>',
-
-  recharge: '<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10M23 14l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>',
-
-  shopify: '<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>',
-
-  klaviyo: '<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>',
-
-  whop: '<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>',
+  recharge:      '<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10M23 14l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>',
+  shopify:       '<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>',
+  klaviyo:       '<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>',
+  whop:          '<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>',
 };
 
-/* ── Load ── */
+/* ── Load integrations ── */
 async function loadIntegrations() {
   var grid = document.getElementById('int-grid');
   try {
@@ -321,14 +415,14 @@ function renderGrid(integrations, grid) {
 }
 
 function cardHTML(int) {
-  var logo    = LOGOS[int.name] || '';
-  var fields  = int.fields || [];
+  var logo   = LOGOS[int.name] || '';
+  var fields = int.fields || [];
 
   var fieldRows = fields.map(function(f) {
     var isPass  = f.type === 'password';
     var eyeId   = 'eye-' + int.name + '-' + f.key;
     var inputId = 'inp-' + int.name + '-' + f.key;
-    var srcLabel = f.source === 'db' ? '<span class="field-source db">saved</span>'
+    var srcLabel = f.source === 'db'  ? '<span class="field-source db">saved</span>'
                  : f.source === 'env' ? '<span class="field-source env">env var</span>'
                  : '';
     return '<div class="field-row">' +
@@ -338,9 +432,11 @@ function cardHTML(int) {
           ' type="' + (isPass ? 'password' : 'text') + '"' +
           ' placeholder="' + esc(f.placeholder) + '"' +
           ' autocomplete="off" spellcheck="false">' +
-        (isPass ? '<button class="field-eye" id="' + eyeId + '" type="button" onclick="toggleEye(\'' + inputId + '\',\'' + eyeId + '\')" title="Show/hide">' +
-          '<svg id="eye-icon-' + inputId + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>' +
-          '</button>' : '') +
+        (isPass
+          ? '<button class="field-eye" id="' + eyeId + '" type="button" onclick="toggleEye(\'' + inputId + '\',\'' + eyeId + '\')" title="Show/hide">' +
+              '<svg id="eye-icon-' + inputId + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>' +
+            '</button>'
+          : '') +
       '</div>' +
       (f.masked ? '<div class="field-hint">Current: ' + esc(f.masked) + '</div>' : '') +
     '</div>';
@@ -371,10 +467,10 @@ function cardHTML(int) {
     '</div>' +
     '<div class="int-actions">' +
       '<button class="btn-configure" id="cfg-btn-' + int.name + '" onclick="toggleConfigure(\'' + int.name + '\')">' +
-        '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>' +
-        'Configure' +
+        '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>' +
+        ' Configure' +
       '</button>' +
-      '<button class="btn-test" id="test-btn-' + int.name + '" onclick="testInt(\'' + int.name + '\', this)">Test</button>' +
+      '<button class="btn-test" onclick="testInt(\'' + int.name + '\', this)">Test</button>' +
     '</div>' +
     '<div class="int-configure" id="cfg-' + int.name + '">' +
       '<div class="configure-title">API Credentials</div>' +
@@ -385,17 +481,13 @@ function cardHTML(int) {
   '</div>';
 }
 
-/* ── Toggle configure panel ── */
 function toggleConfigure(name) {
-  var panel  = document.getElementById('cfg-' + name);
-  var btn    = document.getElementById('cfg-btn-' + name);
-  var isOpen = panel.classList.contains('open');
-  panel.classList.toggle('open', !isOpen);
-  btn.classList.toggle('open', !isOpen);
-  btn.querySelector('span') && (btn.lastChild.textContent = isOpen ? 'Configure' : 'Close');
+  var panel = document.getElementById('cfg-' + name);
+  var btn   = document.getElementById('cfg-btn-' + name);
+  var open  = panel.classList.toggle('open');
+  btn.classList.toggle('open', open);
 }
 
-/* ── Show/hide password ── */
 function toggleEye(inputId, eyeId) {
   var inp = document.getElementById(inputId);
   if (!inp) return;
@@ -404,12 +496,11 @@ function toggleEye(inputId, eyeId) {
   var icon = document.getElementById('eye-icon-' + inputId);
   if (icon) {
     icon.innerHTML = show
-      ? '<path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19M1 1l22 22"/><path d="M1 12s4-8 11-8 11 8 11 8"/>'
+      ? '<path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19M1 1l22 22"/>'
       : '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
   }
 }
 
-/* ── Toggle enable/disable ── */
 async function toggleInt(name, enabled) {
   try {
     await fetch('/admin/api/integrations/' + encodeURIComponent(name) + '/toggle', {
@@ -420,14 +511,11 @@ async function toggleInt(name, enabled) {
   } catch(e) {}
 }
 
-/* ── Save credentials ── */
 async function saveInt(name, btn) {
   var result = document.getElementById('save-result-' + name);
-  btn.disabled = true;
-  btn.textContent = 'Saving…';
+  btn.disabled = true; btn.textContent = 'Saving…';
   if (result) { result.className = 'save-result'; result.textContent = ''; }
 
-  /* Collect all input values for this integration */
   var creds = {};
   var card  = document.getElementById('card-' + name);
   card.querySelectorAll('.field-input').forEach(function(inp) {
@@ -436,7 +524,6 @@ async function saveInt(name, btn) {
   });
 
   try {
-    /* Save */
     var r = await fetch('/admin/api/integrations/' + encodeURIComponent(name) + '/credentials', {
       method: 'POST',
       headers: Object.assign({}, H, { 'Content-Type': 'application/json' }),
@@ -445,7 +532,6 @@ async function saveInt(name, btn) {
     var d = await r.json();
     if (!d.ok) throw new Error(d.error || 'Save failed');
 
-    /* Auto-test after save */
     btn.textContent = 'Testing…';
     var r2 = await fetch('/admin/api/integrations/' + encodeURIComponent(name) + '/test', {
       method: 'POST', headers: H
@@ -458,40 +544,27 @@ async function saveInt(name, btn) {
         ? '✓ Saved & connected — ' + (d2.message || 'OK')
         : '✗ Saved, but test failed: ' + (d2.message || 'unknown error');
     }
-
-    /* Update status badge */
     if (d2.ok) {
       var badge = document.getElementById('badge-' + name);
-      if (badge) {
-        badge.className = 'status-badge connected';
-        badge.innerHTML = '<span class="dot"></span>Connected';
-      }
-      var card2 = document.getElementById('card-' + name);
-      if (card2) card2.classList.add('connected');
+      if (badge) { badge.className = 'status-badge connected'; badge.innerHTML = '<span class="dot"></span>Connected'; }
+      var c = document.getElementById('card-' + name);
+      if (c) c.classList.add('connected');
     }
   } catch(e) {
-    if (result) {
-      result.className = 'save-result fail';
-      result.textContent = '✗ ' + e.message;
-    }
+    if (result) { result.className = 'save-result fail'; result.textContent = '✗ ' + e.message; }
   }
-
-  btn.disabled = false;
-  btn.textContent = 'Save & Connect';
+  btn.disabled = false; btn.textContent = 'Save & Connect';
 }
 
-/* ── Test connection ── */
 async function testInt(name, btn) {
-  btn.disabled = true;
-  btn.textContent = '…';
+  btn.disabled = true; btn.textContent = '…';
   var result = document.getElementById('save-result-' + name);
   if (result) { result.className = 'save-result'; result.textContent = ''; }
-
   var panel = document.getElementById('cfg-' + name);
   if (!panel.classList.contains('open')) {
-    document.getElementById('cfg-btn-' + name).click();
+    panel.classList.add('open');
+    document.getElementById('cfg-btn-' + name).classList.add('open');
   }
-
   try {
     var r = await fetch('/admin/api/integrations/' + encodeURIComponent(name) + '/test', {
       method: 'POST', headers: H
@@ -508,11 +581,12 @@ async function testInt(name, btn) {
   } catch(e) {
     if (result) { result.className = 'save-result fail'; result.textContent = '✗ ' + e.message; }
   }
-  btn.disabled = false;
-  btn.textContent = 'Test';
+  btn.disabled = false; btn.textContent = 'Test';
 }
 
 loadIntegrations();
+loadSyncState();
+setInterval(loadSyncState, 60000);
 </script>
 </body>
 </html>
