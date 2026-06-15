@@ -239,6 +239,7 @@ async function upsertCCPurchase(p) {
       frequency      = EXCLUDED.frequency,
       next_bill_at   = EXCLUDED.next_bill_at,
       cancelled_at   = EXCLUDED.cancelled_at,
+      cancel_reason  = EXCLUDED.cancel_reason,
       raw            = EXCLUDED.raw,
       last_synced_at = NOW(),
       last_billed_at = CASE
@@ -390,8 +391,8 @@ async function upsertRechargeSub(s) {
   await db.query(`
     INSERT INTO subscriptions
       (id, source, native_id, customer_id, customer_email, product,
-       status, price_cents, frequency, next_bill_at, started_at, cancelled_at, raw, last_synced_at)
-    VALUES ($1,'recharge',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+       status, price_cents, frequency, next_bill_at, started_at, cancelled_at, cancel_reason, raw, last_synced_at)
+    VALUES ($1,'recharge',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
     ON CONFLICT (id) DO UPDATE SET
       customer_id    = EXCLUDED.customer_id,
       customer_email = EXCLUDED.customer_email,
@@ -401,6 +402,7 @@ async function upsertRechargeSub(s) {
       frequency      = EXCLUDED.frequency,
       next_bill_at   = EXCLUDED.next_bill_at,
       cancelled_at   = EXCLUDED.cancelled_at,
+      cancel_reason  = EXCLUDED.cancel_reason,
       raw            = EXCLUDED.raw,
       last_synced_at = NOW(),
       last_billed_at = CASE
@@ -413,7 +415,7 @@ async function upsertRechargeSub(s) {
   `, [
     id, String(s.id), customerId, email,
     s.product_title || null, status, priceCents, frequency,
-    nextBillAt, startedAt, cancelledAt, s
+    nextBillAt, startedAt, cancelledAt, s.cancellation_reason || null, s
   ]);
 
   if (isNew)            await db.recordEvent('sub_created',   'recharge', email, { product: s.product_title, price: s.price });
