@@ -337,7 +337,6 @@
     <a href="#s-growth"    class="nav-item"><span class="nav-dot"></span>Growth</a>
 
     <div class="nav-section">Subscribers</div>
-    <a href="#s-sources"   class="nav-item"><span class="nav-dot"></span>By source</a>
     <a href="#s-live"      class="nav-item"><span class="nav-dot"></span>Activity feed</a>
     <a href="#s-cancels"   class="nav-item"><span class="nav-dot"></span>Cancellations</a>
 
@@ -372,10 +371,6 @@
 
       <!-- KPI row 2 — supporting stats -->
       <div class="grid-4" id="kpi-row2"></div>
-
-      <!-- By source -->
-      <div class="section-label" id="s-sources">By source</div>
-      <div class="grid-3" id="src-grid"></div>
 
       <!-- Revenue & Forecast -->
       <div class="section-label" id="s-revenue">Revenue &amp; forecast</div>
@@ -695,11 +690,18 @@ function pivotTrend(trend, days) {
 }
 
 /* ── KPI grid ── */
-function renderKpis(k) {
+function renderKpis(k, sources) {
   /* Row 1: primary metrics with sparklines */
+  var bySrc = { cc: 0, recharge: 0 };
+  (sources || []).forEach(function(s) { if (bySrc[s.source] !== undefined) bySrc[s.source] = s.n; });
+  var srcDelta = '<span style="font-size:10px;color:var(--muted)">' +
+    '<span style="color:#3b82f6;font-weight:600">CC</span> ' + $n(bySrc.cc) +
+    ' &nbsp;·&nbsp; ' +
+    '<span style="color:#22c55e;font-weight:600">Recharge</span> ' + $n(bySrc.recharge) +
+    '</span>';
   document.getElementById('kpi-row1').innerHTML = [
     { label: 'MRR',                  value: $m(k.mrrCents),    delta: 'monthly recurring revenue', cls: 'accent', sparkId: 'sp-mrr',     sparkColor: '#f04e00' },
-    { label: 'Active subscriptions', value: $n(k.activeSubs),  delta: 'CC + Recharge',             cls: '',       sparkId: 'sp-subs',    sparkColor: '#3b82f6' },
+    { label: 'Active subscriptions', value: $n(k.activeSubs),  delta: srcDelta,                    cls: '',       sparkId: 'sp-subs',    sparkColor: '#3b82f6' },
     { label: 'New today',            value: $n(k.newToday),    delta: dayDelta(k.newToday, k.newYesterday),         sparkId: 'sp-new',     sparkColor: '#22c55e' },
     { label: 'Cancels today',        value: $n(k.cancelsToday), delta: (function() {
         var d=(k.cancelsToday||0)-(k.cancelsYesterday||0), s=d>=0?'+':'', c=d>0?'down':d<0?'up':'neutral';
@@ -1250,9 +1252,8 @@ async function loadData() {
     if (!r.ok) throw new Error('Failed to load data');
     var d = await r.json();
 
-    renderKpis(d.kpis);
+    renderKpis(d.kpis, d.sourceBreakdown || []);
     renderSparklines(d.newSubsTrend, d.cancelsTrend, d.revenueTrend);
-    renderSourceCards(d.sourceBreakdown || []);
     renderRevChart(d.revenueTrend);
     renderForecastChart(d.forecast7d);
     renderGrowthCharts(d.newSubsTrend, d.cancelsTrend);
