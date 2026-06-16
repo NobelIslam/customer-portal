@@ -1021,33 +1021,32 @@ router.get('/api/today-orders', async function(req, res) {
       })(),
 
       /* ── Recharge: already-billed charges first, then still-scheduled subs ──
-         Recharge API date-filter params (scheduled_at_min/max, created_at_min/max)
-         are unreliable in v1 — the API ignores them and returns all records.
-         So we do NOT use server-side date filters. Instead:
-           Charges: sort_by=created_at-desc (most recent first), filter client-side
-             against todayStart/todayEnd. Stop paginating once we go past todayStart.
-           Subs: compare next_charge_scheduled_at.slice(0,10) === todayUTC client-side,
-             resolve email via one batch DB lookup (subs have no email field).        */
+         Charges: use created_at_min WITHOUT encodeURIComponent — same pattern as
+           sync.js line 366 which is confirmed working. Client-side filter is a
+           secondary safety net in case the API returns slightly outside the window.
+         Subs: next_charge_scheduled_at.slice(0,10) === todayUTC client-side,
+           email resolved via one batch DB lookup (subs have no email field).     */
       (async function() {
         if (!process.env.RECHARGE_API_KEY) return [];
         var rows = [], seenEmails = [];
         const headers = { 'X-Recharge-Access-Token': process.env.RECHARGE_API_KEY };
         try {
-          /* 2b FIRST — recent successful charges, most-recent first.
-             Stop as soon as a charge falls before todayStart.             */
-          var chPage = 1, chDone = false;
-          while (chPage <= 10 && !chDone) {
-            const url = RC_API_BASE + '/charges?status=success&sort_by=created_at-desc&limit=250&page=' + chPage;
+          /* 2b FIRST — successful charges since Amsterdam midnight.
+             Same created_at_min pattern as sync.js (no encodeURIComponent).
+             Client-side filter removes anything outside today's exact window. */
+          var chPage = 1;
+          while (chPage <= 10) {
+            const url = RC_API_BASE + '/charges?status=success&limit=250&page=' + chPage +
+              '&created_at_min=' + todayStart.toISOString();
             const r = await fetch(url, { headers: headers });
             const d = await r.json();
             const charges = d.charges || [];
             charges.forEach(function(c) {
-              if (chDone) return;
-              /* Recharge timestamps have no Z — append it so Date parses as UTC */
+              /* Recharge timestamps have no Z — force UTC parse */
               var ca = (c.created_at || '');
-              var chargeDate = new Date(ca && !ca.endsWith('Z') && !ca.includes('+') ? ca + 'Z' : ca);
-              if (isNaN(chargeDate) || chargeDate < todayStart) { chDone = true; return; }
-              if (chargeDate >= todayEnd) return;
+              var chargeDate = new Date(!ca.endsWith('Z') && !ca.includes('+') ? ca + 'Z' : ca);
+              /* Client-side guard: only keep charges within today's Amsterdam window */
+              if (isNaN(chargeDate) || chargeDate < todayStart || chargeDate >= todayEnd) return;
               const email = (c.email || '').trim().toLowerCase();
               if (!email || seenEmails.includes(email)) return;
               seenEmails.push(email);
@@ -1061,7 +1060,7 @@ router.get('/api/today-orders', async function(req, res) {
                 frequency: null, last_billed_at: ca || now.toISOString()
               });
             });
-            if (charges.length < 250 || chDone) break;
+            if (charges.length < 250) break;
             chPage++;
           }
           console.log('[today-orders] RC billed today:', rows.length);
