@@ -1994,42 +1994,51 @@ function renderIntradayChart(d) {
   var labels     = trimmed.map(function(h) { return String(h.hour).padStart(2, '0') + ':00'; });
   var dataPoints = trimmed.map(function(h) { return isRev ? h.revenue_cents / 100 : h.orders; });
 
-  /* Dynamic gradient height based on canvas */
+  /* Canvas + orange gradient */
   var canvas = document.getElementById('intraday-chart');
   if (!canvas) return;
   var ctx    = canvas.getContext('2d');
   var chartH = canvas.offsetHeight || 320;
   var grad   = ctx.createLinearGradient(0, 0, 0, chartH);
-  grad.addColorStop(0,   'rgba(22,163,74, 0.22)');
-  grad.addColorStop(0.5, 'rgba(22,163,74, 0.07)');
-  grad.addColorStop(1,   'rgba(22,163,74, 0)');
+  grad.addColorStop(0,   'rgba(240,78,0, 0.28)');
+  grad.addColorStop(0.45,'rgba(240,78,0, 0.08)');
+  grad.addColorStop(1,   'rgba(240,78,0, 0)');
 
-  /* "NOW" vertical line + label plugin */
+  /* Glow plugin — draws an orange halo behind the line */
+  var glowPlugin = {
+    id: 'lineGlow',
+    beforeDatasetsDraw: function(chart) {
+      var c = chart.ctx;
+      c.save();
+      c.shadowColor   = 'rgba(240,78,0, 0.55)';
+      c.shadowBlur    = 18;
+      c.shadowOffsetY = 3;
+    },
+    afterDatasetsDraw: function(chart) { chart.ctx.restore(); }
+  };
+
+  /* NOW vertical marker plugin */
   var nowLinePlugin = {
     id: 'nowLine',
     afterDraw: function(chart) {
-      var ca  = chart.chartArea;
-      var c   = chart.ctx;
-      var xPx = ca.right;   /* NOW is always the rightmost visible hour */
+      var ca = chart.chartArea, c = chart.ctx;
+      var xPx = ca.right;
       c.save();
-      c.strokeStyle = 'rgba(240,78,0,.55)';
-      c.lineWidth   = 1.5;
-      c.setLineDash([5, 4]);
+      c.strokeStyle = 'rgba(100,100,100,.35)';
+      c.lineWidth   = 1;
+      c.setLineDash([4, 4]);
       c.beginPath(); c.moveTo(xPx, ca.top); c.lineTo(xPx, ca.bottom); c.stroke();
       c.setLineDash([]);
-      /* Label pill */
-      var lbl = String(nowH).padStart(2,'0') + ':00 NOW';
-      c.font      = '600 9px Inter,sans-serif';
-      var tw      = c.measureText(lbl).width;
-      var px      = Math.min(xPx, ca.right - tw/2 - 6);
-      c.fillStyle = 'rgba(240,78,0,.12)';
-      var pr = 4;
-      c.beginPath();
-      c.roundRect(px - tw/2 - 5, ca.top - 1, tw + 10, 16, pr);
+      var lbl = String(nowH).padStart(2,'0') + ':00';
+      c.font = '600 9px Inter,sans-serif';
+      var tw = c.measureText(lbl).width;
+      c.fillStyle = 'rgba(240,78,0,.15)';
+      if (c.roundRect) c.roundRect(xPx - tw/2 - 5, ca.top, tw + 10, 15, 3);
+      else c.rect(xPx - tw/2 - 5, ca.top, tw + 10, 15);
       c.fill();
       c.fillStyle = '#f04e00';
       c.textAlign = 'center';
-      c.fillText(lbl, px, ca.top + 10);
+      c.fillText(lbl, xPx, ca.top + 10);
       c.restore();
     }
   };
@@ -2037,57 +2046,46 @@ function renderIntradayChart(d) {
   if (intradayChart) intradayChart.destroy();
   intradayChart = new Chart(canvas, {
     type: 'line',
-    plugins: [nowLinePlugin],
+    plugins: [glowPlugin, nowLinePlugin],
     data: {
       labels: labels,
       datasets: [{
-        data:             dataPoints,
-        borderColor:      '#16a34a',
-        backgroundColor:  grad,
-        fill:             true,
-        tension:          0.42,
-        borderWidth:      2.5,
-        pointRadius:      dataPoints.map(function(v) { return v > 0 ? 3.5 : 0; }),
-        pointBackgroundColor: '#16a34a',
-        pointBorderColor:     '#fff',
-        pointBorderWidth:     1.5,
-        pointHoverRadius:     5,
-        pointHoverBackgroundColor: '#16a34a',
+        data:                      dataPoints,
+        borderColor:               '#f04e00',
+        backgroundColor:           grad,
+        fill:                      true,
+        tension:                   0.45,
+        borderWidth:               2.5,
+        pointRadius:               dataPoints.map(function(v) { return v > 0 ? 3 : 0; }),
+        pointBackgroundColor:      '#f04e00',
+        pointBorderColor:          '#fff',
+        pointBorderWidth:          1.5,
+        pointHoverRadius:          5,
+        pointHoverBackgroundColor: '#f04e00',
         pointHoverBorderColor:     '#fff',
         pointHoverBorderWidth:     2
       }]
     },
     options: {
       responsive: true, maintainAspectRatio: false,
-      animation: {
-        duration: 1200,
-        easing:   'easeOutQuart'
-      },
+      animation: { duration: 1200, easing: 'easeOutQuart' },
       animations: {
         y: {
-          duration: 900,
-          easing:   'easeOutQuart',
-          from:     0,
-          delay: function(ctx) {
-            if (ctx.type !== 'data') return 0;
-            return ctx.dataIndex * 35;   /* stagger: each hour reveals 35ms after the previous */
-          }
+          duration: 900, easing: 'easeOutQuart', from: 0,
+          delay: function(ctx) { return ctx.type !== 'data' ? 0 : ctx.dataIndex * 35; }
         }
       },
       plugins: {
         legend: { display: false },
         tooltip: {
           mode: 'index', intersect: false,
-          backgroundColor: '#1c1917', borderColor: '#3a3730', borderWidth: 1,
-          titleColor: '#a8a29e', bodyColor: '#fafaf9',
+          backgroundColor: '#1c1917', borderColor: 'rgba(240,78,0,.4)', borderWidth: 1,
+          titleColor: '#f97316', bodyColor: '#fafaf9',
           padding: 10, cornerRadius: 8,
           callbacks: {
-            title: function(items) {
-              return items[0] ? items[0].label + '  (Amsterdam)' : '';
-            },
+            title: function(items) { return items[0] ? items[0].label + ' (Amsterdam)' : ''; },
             label: function(c) {
-              if (isRev) return '  Revenue: $' + c.parsed.y.toFixed(2);
-              return '  Orders: ' + c.parsed.y;
+              return isRev ? '  $' + c.parsed.y.toFixed(2) : '  ' + c.parsed.y + ' orders';
             }
           }
         }
@@ -2095,21 +2093,14 @@ function renderIntradayChart(d) {
       scales: {
         x: {
           ticks: {
-            color: TICK, font: { size: 10 },
-            maxTicksLimit: 9,
-            callback: function(val, idx) {
-              /* Show every 3rd hour to keep axis clean */
-              return idx % 3 === 0 ? labels[idx] : '';
-            }
+            color: '#78716c', font: { size: 10 }, maxTicksLimit: 9,
+            callback: function(val, idx) { return idx % 3 === 0 ? labels[idx] : ''; }
           },
-          grid: { color: GRID }
+          grid:   { display: false },
+          border: { display: false }
         },
         y: {
-          ticks: {
-            color: TICK, font: { size: 10 },
-            callback: function(v) { return isRev ? '$' + (v >= 1000 ? (v/1000).toFixed(1)+'k' : v) : v; }
-          },
-          grid:        { color: GRID },
+          display:     false,
           beginAtZero: true
         }
       }

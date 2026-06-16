@@ -1865,7 +1865,7 @@ router.get('/api/today-revenue', async function(req, res) {
     const hourMap = {};
     var ccCents = 0, rcCents = 0;
     ccRows.concat(rcRows).forEach(function(o) {
-      var h = parseInt(o.ts.toLocaleString('en-US', { timeZone: 'Europe/Amsterdam', hour: 'numeric', hour12: false }));
+      var h = parseInt(o.ts.toLocaleString('en-US', { timeZone: 'Europe/Amsterdam', hour: 'numeric', hour12: false })) % 24;
       if (!hourMap[h]) hourMap[h] = { revenue_cents: 0, orders: 0 };
       hourMap[h].orders++;
       if (o.source === 'cc') {
