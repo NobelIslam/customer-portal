@@ -1008,94 +1008,73 @@ router.get('/api/today-orders', async function(req, res) {
         return rows;
       })(),
 
-      /* ── Recharge: already-billed charges first, then still-scheduled subs ──
-         PRIMARY filter: c.scheduled_at.slice(0,10) === todayUTC
-           scheduled_at on a charge = the Amsterdam date the subscription was
-           scheduled for. This is always the Amsterdam calendar date, regardless
-           of when Recharge actually processed the charge (could be UTC prev-day).
-           No timezone math needed — just compare the date string directly.
-         Use a 2-day created_at_min window so charges processed before Amsterdam
-         midnight (e.g. Recharge billing at UTC 20:00 = Amsterdam 22:00) are included.
-         Subs: next_charge_scheduled_at.slice(0,10) === todayUTC, email from DB.     */
+      /* ── Recharge: query DB directly — no live API calls ──
+         The sync maintains last_billed_at and next_bill_at on every subscription.
+         Billed today:    last_billed_at in today's Amsterdam window.
+         Scheduled today: next_bill_at in today's Amsterdam window, not yet billed.  */
       (async function() {
-        if (!process.env.RECHARGE_API_KEY) return [];
         var rows = [], seenEmails = [];
-        const headers = { 'X-Recharge-Access-Token': process.env.RECHARGE_API_KEY };
         try {
-          /* 2b FIRST — charges scheduled for today (2-day window to catch early processors) */
-          var yesterday = new Date(todayStart.getTime() - 24 * 3600 * 1000);
-          var chPage = 1;
-          while (chPage <= 10) {
-            const url = RC_API_BASE + '/charges?status=success&limit=250&page=' + chPage +
-              '&created_at_min=' + yesterday.toISOString();
-            const r = await fetch(url, { headers: headers });
-            const d = await r.json();
-            const charges = d.charges || [];
-            charges.forEach(function(c) {
-              /* scheduled_at is the Amsterdam date the sub was due — the definitive filter */
-              if ((c.scheduled_at || '').slice(0, 10) !== todayUTC) return;
-              const email = (c.email || '').trim().toLowerCase();
-              if (!email || seenEmails.includes(email)) return;
-              seenEmails.push(email);
-              rows.push({
-                source: 'recharge', native_id: String(c.subscription_id || c.id),
-                customer_email: email,
-                product: (c.line_items && c.line_items[0]) ? c.line_items[0].title : null,
-                price_cents: Math.round(parseFloat(c.total_price || 0) * 100),
-                next_bill_at: null, status: 'ACTIVE',
-                first_name: c.first_name || null, last_name: c.last_name || null,
-                frequency: null, last_billed_at: c.created_at || now.toISOString()
-              });
-            });
-            if (charges.length < 250) break;
-            chPage++;
-          }
-          console.log('[today-orders] RC billed today:', rows.length);
+          var billed = await db.any(`
+            SELECT s.customer_email, s.product, s.price_cents,
+                   s.last_billed_at, s.next_bill_at,
+                   c.first_name, c.last_name
+            FROM   subscriptions s
+            LEFT JOIN customers c ON LOWER(c.email) = LOWER(s.customer_email)
+            WHERE  s.source = 'recharge'
+              AND  s.status = 'ACTIVE'
+              AND  s.last_billed_at >= $1 AND s.last_billed_at < $2
+            ORDER  BY s.last_billed_at DESC
+          `, [todayStart, todayEnd]);
 
-          /* 2a SECOND — active subs still scheduled for today (not yet charged)
-             next_charge_scheduled_at is stored as "YYYY-MM-DD" by Recharge.
-             No email on sub objects — batch-resolve from customers table.       */
-          var todaySubs = [], rcPage = 1;
-          while (rcPage <= 20) {
-            const url = RC_API_BASE + '/subscriptions?status=active&limit=250&page=' + rcPage;
-            const r = await fetch(url, { headers: headers });
-            const d = await r.json();
-            const subs = d.subscriptions || [];
-            subs.forEach(function(s) {
-              if (!s.customer_id) return;
-              var nc = (s.next_charge_scheduled_at || '').slice(0, 10); /* take YYYY-MM-DD part */
-              if (nc !== todayUTC) return;
-              todaySubs.push(s);
+          billed.forEach(function(s) {
+            var email = (s.customer_email || '').toLowerCase();
+            if (!email || TEST_EMAILS.has(email) || seenEmails.includes(email)) return;
+            seenEmails.push(email);
+            rows.push({
+              source: 'recharge', native_id: email,
+              customer_email: email,
+              product: s.product || null,
+              price_cents: s.price_cents || 0,
+              next_bill_at: null, status: 'ACTIVE',
+              first_name: s.first_name || null, last_name: s.last_name || null,
+              frequency: null,
+              last_billed_at: s.last_billed_at ? new Date(s.last_billed_at).toISOString() : null
             });
-            if (subs.length < 250) break;
-            rcPage++;
-          }
-          console.log('[today-orders] RC subs still scheduled today:', todaySubs.length);
-          if (todaySubs.length > 0) {
-            var custIds = [...new Set(todaySubs.map(function(s) { return String(s.customer_id); }))];
-            var custRows = await db.any(
-              'SELECT recharge_id, email FROM customers WHERE recharge_id = ANY($1)', [custIds]
-            ).catch(function() { return []; });
-            var emailMap = {};
-            custRows.forEach(function(cr) { if (cr.recharge_id) emailMap[String(cr.recharge_id)] = cr.email; });
-            todaySubs.forEach(function(s) {
-              var email = (emailMap[String(s.customer_id)] || '').toLowerCase();
-              if (!email || seenEmails.includes(email)) return;
-              seenEmails.push(email);
-              rows.push({
-                source: 'recharge', native_id: String(s.id),
-                customer_email: email,
-                product: s.product_title || s.title || null,
-                price_cents: Math.round(parseFloat(s.price || 0) * 100),
-                next_bill_at: s.next_charge_scheduled_at, status: 'ACTIVE',
-                first_name: null, last_name: null,
-                frequency: s.order_interval_frequency + ' ' + s.order_interval_unit,
-                last_billed_at: null
-              });
+          });
+          console.log('[today-orders] RC billed today (DB):', rows.length);
+
+          var scheduled = await db.any(`
+            SELECT s.customer_email, s.product, s.price_cents,
+                   s.last_billed_at, s.next_bill_at,
+                   c.first_name, c.last_name
+            FROM   subscriptions s
+            LEFT JOIN customers c ON LOWER(c.email) = LOWER(s.customer_email)
+            WHERE  s.source = 'recharge'
+              AND  s.status = 'ACTIVE'
+              AND  s.next_bill_at >= $1 AND s.next_bill_at < $2
+              AND  (s.last_billed_at IS NULL OR s.last_billed_at < $1)
+            ORDER  BY s.next_bill_at
+          `, [todayStart, todayEnd]);
+
+          scheduled.forEach(function(s) {
+            var email = (s.customer_email || '').toLowerCase();
+            if (!email || TEST_EMAILS.has(email) || seenEmails.includes(email)) return;
+            seenEmails.push(email);
+            rows.push({
+              source: 'recharge', native_id: email,
+              customer_email: email,
+              product: s.product || null,
+              price_cents: s.price_cents || 0,
+              next_bill_at: s.next_bill_at ? new Date(s.next_bill_at).toISOString() : null,
+              status: 'ACTIVE',
+              first_name: s.first_name || null, last_name: s.last_name || null,
+              frequency: null, last_billed_at: null
             });
-          }
-        } catch (e) { console.error('[today-orders] RC query failed:', e.message); }
-        console.log('[today-orders] RC today (billed+sched):', rows.length);
+          });
+          console.log('[today-orders] RC scheduled today (DB):', scheduled.length);
+        } catch (e) { console.error('[today-orders] RC DB query failed:', e.message); }
+        console.log('[today-orders] RC today total:', rows.length);
         return rows;
       })(),
 
