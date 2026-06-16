@@ -16,6 +16,7 @@ const TOKEN_SECRET   = process.env.TOKEN_SECRET || 'tgp-portal-secret-2026';
 const ADMIN_BASE_URL = process.env.BASE_URL || 'https://help.thegreatproject.com';
 const CC_API_BASE    = 'https://api.checkoutchamp.com';
 const RC_API_BASE    = 'https://api.rechargeapps.com';
+const WHOP_API_BASE  = 'https://api.whop.com/api/v2';
 const SHOPIFY_STORE  = process.env.SHOPIFY_STORE  || 'bigferverv.myshopify.com';
 const SHOPIFY_TOKEN  = process.env.SHOPIFY_ACCESS_TOKEN || '';
 
@@ -927,6 +928,55 @@ async function fetchRechargeRebillsToday(todayStart, todayEnd, todayAms) {
   return rows;
 }
 
+/* Whop API key: DB integration_credentials first, then env (mirrors sync.js). */
+async function getWhopKey() {
+  try {
+    var row = await db.one("SELECT creds FROM integration_credentials WHERE name = 'whop'");
+    if (row && row.creds && row.creds['WHOP_API_KEY']) return row.creds['WHOP_API_KEY'];
+  } catch (e) { /* table may not exist yet */ }
+  return process.env.WHOP_API_KEY || '';
+}
+
+/* ── Whop: today's recurring rebills, straight from the Payments API ──
+   Same principle as Recharge: the subscriptions table holds the next renewal date
+   and the plan's list price, not what actually billed. The Payments API is the truth.
+   billing_reason = 'subscription_cycle' is a renewal (vs 'one_time' new purchase);
+   status = 'paid' means captured. Payments come newest-first, so we stop as soon as a
+   payment older than today's window appears.                                        */
+async function fetchWhopRebillsToday(todayStart, todayEnd) {
+  var key = await getWhopKey();
+  if (!key) return [];
+  var headers = { 'Authorization': 'Bearer ' + key, 'accept': 'application/json' };
+  var rows = [], page = 1, MAX_PAGES = 8;
+  try {
+    while (page <= MAX_PAGES) {
+      var r = await fetch(WHOP_API_BASE + '/payments?per_page=50&page=' + page, { headers });
+      if (!r.ok) break;
+      var d = await r.json();
+      var items = d.data || [];
+      if (!items.length) break;
+      var sawOlder = false;
+      items.forEach(function(p) {
+        var ts = p.created_at ? new Date(p.created_at * 1000) : null;
+        if (!ts) return;
+        if (ts < todayStart) { sawOlder = true; return; }
+        if (ts >= todayEnd) return;
+        if (p.status !== 'paid' || p.billing_reason !== 'subscription_cycle') return;
+        rows.push({
+          membership:  p.membership || null,
+          first_name:  p.billing_first_name || null,
+          last_name:   p.billing_last_name  || null,
+          price_cents: Math.round(parseFloat(p.final_amount || p.total || 0) * 100),
+          ts:          ts
+        });
+      });
+      if (sawOlder) break;   /* newest-first → once we pass today's start we're done */
+      page++;
+    }
+  } catch (e) { console.error('[whop-rebills] fetch failed:', e.message); }
+  return rows;
+}
+
 router.get('/api/today-orders', async function(req, res) {
   try {
     const now        = new Date();
@@ -1074,36 +1124,45 @@ router.get('/api/today-orders', async function(req, res) {
         return rows;
       })(),
 
-      /* ── Whop: subscriptions renewing today (DB) ── */
+      /* ── Whop: today's recurring rebills, live from the Payments API ──
+         Email/product aren't on the payment object — resolve them from our DB by
+         membership id (subscription id = 'whop:' + membership). */
       (async function() {
-        var rows = [], seenEmails = [];
-        try {
-          var whop = await db.many(`
-            SELECT s.customer_email, s.product, s.price_cents,
-                   s.next_bill_at, c.first_name, c.last_name
-            FROM   subscriptions s
-            LEFT JOIN customers c ON LOWER(c.email) = LOWER(s.customer_email)
-            WHERE  s.source = 'whop'
-              AND  s.status = 'ACTIVE'
-              AND  s.next_bill_at >= $1 AND s.next_bill_at < $2
-            ORDER  BY s.price_cents DESC
-          `, [todayStart, todayEnd]);
-          whop.forEach(function(s) {
-            var email = (s.customer_email || '').toLowerCase();
-            if (!email || TEST_EMAILS.has(email) || seenEmails.includes(email)) return;
-            seenEmails.push(email);
-            rows.push({
-              source: 'whop', native_id: email,
-              customer_email: email,
-              product: s.product || null,
-              price_cents: s.price_cents || 0,
-              next_bill_at: s.next_bill_at ? new Date(s.next_bill_at).toISOString() : null,
-              status: 'ACTIVE',
-              first_name: s.first_name || null, last_name: s.last_name || null,
-              frequency: null, last_billed_at: null
-            });
+        var rebills = await fetchWhopRebillsToday(todayStart, todayEnd);
+        if (!rebills.length) return [];
+        var ids = rebills
+          .map(function(p) { return p.membership ? 'whop:' + p.membership : null; })
+          .filter(Boolean);
+        var subMap = {};
+        if (ids.length) {
+          try {
+            var subs = await db.many(`
+              SELECT s.id, s.customer_email, s.product, c.first_name, c.last_name
+              FROM   subscriptions s
+              LEFT JOIN customers c ON LOWER(c.email) = LOWER(s.customer_email)
+              WHERE  s.id = ANY($1)
+            `, [ids]);
+            subs.forEach(function(s) { subMap[s.id] = s; });
+          } catch (e) { console.error('[today-orders] Whop email lookup failed:', e.message); }
+        }
+        var rows = [];
+        rebills.forEach(function(p) {
+          var sub = subMap['whop:' + p.membership] || {};
+          var email = (sub.customer_email || '').toLowerCase();
+          if (email && TEST_EMAILS.has(email)) return;
+          rows.push({
+            source: 'whop', native_id: p.membership || email,
+            customer_email: email,
+            product: sub.product || null,
+            price_cents: p.price_cents || 0,
+            next_bill_at: null, status: 'ACTIVE',
+            first_name: p.first_name || sub.first_name || null,
+            last_name:  p.last_name  || sub.last_name  || null,
+            frequency: null,
+            last_billed_at: p.ts ? p.ts.toISOString() : now.toISOString()
           });
-        } catch (e) { console.error('[today-orders] Whop DB query failed:', e.message); }
+        });
+        console.log('[today-orders] Whop rebills today (Payments API):', rows.length);
         return rows;
       })()
     ]);
@@ -1733,15 +1792,14 @@ router.get('/api/today-revenue', async function(req, res) {
       db.one(`SELECT COALESCE(SUM(amount_cents),0)::bigint AS revenue_cents, COUNT(*)::int AS orders
               FROM orders WHERE created_at >= $1 AND created_at < $2`, [yesterStart, todayStart]),
 
-      /* Whop: subscriptions renewing today (from local DB) */
-      db.one(`SELECT COALESCE(SUM(price_cents),0)::bigint AS wh_cents,
-                     COUNT(*)::int AS wh_orders
-              FROM subscriptions
-              WHERE source = 'whop'
-                AND status IN ('ACTIVE','TRIALING')
-                AND next_bill_at >= $1 AND next_bill_at < $2`,
-        [todayStart, todayEnd])
-        .catch(function() { return { wh_cents: '0', wh_orders: 0 }; })
+      /* Whop: today's recurring rebills, live from the Payments API (source of truth).
+         subscription_cycle + paid only — same definition as the orders table. */
+      (async function() {
+        var rebills = await fetchWhopRebillsToday(todayStart, todayEnd);
+        var cents = 0;
+        rebills.forEach(function(p) { cents += p.price_cents || 0; });
+        return { wh_cents: cents, wh_orders: rebills.length };
+      })()
     ]);
 
     /* Aggregate by Amsterdam hour.
