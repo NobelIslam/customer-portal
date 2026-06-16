@@ -900,8 +900,8 @@ router.get('/api/today-orders', async function(req, res) {
     const [ty, tm, td] = todayAms.split('-');
     const ccTodayStr = tm + '/' + td + '/' + ty;
 
-    /* Run all four source queries in parallel for speed */
-    const [ccRows, ccPendingRows, rcRows, whopRows] = await Promise.all([
+    /* Run all queries in parallel for speed */
+    const [ccRows, ccPendingRows, rcRows, whopRows, shopifyEmailsToday] = await Promise.all([
 
       /* ── CC: transactions/query for today's CHARGED RECURRING billings ──
          CC stores timestamps in EDT (UTC-4). User is in Amsterdam (CEST = UTC+2).
@@ -1110,8 +1110,58 @@ router.get('/api/today-orders', async function(req, res) {
           });
         } catch (e) { console.error('[today-orders] Whop DB query failed:', e.message); }
         return rows;
+      })(),
+
+      /* ── Shopify: emails of customers with orders today (confirms Recharge billing) ── */
+      (async function() {
+        var emails = new Set();
+        if (!SHOPIFY_TOKEN) return emails;
+        try {
+          var url = 'https://' + SHOPIFY_STORE + '/admin/api/2024-01/orders.json' +
+            '?status=any&limit=250&fields=email,created_at' +
+            '&created_at_min=' + encodeURIComponent(todayStart.toISOString());
+          while (url) {
+            var r = await fetch(url, { headers: { 'X-Shopify-Access-Token': SHOPIFY_TOKEN } });
+            var link = r.headers.get('link') || '';
+            var d = await r.json();
+            (d.orders || []).forEach(function(o) {
+              if (o.email) emails.add(o.email.toLowerCase().trim());
+            });
+            var next = link.match(/<([^>]+)>;\s*rel="next"/);
+            url = next ? next[1] : null;
+          }
+          console.log('[today-orders] Shopify billed emails today:', emails.size);
+        } catch (e) { console.error('[today-orders] Shopify orders fetch failed:', e.message); }
+        return emails;
       })()
     ]);
+
+    /* Cross-reference Recharge pending rows against Shopify orders.
+       If a customer's email has a Shopify order today → confirmed billed.
+       Update DB in background so subsequent calls reflect the confirmed billing. */
+    var shopifyConfirmed = [];
+    rcRows.forEach(function(r) {
+      if (!r.last_billed_at && shopifyEmailsToday.has(r.customer_email)) {
+        r.last_billed_at = now.toISOString();
+        shopifyConfirmed.push(r.customer_email);
+      }
+    });
+    if (shopifyConfirmed.length > 0) {
+      console.log('[today-orders] Shopify confirmed', shopifyConfirmed.length, 'Recharge subs');
+      db.query(
+        `UPDATE subscriptions
+         SET last_billed_at = NOW()
+         WHERE source = 'recharge' AND status = 'ACTIVE'
+           AND LOWER(customer_email) = ANY($1)
+           AND next_bill_at >= $2 AND next_bill_at < $3
+           AND (last_billed_at IS NULL OR last_billed_at < $2)`,
+        [shopifyConfirmed, todayStart, todayEnd]
+      ).then(function(r) {
+        console.log('[today-orders] stamped last_billed_at on', r.rowCount, 'Recharge subs via Shopify');
+      }).catch(function(e) {
+        console.error('[today-orders] Shopify confirm DB update failed:', e.message);
+      });
+    }
 
     /* Merge: CC charged + CC pending + Recharge + Whop */
     const ccLiveEmails = new Set(ccRows.map(function(r) { return r.customer_email; }));
