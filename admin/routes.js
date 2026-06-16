@@ -1213,6 +1213,20 @@ router.get('/api/today-orders', async function(req, res) {
             status: 'ACTIVE', first_name: null, last_name: null, frequency: null
           });
         });
+        /* Stamp last_billed_at in DB so today-revenue picks them up on next poll */
+        if (nativeRows.length > 0) {
+          db.query(
+            `UPDATE subscriptions SET last_billed_at = NOW()
+             WHERE source = 'recharge' AND status = 'ACTIVE'
+               AND LOWER(customer_email) = ANY($1)
+               AND (last_billed_at IS NULL OR last_billed_at < $2)`,
+            [nativeRows.map(function(r) { return r.customer_email; }), todayStart]
+          ).then(function(r) {
+            console.log('[today-orders] stamped last_billed_at on', r.rowCount, 'native-sub Recharge subs');
+          }).catch(function(e) {
+            console.error('[today-orders] native-sub DB stamp failed:', e.message);
+          });
+        }
         console.log('[today-orders] native-sub fallback: added', missingNativeSubs.length,
           '(', nativeRows.length, 'from DB,', (missingNativeSubs.length - nativeRows.length), 'synthetic)');
       } catch (e) { console.error('[today-orders] native-sub lookup failed:', e.message); }
@@ -1803,7 +1817,7 @@ router.get('/api/today-revenue', async function(req, res) {
     const ccEnd     = tm + '/' + td + '/' + ty;
 
     /* ── Fetch CC recurring transactions + Recharge charges + yesterday DB + Whop DB in parallel ── */
-    const [ccRows, rcRows, yesterday, whopRow] = await Promise.all([
+    const [ccRows, rcRows, yesterday, whopRow, nativeSubEmails] = await Promise.all([
 
       /* CC live: today's RECURRING charged transactions */
       (async function() {
@@ -1837,7 +1851,8 @@ router.get('/api/today-revenue', async function(req, res) {
         var rows = [];
         try {
           var rc = await db.many(`
-            SELECT COALESCE(last_billed_at, next_bill_at) AS ts, price_cents,
+            SELECT LOWER(customer_email) AS email,
+                   COALESCE(last_billed_at, next_bill_at) AS ts, price_cents,
                    (last_billed_at IS NOT NULL AND last_billed_at >= $1) AS is_billed
             FROM   subscriptions
             WHERE  source = 'recharge'
@@ -1850,7 +1865,7 @@ router.get('/api/today-revenue', async function(req, res) {
           `, [todayStart, todayEnd]);
           rc.forEach(function(r) {
             rows.push({ ts: new Date(r.ts), price_cents: r.price_cents || 0, source: 'recharge',
-                        confirmed: r.is_billed });
+                        confirmed: r.is_billed, _email: r.email });
           });
         } catch (e) { console.error('[today-revenue] RC DB error:', e.message); }
         return rows;
@@ -1868,8 +1883,59 @@ router.get('/api/today-revenue', async function(req, res) {
                 AND status IN ('ACTIVE','TRIALING')
                 AND next_bill_at >= $1 AND next_bill_at < $2`,
         [todayStart, todayEnd])
-        .catch(function() { return { wh_cents: '0', wh_orders: 0 }; })
+        .catch(function() { return { wh_cents: '0', wh_orders: 0 }; }),
+
+      /* Shopify: subscription_contract_checkout_one emails billed today.
+         These are native Shopify recurring orders whose next_bill_at in DB may already
+         point to next month (Recharge advanced it after billing), falling outside
+         today's window and getting missed by the rcRows DB query above. */
+      (async function() {
+        var emails = new Set();
+        if (!SHOPIFY_TOKEN) return emails;
+        try {
+          var url = 'https://' + SHOPIFY_STORE + '/admin/api/2024-01/orders.json' +
+            '?status=any&limit=250&fields=email,source_name' +
+            '&created_at_min=' + encodeURIComponent(todayStart.toISOString());
+          while (url) {
+            var r = await fetch(url, { headers: { 'X-Shopify-Access-Token': SHOPIFY_TOKEN } });
+            var link = r.headers.get('link') || '';
+            var d = await r.json();
+            (d.orders || []).forEach(function(o) {
+              if (o.email && o.source_name === 'subscription_contract_checkout_one')
+                emails.add(o.email.toLowerCase().trim());
+            });
+            var next = link.match(/<([^>]+)>;\s*rel="next"/);
+            url = next ? next[1] : null;
+          }
+        } catch (e) { console.error('[today-revenue] Shopify native-sub fetch failed:', e.message); }
+        return emails;
+      })()
     ]);
+
+    /* Add native-sub rows missing from the DB-window rcRows query */
+    var rcEmailsForDedup = new Set(rcRows.map(function(r) { return r._email; }).filter(Boolean));
+    var missingNative = [...nativeSubEmails].filter(function(e) { return !rcEmailsForDedup.has(e); });
+    if (missingNative.length > 0) {
+      try {
+        var nativeDbRows = await db.many(`
+          SELECT DISTINCT ON (s.customer_email) s.customer_email, s.price_cents
+          FROM   subscriptions s
+          WHERE  s.source = 'recharge' AND s.status = 'ACTIVE'
+            AND  LOWER(s.customer_email) = ANY($1)
+          ORDER  BY s.customer_email, s.next_bill_at DESC NULLS LAST
+        `, [missingNative]);
+        var foundNativeEmails = new Set(nativeDbRows.map(function(r) { return r.customer_email; }));
+        nativeDbRows.forEach(function(s) {
+          rcRows.push({ ts: now, price_cents: s.price_cents || 0, source: 'recharge', confirmed: true, _email: s.customer_email });
+        });
+        /* Synthetic for any completely absent from DB */
+        missingNative.filter(function(e) { return !foundNativeEmails.has(e); }).forEach(function(e) {
+          rcRows.push({ ts: now, price_cents: 0, source: 'recharge', confirmed: true, _email: e });
+        });
+        if (missingNative.length > 0)
+          console.log('[today-revenue] native-sub added', missingNative.length, 'RC rows (', nativeDbRows.length, 'from DB )');
+      } catch (e) { console.error('[today-revenue] native-sub DB lookup failed:', e.message); }
+    }
 
     /* Aggregate by Amsterdam hour.
        Revenue: only confirmed CC + confirmed RC billed (not scheduled).
