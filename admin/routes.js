@@ -970,47 +970,21 @@ router.get('/api/today-orders', async function(req, res) {
         return rows;
       })(),
 
-      /* ── Recharge: fetch all active subs + filter client-side by today UTC ──
-         The RC API date filter (next_charge_scheduled_at_min/max) does not
-         work reliably in v1 — it returns all active subs regardless.
-         We also check today's successful charges for already-billed orders.  */
+      /* ── Recharge: charges first (already billed), then scheduled subs ──
+         Process 2b (charges) BEFORE 2a (subscriptions) so customers billed
+         today get status "Billed today" — not "Scheduled". Subscriptions
+         whose email already appears in seenEmails (from charges) are skipped.
+         next_charge_scheduled_at is compared as a UTC range to avoid the
+         startsWith edge case where midnight-Amsterdam subs are stored as
+         "prev-day 22:00 UTC" by Recharge.                                    */
       (async function() {
         if (!process.env.RECHARGE_API_KEY) return [];
         var rows = [], seenEmails = [];
         const headers = { 'X-Recharge-Access-Token': process.env.RECHARGE_API_KEY };
         try {
-          /* 2a. All active subscriptions — filter client-side for today */
-          var rcPage = 1;
-          while (true) {
-            const url = RC_API_BASE + '/subscriptions?status=active&limit=250&page=' + rcPage;
-            const r = await fetch(url, { headers: headers });
-            const d = await r.json();
-            const subs = d.subscriptions || [];
-            subs.forEach(function(s) {
-              const nextCharge = (s.next_charge_scheduled_at || '');
-              /* Only include if next_charge_scheduled_at starts with today's UTC date */
-              if (!nextCharge.startsWith(todayUTC)) return;
-              const email = (s.email || '').toLowerCase();
-              if (!email || seenEmails.includes(email)) return;
-              seenEmails.push(email);
-              rows.push({
-                source: 'recharge', native_id: String(s.id),
-                customer_email: email,
-                product: s.product_title || s.title || null,
-                price_cents: Math.round(parseFloat(s.price || 0) * 100),
-                next_bill_at: nextCharge, status: 'ACTIVE',
-                first_name: null, last_name: null,
-                frequency: s.order_interval_frequency + ' ' + s.order_interval_unit,
-                last_billed_at: null
-              });
-            });
-            if (subs.length < 250) break;
-            rcPage++;
-          }
-
-          /* 2b. Already billed today: successful charges created today */
+          /* 2b FIRST. Already billed today: successful charges created today */
           var chPage = 1;
-          while (true) {
+          while (chPage <= 10) {
             const url = RC_API_BASE + '/charges?status=success' +
               '&created_at_min=' + todayStart.toISOString() +
               '&created_at_max=' + todayEnd.toISOString() +
@@ -1035,8 +1009,44 @@ router.get('/api/today-orders', async function(req, res) {
             if (charges.length < 250) break;
             chPage++;
           }
+          console.log('[today-orders] RC billed today:', rows.length);
+
+          /* 2a SECOND. Active subscriptions scheduled for today but not yet charged */
+          var rcPage = 1, noEmailCount = 0;
+          while (rcPage <= 20) {
+            const url = RC_API_BASE + '/subscriptions?status=active&limit=250&page=' + rcPage;
+            const r = await fetch(url, { headers: headers });
+            const d = await r.json();
+            const subs = d.subscriptions || [];
+            subs.forEach(function(s) {
+              const nextCharge = (s.next_charge_scheduled_at || '');
+              if (!nextCharge) return;
+              /* Range check: covers both "YYYY-MM-DD" and "YYYY-MM-DDTHH:MM:SS[Z]" formats.
+                 Appending T00:00:00Z when there is no T treats date-only strings as UTC midnight,
+                 which falls within the Amsterdam day window (starts at UTC prev-day 22:00). */
+              var ncd = new Date(nextCharge.includes('T') ? nextCharge : nextCharge + 'T00:00:00Z');
+              if (isNaN(ncd) || ncd < todayStart || ncd >= todayEnd) return;
+              const email = (s.email || '').toLowerCase();
+              if (!email) { noEmailCount++; return; }
+              if (seenEmails.includes(email)) return;
+              seenEmails.push(email);
+              rows.push({
+                source: 'recharge', native_id: String(s.id),
+                customer_email: email,
+                product: s.product_title || s.title || null,
+                price_cents: Math.round(parseFloat(s.price || 0) * 100),
+                next_bill_at: nextCharge, status: 'ACTIVE',
+                first_name: null, last_name: null,
+                frequency: s.order_interval_frequency + ' ' + s.order_interval_unit,
+                last_billed_at: null
+              });
+            });
+            if (subs.length < 250) break;
+            rcPage++;
+          }
+          if (noEmailCount > 0) console.warn('[today-orders] RC subs with no email field:', noEmailCount);
         } catch (e) { console.error('[today-orders] RC query failed:', e.message); }
-        console.log('[today-orders] RC today (sched+billed):', rows.length);
+        console.log('[today-orders] RC today (billed+sched):', rows.length);
         return rows;
       })(),
 
