@@ -886,18 +886,20 @@ const TEST_EMAILS = new Set([
   'wardun@eydigitalmedia.com'
 ]);
 
-/* ── Recharge: today's recurring rebills, straight from the Charges API ──
+/* ── Recharge: today's recurring charges, straight from the Charges API ──
    This is the source of truth for "billed today". The subscriptions table is NOT:
    the instant Recharge creates a charge it advances next_charge_scheduled_at to next
    month, so any next_bill_at = today window query misses every sub billed today.
-   We count type=RECURRING charges whose status means money is moving
-   (QUEUED / SUCCESS / PENDING) and exclude SKIPPED / ERROR / REFUNDED.            */
+   Returns { billed, failed }:
+     billed = type=RECURRING with status QUEUED / SUCCESS / PENDING (money moving)
+     failed = type=RECURRING with status SKIPPED / ERROR (declined / skipped attempt) */
 async function fetchRechargeRebillsToday(todayStart, todayEnd, todayAms) {
   var key = process.env.RECHARGE_API_KEY;
-  if (!key) return [];
+  if (!key) return { billed: [], failed: [] };
   var headers = { 'X-Recharge-Access-Token': key, 'Content-Type': 'application/json' };
   var BILLED  = { QUEUED: 1, SUCCESS: 1, PENDING: 1 };
-  var rows = [], page = 1, limit = 250;
+  var FAILED  = { SKIPPED: 1, ERROR: 1 };
+  var billed = [], failed = [], page = 1, limit = 250;
   try {
     while (page <= 20) {
       var url = RC_API_BASE + '/charges?limit=' + limit + '&page=' + page +
@@ -906,12 +908,12 @@ async function fetchRechargeRebillsToday(todayStart, todayEnd, todayAms) {
       var d = await r.json();
       var charges = d.charges || [];
       charges.forEach(function(c) {
-        if (c.type !== 'RECURRING' || !BILLED[c.status]) return;
+        if (c.type !== 'RECURRING') return;
         /* Recharge created_at has no tz suffix; its date portion is the billing day. */
         if ((c.created_at || '').slice(0, 10) !== todayAms) return;
         var email = (c.email || '').toLowerCase().trim();
         if (!email || TEST_EMAILS.has(email)) return;
-        rows.push({
+        var row = {
           email:       email,
           first_name:  c.first_name || null,
           last_name:   c.last_name  || null,
@@ -919,13 +921,15 @@ async function fetchRechargeRebillsToday(todayStart, todayEnd, todayAms) {
           price_cents: Math.round(parseFloat(c.total_price || 0) * 100),
           ts:          new Date((c.created_at || '').replace(' ', 'T') + 'Z'),
           status:      c.status
-        });
+        };
+        if (BILLED[c.status])      billed.push(row);
+        else if (FAILED[c.status]) failed.push(row);
       });
       if (charges.length < limit) break;
       page++;
     }
   } catch (e) { console.error('[recharge-rebills] fetch failed:', e.message); }
-  return rows;
+  return { billed: billed, failed: failed };
 }
 
 /* Whop API key: DB integration_credentials first, then env (mirrors sync.js). */
@@ -940,14 +944,16 @@ async function getWhopKey() {
 /* ── Whop: today's recurring rebills, straight from the Payments API ──
    Same principle as Recharge: the subscriptions table holds the next renewal date
    and the plan's list price, not what actually billed. The Payments API is the truth.
-   billing_reason = 'subscription_cycle' is a renewal (vs 'one_time' new purchase);
-   status = 'paid' means captured. Payments come newest-first, so we stop as soon as a
-   payment older than today's window appears.                                        */
+   billing_reason = 'subscription_cycle' is a renewal (vs 'one_time' new purchase).
+   Returns { billed, failed } for recurring (subscription_cycle) payments only:
+     billed = status 'paid' (captured)
+     failed = any other status (open / unpaid / failed renewal attempt)
+   Payments come newest-first, so we stop as soon as a payment older than today appears. */
 async function fetchWhopRebillsToday(todayStart, todayEnd) {
   var key = await getWhopKey();
-  if (!key) return [];
+  if (!key) return { billed: [], failed: [] };
   var headers = { 'Authorization': 'Bearer ' + key, 'accept': 'application/json' };
-  var rows = [], page = 1, MAX_PAGES = 8;
+  var billed = [], failed = [], page = 1, MAX_PAGES = 8;
   try {
     while (page <= MAX_PAGES) {
       var r = await fetch(WHOP_API_BASE + '/payments?per_page=50&page=' + page, { headers });
@@ -961,20 +967,23 @@ async function fetchWhopRebillsToday(todayStart, todayEnd) {
         if (!ts) return;
         if (ts < todayStart) { sawOlder = true; return; }
         if (ts >= todayEnd) return;
-        if (p.status !== 'paid' || p.billing_reason !== 'subscription_cycle') return;
-        rows.push({
+        if (p.billing_reason !== 'subscription_cycle') return;   /* renewals only */
+        var row = {
           membership:  p.membership || null,
           first_name:  p.billing_first_name || null,
           last_name:   p.billing_last_name  || null,
           price_cents: Math.round(parseFloat(p.final_amount || p.total || 0) * 100),
-          ts:          ts
-        });
+          ts:          ts,
+          status:      p.status
+        };
+        if (p.status === 'paid') billed.push(row);
+        else                     failed.push(row);
       });
       if (sawOlder) break;   /* newest-first → once we pass today's start we're done */
       page++;
     }
   } catch (e) { console.error('[whop-rebills] fetch failed:', e.message); }
-  return rows;
+  return { billed: billed, failed: failed };
 }
 
 router.get('/api/today-orders', async function(req, res) {
@@ -1104,9 +1113,9 @@ router.get('/api/today-orders', async function(req, res) {
       /* ── Recharge: today's recurring rebills, live from the Charges API ──
          Source of truth — see fetchRechargeRebillsToday. Deduped per email. */
       (async function() {
-        var charges = await fetchRechargeRebillsToday(todayStart, todayEnd, todayUTC);
+        var rc = await fetchRechargeRebillsToday(todayStart, todayEnd, todayUTC);
         var rows = [], seenEmails = [];
-        charges.forEach(function(c) {
+        rc.billed.forEach(function(c) {
           if (seenEmails.includes(c.email)) return;
           seenEmails.push(c.email);
           rows.push({
@@ -1128,7 +1137,8 @@ router.get('/api/today-orders', async function(req, res) {
          Email/product aren't on the payment object — resolve them from our DB by
          membership id (subscription id = 'whop:' + membership). */
       (async function() {
-        var rebills = await fetchWhopRebillsToday(todayStart, todayEnd);
+        var wh = await fetchWhopRebillsToday(todayStart, todayEnd);
+        var rebills = wh.billed;
         if (!rebills.length) return [];
         var ids = rebills
           .map(function(p) { return p.membership ? 'whop:' + p.membership : null; })
@@ -1751,41 +1761,59 @@ router.get('/api/today-revenue', async function(req, res) {
     const ccStart   = pm + '/' + pd + '/' + py;
     const ccEnd     = tm + '/' + td + '/' + ty;
 
-    /* ── Fetch CC recurring transactions + Recharge charges + yesterday DB + Whop DB in parallel ── */
-    const [ccRows, rcRows, yesterday, whopRow] = await Promise.all([
+    /* ── Fetch CC recurring transactions + Recharge charges + yesterday DB + Whop in parallel.
+         Each platform source returns billed rows AND a failed tally (declined / skipped /
+         unpaid recurring attempts) so the dashboard can show net vs failed.            ── */
+    const [ccResult, rcResult, yesterday, whopResult] = await Promise.all([
 
-      /* CC live: today's RECURRING charged transactions */
+      /* CC live: today's RECURRING SALE transactions — SUCCESS (billed) + DECLINE/ERROR (failed) */
       (async function() {
-        if (!process.env.CC_LOGIN_ID || !process.env.CC_API_PASSWORD) return [];
-        var rows = [], page = 1;
-        while (page <= 10) {
-          const p = new URLSearchParams({
-            loginId: process.env.CC_LOGIN_ID, password: process.env.CC_API_PASSWORD,
-            startDate: ccStart, endDate: ccEnd,
-            billType: 'RECURRING', txnType: 'SALE', responseType: 'SUCCESS',
-            resultsPerPage: 200, page: page
-          });
-          const r = await fetch(CC_API_BASE + '/transactions/query/?' + p.toString(), { method: 'POST' });
-          const d = await r.json();
-          const txns = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
-          txns.forEach(function(t) {
-            var ts = ccParseDate(t.dateCreated || '');
-            if (!ts || ts < todayStart || ts >= todayEnd) return;
+        if (!process.env.CC_LOGIN_ID || !process.env.CC_API_PASSWORD)
+          return { rows: [], failed: { orders: 0, cents: 0 } };
+        var rows = [], failOrders = 0, failCents = 0;
+
+        async function pull(responseType, onTxn) {
+          var page = 1;
+          while (page <= 10) {
+            const p = new URLSearchParams({
+              loginId: process.env.CC_LOGIN_ID, password: process.env.CC_API_PASSWORD,
+              startDate: ccStart, endDate: ccEnd,
+              billType: 'RECURRING', txnType: 'SALE', responseType: responseType,
+              resultsPerPage: 200, page: page
+            });
+            const r = await fetch(CC_API_BASE + '/transactions/query/?' + p.toString(), { method: 'POST' });
+            const d = await r.json();
+            const txns = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+            txns.forEach(function(t) {
+              var ts = ccParseDate(t.dateCreated || '');
+              if (!ts || ts < todayStart || ts >= todayEnd) return;
+              onTxn(t, ts);
+            });
+            if (txns.length < 200) break;
+            page++;
+          }
+        }
+
+        try {
+          await pull('SUCCESS', function(t, ts) {
             rows.push({ ts: ts, price_cents: Math.round(parseFloat(t.amount || t.totalAmount || 0) * 100), source: 'cc' });
           });
-          if (txns.length < 200) break;
-          page++;
-        }
-        return rows;
+          await pull('DECLINE', function(t) { failOrders++; failCents += Math.round(parseFloat(t.amount || t.totalAmount || 0) * 100); });
+          await pull('ERROR',   function(t) { failOrders++; failCents += Math.round(parseFloat(t.amount || t.totalAmount || 0) * 100); });
+        } catch (e) { console.error('[today-revenue] CC fetch failed:', e.message); }
+        return { rows: rows, failed: { orders: failOrders, cents: failCents } };
       })(),
 
-      /* Recharge: today's recurring rebills, live from the Charges API (source of truth).
-         Every billed charge is revenue-confirmed; ts = charge created_at. */
+      /* Recharge: today's recurring charges, live from the Charges API (source of truth).
+         billed → revenue-confirmed rows; failed → SKIPPED/ERROR tally. */
       (async function() {
-        var charges = await fetchRechargeRebillsToday(todayStart, todayEnd, todayAms);
-        return charges.map(function(c) {
+        var rc = await fetchRechargeRebillsToday(todayStart, todayEnd, todayAms);
+        var rows = rc.billed.map(function(c) {
           return { ts: c.ts || now, price_cents: c.price_cents || 0, source: 'recharge', confirmed: true };
         });
+        var failCents = 0;
+        rc.failed.forEach(function(c) { failCents += c.price_cents || 0; });
+        return { rows: rows, failed: { orders: rc.failed.length, cents: failCents } };
       })(),
 
       /* Yesterday totals from DB for delta */
@@ -1793,14 +1821,19 @@ router.get('/api/today-revenue', async function(req, res) {
               FROM orders WHERE created_at >= $1 AND created_at < $2`, [yesterStart, todayStart]),
 
       /* Whop: today's recurring rebills, live from the Payments API (source of truth).
-         subscription_cycle + paid only — same definition as the orders table. */
+         billed = subscription_cycle + paid; failed = subscription_cycle not paid (open/unpaid). */
       (async function() {
-        var rebills = await fetchWhopRebillsToday(todayStart, todayEnd);
-        var cents = 0;
-        rebills.forEach(function(p) { cents += p.price_cents || 0; });
-        return { wh_cents: cents, wh_orders: rebills.length };
+        var wh = await fetchWhopRebillsToday(todayStart, todayEnd);
+        var cents = 0, failCents = 0;
+        wh.billed.forEach(function(p) { cents += p.price_cents || 0; });
+        wh.failed.forEach(function(p) { failCents += p.price_cents || 0; });
+        return { wh_cents: cents, wh_orders: wh.billed.length, failed: { orders: wh.failed.length, cents: failCents } };
       })()
     ]);
+
+    const ccRows  = ccResult.rows;
+    const rcRows  = rcResult.rows;
+    const whopRow = whopResult;
 
     /* Aggregate by Amsterdam hour.
        Revenue: only confirmed CC + confirmed RC billed (not scheduled).
@@ -1828,6 +1861,13 @@ router.get('/api/today-revenue', async function(req, res) {
     const totalOrders = ccRows.length + rcRows.length + whOrders;
     const totalCents  = ccCents + rcCents + whCents;
 
+    /* Failed / declined / skipped recurring attempts (excluded from orders + revenue above) */
+    const ccFailed = ccResult.failed   || { orders: 0, cents: 0 };
+    const rcFailed = rcResult.failed   || { orders: 0, cents: 0 };
+    const whFailed = whopResult.failed || { orders: 0, cents: 0 };
+    const failedOrders = ccFailed.orders + rcFailed.orders + whFailed.orders;
+    const failedCents  = ccFailed.cents  + rcFailed.cents  + whFailed.cents;
+
     res.json({
       hourly: full24,
       totals: {
@@ -1840,7 +1880,13 @@ router.get('/api/today-revenue', async function(req, res) {
         wh_orders:     whOrders,
         wh_cents:      whCents,
         recurring:     totalOrders,
-        new_orders:    0
+        new_orders:    0,
+        /* failed / declined / skipped recurring billings today */
+        failed_orders: failedOrders,
+        failed_cents:  failedCents,
+        cc_failed:     ccFailed.orders, cc_failed_cents: ccFailed.cents,
+        rc_failed:     rcFailed.orders, rc_failed_cents: rcFailed.cents,
+        wh_failed:     whFailed.orders, wh_failed_cents: whFailed.cents
       },
       yesterday: { revenue_cents: Number(yesterday.revenue_cents), orders: yesterday.orders }
     });

@@ -205,6 +205,11 @@
       font-family: 'Oswald', sans-serif; font-size: 30px; font-weight: 600;
       color: var(--text); line-height: 1;
     }
+    .dkpi-sub {
+      font-size: 11px; font-weight: 500; color: #ef4444; margin-top: 6px;
+      min-height: 14px;
+    }
+    .dkpi-sub:empty { margin-top: 0; }
     .dkpi-spark {
       position: absolute; top: 10px; right: 10px;
       width: 100px; height: 36px;
@@ -864,13 +869,14 @@ function renderKpis(k, sources) {
     '</span>';
   document.getElementById('kpi-row1').innerHTML = [
     { label: 'MRR',                  value: $m(k.mrrCents),   sparkId: 'sp-subs',    sparkColor: '#f04e00' },
-    { label: 'Orders today',         value: $n(k.todayOrders),sparkId: 'sp-new',     sparkColor: '#22c55e', valId: 'kpi-orders-today' },
+    { label: 'Orders today',         value: $n(k.todayOrders),sparkId: 'sp-new',     sparkColor: '#22c55e', valId: 'kpi-orders-today', subId: 'kpi-orders-failed' },
     { label: 'Active subscriptions', value: $n(k.activeSubs), sparkId: 'sp-cancels', sparkColor: '#3b82f6' }
   ].map(function(c) {
     return '<div class="dkpi">' +
       '<div class="dkpi-period">30D</div>' +
       '<div class="dkpi-label">' + c.label + '</div>' +
       '<div class="dkpi-value"' + (c.valId ? ' id="' + c.valId + '"' : '') + '>' + c.value + '</div>' +
+      (c.subId ? '<div class="dkpi-sub" id="' + c.subId + '"></div>' : '') +
       '<div class="dkpi-spark"><canvas id="' + c.sparkId + '"></canvas></div>' +
     '</div>';
   }).join('');
@@ -1809,9 +1815,15 @@ function renderIntradayChart(d) {
   var totals   = d.totals || {};
   var yest     = d.yesterday || {};
 
-  /* Keep the ORDERS TODAY KPI card in sync with this authoritative count */
+  /* Keep the ORDERS TODAY KPI card in sync with this authoritative count.
+     The count is NET — failed/declined/skipped recurring attempts are excluded. */
   var kpiOrdersEl = document.getElementById('kpi-orders-today');
   if (kpiOrdersEl) kpiOrdersEl.textContent = (totals.orders || 0).toLocaleString();
+  var kpiFailedEl = document.getElementById('kpi-orders-failed');
+  if (kpiFailedEl) {
+    var fO = totals.failed_orders || 0;
+    kpiFailedEl.textContent = fO > 0 ? ('− ' + fO + ' failed / declined') : '';
+  }
 
   /* Big number + delta */
   var isRev = intradayTab === 'revenue';
@@ -1832,24 +1844,52 @@ function renderIntradayChart(d) {
   }
 
   /* Breakdown panel */
-  document.getElementById('bk-total').textContent = '$' + (totals.revenue_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  document.getElementById('bk-rows').innerHTML = [
-    { label: 'CheckoutChamp',  val: '$' + (totals.cc_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
-    { label: 'Recharge',       val: '$' + (totals.rc_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
-    { label: 'Whop',           val: '$' + ((totals.wh_cents || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), color: '#7c3aed' },
-    { label: 'Total sales',    val: '$' + (totals.revenue_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), bold: true }
+  var fmtC = function(c) { return '$' + ((c || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+  document.getElementById('bk-total').textContent = fmtC(totals.revenue_cents);
+
+  /* Successful (net) sales by platform — orders + value */
+  var salesRows = [
+    { label: 'CheckoutChamp',  orders: totals.cc_orders, cents: totals.cc_cents },
+    { label: 'Recharge',       orders: totals.rc_orders, cents: totals.rc_cents },
+    { label: 'Whop',           orders: totals.wh_orders, cents: totals.wh_cents, color: '#7c3aed' },
+    { label: 'Total sales',    orders: totals.orders,    cents: totals.revenue_cents, bold: true }
   ].map(function(r) {
     return '<div class="bk-row' + (r.bold ? ' bold' : '') + '">' +
-      '<span' + (r.color ? ' style="color:'+r.color+';font-weight:600"' : '') + '>' + r.label + '</span>' +
-      '<span class="bk-val">' + r.val + '</span>' +
+      '<span' + (r.color ? ' style="color:'+r.color+';font-weight:600"' : '') + '>' + r.label +
+        ' <span style="color:var(--muted);font-weight:500">' + (r.orders || 0) + '</span></span>' +
+      '<span class="bk-val">' + fmtC(r.cents) + '</span>' +
     '</div>';
   }).join('');
 
+  /* Failed / declined / skipped recurring attempts (excluded from sales above) */
+  var failRows = '';
+  if ((totals.failed_orders || 0) > 0) {
+    var failItems = [
+      { label: 'CheckoutChamp', orders: totals.cc_failed, cents: totals.cc_failed_cents },
+      { label: 'Recharge',      orders: totals.rc_failed, cents: totals.rc_failed_cents },
+      { label: 'Whop',          orders: totals.wh_failed, cents: totals.wh_failed_cents }
+    ].filter(function(r) { return (r.orders || 0) > 0; }).map(function(r) {
+      return '<div class="bk-row" style="color:#fca5a5">' +
+        '<span>' + r.label + ' <span style="opacity:.7">' + r.orders + '</span></span>' +
+        '<span class="bk-val" style="color:#fca5a5">' + fmtC(r.cents) + '</span>' +
+      '</div>';
+    }).join('');
+    failRows =
+      '<div class="bk-label" style="color:#ef4444;margin-top:16px">Failed / declined today</div>' +
+      failItems +
+      '<div class="bk-row bold" style="color:#fca5a5">' +
+        '<span>Total failed <span style="opacity:.7">' + totals.failed_orders + '</span></span>' +
+        '<span class="bk-val" style="color:#fca5a5">' + fmtC(totals.failed_cents) + '</span>' +
+      '</div>';
+  }
+
+  document.getElementById('bk-rows').innerHTML = salesRows + failRows;
+
   document.getElementById('bk-stats').innerHTML =
-    'Orders <span>' + (totals.orders || 0) + '</span>' +
-    'Fulfilled <span>' + (totals.orders || 0) + '</span>' +
-    'New <span>' + (totals.new_orders || 0) + '</span>' +
-    'Recurring <span>' + (totals.recurring || 0) + '</span>';
+    'Successful <span>' + (totals.orders || 0) + '</span>' +
+    'Failed <span style="color:#fca5a5">' + (totals.failed_orders || 0) + '</span>' +
+    'Recurring <span>' + (totals.recurring || 0) + '</span>' +
+    'Failed value <span style="color:#fca5a5">' + fmtC(totals.failed_cents) + '</span>';
 
   /* Chart data */
   var labels = hourly.map(function(h) {
