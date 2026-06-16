@@ -222,13 +222,14 @@
     /* ── Intraday panel ── */
     .intraday-wrap {
       display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-bottom: 12px;
+      align-items: stretch;
     }
     .dark-panel {
       background: var(--bg2); border: 1px solid var(--border);
       border-radius: 12px; padding: 20px 22px;
     }
     .intraday-head {
-      display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 4px;
+      display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 8px;
     }
     .intraday-label {
       font-size: 10px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600;
@@ -239,16 +240,16 @@
       letter-spacing: 0.06em; margin-left: 6px; vertical-align: middle;
     }
     .intraday-big {
-      font-size: 52px; font-weight: 700; color: var(--text);
-      line-height: 1; margin: 6px 0 4px; letter-spacing: -0.02em;
+      font-size: 56px; font-weight: 700; color: var(--text);
+      line-height: 1; margin: 6px 0 4px; letter-spacing: -0.03em;
     }
     .intraday-delta {
       display: inline-flex; align-items: center;
-      background: rgba(239,68,68,.25); color: #fca5a5;
-      border-radius: 6px; padding: 2px 8px; font-size: 11px; font-weight: 500;
-      margin-bottom: 14px;
+      background: rgba(220,38,38,.1); color: #dc2626;
+      border-radius: 6px; padding: 3px 9px; font-size: 11px; font-weight: 600;
+      margin-bottom: 12px; border: 1px solid rgba(220,38,38,.15);
     }
-    .intraday-delta.pos { background: rgba(34,197,94,.2); color: #86efac; }
+    .intraday-delta.pos { background: rgba(22,163,74,.1); color: #16a34a; border-color: rgba(22,163,74,.2); }
     .chart-tabs {
       display: flex; gap: 0; background: var(--bg3);
       border: 1px solid var(--border); border-radius: 20px; padding: 2px; overflow: hidden;
@@ -258,32 +259,34 @@
       cursor: pointer; font-weight: 500; transition: all 0.15s; white-space: nowrap;
       background: none; border: none; font-family: inherit;
     }
-    .chart-tab.on { background: var(--bg2); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.5); }
-    .intraday-chart-wrap { height: 220px; position: relative; }
+    .chart-tab.on { background: var(--bg2); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+    .intraday-chart-wrap { height: 260px; position: relative; }
 
     /* ── Breakdown panel ── */
     .bk-total {
-      font-size: 28px; font-weight: 700; color: var(--text); margin: 8px 0 16px;
-      letter-spacing: -0.01em;
+      font-size: 32px; font-weight: 700; color: var(--text); margin: 6px 0 14px;
+      letter-spacing: -0.02em;
     }
     .bk-label {
       font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em;
-      color: var(--muted); font-weight: 600; margin-bottom: 10px;
+      color: var(--muted); font-weight: 600; margin-bottom: 4px;
     }
     .bk-row {
       display: flex; justify-content: space-between; align-items: center;
-      padding: 10px 0; border-bottom: 1px solid var(--border);
+      padding: 9px 0; border-bottom: 1px solid var(--border);
       font-size: 12px; color: var(--muted2);
     }
     .bk-row:last-child { border-bottom: none; }
-    .bk-row.bold { font-weight: 600; color: var(--text); }
-    .bk-val { font-weight: 500; color: var(--text); }
+    .bk-row.bold { font-weight: 600; color: var(--text); border-top: 1px solid var(--border2); border-bottom: none; margin-top: 2px; padding-top: 11px; }
+    .bk-val { font-family: 'Oswald', sans-serif; font-size: 14px; font-weight: 500; color: var(--text); }
     .bk-stats {
       display: grid; grid-template-columns: 1fr 1fr;
-      gap: 10px 12px; margin-top: 18px; padding-top: 16px;
-      border-top: 1px solid var(--border); font-size: 11px; color: var(--muted2);
+      gap: 8px 12px; margin-top: 14px; padding-top: 14px;
+      border-top: 1px solid var(--border); font-size: 11px; color: var(--muted);
     }
-    .bk-stats span { color: var(--text); font-weight: 500; }
+    .bk-stats > div { display: flex; flex-direction: column; gap: 2px; }
+    .bk-stats .bk-stat-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+    .bk-stats .bk-stat-val { font-family: 'Oswald', sans-serif; font-size: 16px; font-weight: 500; color: var(--text); }
 
     .up   { color: var(--green); }
     .down { color: var(--red); }
@@ -1885,11 +1888,12 @@ function renderIntradayChart(d) {
 
   document.getElementById('bk-rows').innerHTML = salesRows + failRows;
 
+  var failedColor = (totals.failed_orders || 0) > 0 ? '#dc2626' : 'var(--muted)';
   document.getElementById('bk-stats').innerHTML =
-    'Successful <span>' + (totals.orders || 0) + '</span>' +
-    'Failed <span style="color:#fca5a5">' + (totals.failed_orders || 0) + '</span>' +
-    'Recurring <span>' + (totals.recurring || 0) + '</span>' +
-    'Failed value <span style="color:#fca5a5">' + fmtC(totals.failed_cents) + '</span>';
+    '<div><div class="bk-stat-label">Successful</div><div class="bk-stat-val">' + (totals.orders || 0) + '</div></div>' +
+    '<div><div class="bk-stat-label">Recurring</div><div class="bk-stat-val">' + (totals.recurring || 0) + '</div></div>' +
+    '<div><div class="bk-stat-label">Failed</div><div class="bk-stat-val" style="color:' + failedColor + '">' + (totals.failed_orders || 0) + '</div></div>' +
+    '<div><div class="bk-stat-label">Failed value</div><div class="bk-stat-val" style="color:' + failedColor + '">' + fmtC(totals.failed_cents) + '</div></div>';
 
   /* Chart data */
   var labels = hourly.map(function(h) {
@@ -1903,10 +1907,10 @@ function renderIntradayChart(d) {
   var canvas = document.getElementById('intraday-chart');
   if (!canvas) return;
   var ctx = canvas.getContext('2d');
-  var grad = ctx.createLinearGradient(0, 0, 0, 200);
-  grad.addColorStop(0,   'rgba(0,230,118,0.35)');
-  grad.addColorStop(0.7, 'rgba(0,230,118,0.05)');
-  grad.addColorStop(1,   'rgba(0,230,118,0)');
+  var grad = ctx.createLinearGradient(0, 0, 0, 260);
+  grad.addColorStop(0,   'rgba(0,200,100,0.18)');
+  grad.addColorStop(0.6, 'rgba(0,200,100,0.05)');
+  grad.addColorStop(1,   'rgba(0,200,100,0)');
 
   if (intradayChart) intradayChart.destroy();
   intradayChart = new Chart(canvas, {
@@ -1915,7 +1919,7 @@ function renderIntradayChart(d) {
       labels: labels,
       datasets: [{
         data:            dataPoints,
-        borderColor:     '#00e676',
+        borderColor:     '#16a34a',
         backgroundColor: grad,
         fill:            true,
         tension:         0.4,
@@ -1941,12 +1945,12 @@ function renderIntradayChart(d) {
       },
       scales: {
         x: {
-          ticks: { color: '#555', font: { size: 10 }, maxTicksLimit: 12 },
-          grid:  { color: 'rgba(255,255,255,0.04)' }
+          ticks: { color: TICK, font: { size: 10 }, maxTicksLimit: 12 },
+          grid:  { color: GRID }
         },
         y: {
-          ticks: { color: '#555', font: { size: 10 } },
-          grid:  { color: 'rgba(255,255,255,0.04)' },
+          ticks: { color: TICK, font: { size: 10 } },
+          grid:  { color: GRID },
           beginAtZero: true
         }
       }
