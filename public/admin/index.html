@@ -222,140 +222,109 @@
     /* ── Intraday panel ── */
     .intraday-wrap {
       display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-bottom: 12px;
-      align-items: stretch;
+      align-items: start;
     }
     .dark-panel {
       background: var(--bg2); border: 1px solid var(--border);
       border-radius: 12px; padding: 20px 22px;
     }
+    /* Chart panel — dark themed */
+    #intraday-panel {
+      background: #0d0f12; border-color: #1e222a;
+      display: flex; flex-direction: column;
+    }
     .intraday-head {
-      display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 8px;
+      display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 10px;
     }
     .intraday-label {
-      font-size: 10px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600;
+      font-size: 10px; color: rgba(255,255,255,.38); letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600;
     }
-    .intraday-label .today-badge {
-      display: inline-block; background: #3b82f6; color: #fff;
-      font-size: 9px; font-weight: 700; border-radius: 4px; padding: 1px 5px;
-      letter-spacing: 0.06em; margin-left: 6px; vertical-align: middle;
-    }
+    .intraday-label .sep { margin: 0 6px; opacity: .4; }
     .intraday-big {
-      font-size: 56px; font-weight: 700; color: var(--text);
-      line-height: 1; margin: 6px 0 4px; letter-spacing: -0.03em;
+      font-size: 42px; font-weight: 700; color: #fff;
+      line-height: 1; margin: 6px 0 6px; letter-spacing: -0.03em;
     }
+    .intraday-big .cents { font-size: 0.46em; font-weight: 400; vertical-align: super; opacity: .7; }
     .intraday-delta {
       display: inline-flex; align-items: center;
-      background: rgba(220,38,38,.1); color: #dc2626;
-      border-radius: 6px; padding: 3px 9px; font-size: 11px; font-weight: 600;
-      margin-bottom: 12px; border: 1px solid rgba(220,38,38,.15);
+      background: rgba(239,68,68,.22); color: #fca5a5;
+      border-radius: 20px; padding: 3px 10px; font-size: 11px; font-weight: 600;
+      margin-bottom: 10px; border: 1px solid rgba(239,68,68,.25);
     }
-    .intraday-delta.pos { background: rgba(22,163,74,.1); color: #16a34a; border-color: rgba(22,163,74,.2); }
+    .intraday-delta.pos { background: rgba(0,230,118,.15); color: #6ee7b7; border-color: rgba(0,230,118,.25); }
     .chart-tabs {
-      display: flex; gap: 0; background: var(--bg3);
-      border: 1px solid var(--border); border-radius: 20px; padding: 2px; overflow: hidden;
+      display: flex; gap: 1px; background: rgba(255,255,255,.07);
+      border: 1px solid rgba(255,255,255,.1); border-radius: 20px; padding: 2px; overflow: hidden;
     }
     .chart-tab {
-      font-size: 11px; padding: 4px 12px; border-radius: 18px; color: var(--muted);
+      font-size: 11px; padding: 4px 12px; border-radius: 18px; color: rgba(255,255,255,.4);
       cursor: pointer; font-weight: 500; transition: all 0.15s; white-space: nowrap;
       background: none; border: none; font-family: inherit;
     }
-    .chart-tab.on { background: var(--bg2); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
-    /* Chart panel fills full grid row height */
-    .intraday-wrap > .dark-panel:first-child { display: flex; flex-direction: column; }
-    .intraday-chart-wrap { flex: 1; min-height: 320px; position: relative; }
+    .chart-tab.on { background: rgba(255,255,255,.12); color: #fff; }
+    .intraday-chart-wrap { height: 210px; position: relative; }
 
-    /* ── Breakdown panel ── */
-    .bk-total {
-      font-family: 'Oswald', sans-serif;
-      font-size: 36px; font-weight: 600; color: var(--text); margin: 4px 0 16px;
-      letter-spacing: -0.02em; line-height: 1;
-    }
+    /* ── Invoice / Breakdown panel ── */
     .bk-label {
-      font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em;
-      color: var(--muted); font-weight: 600; margin-bottom: 2px;
+      font-size: 9px; text-transform: uppercase; letter-spacing: 0.12em;
+      color: var(--muted); font-weight: 700; margin-bottom: 2px;
     }
+    .bk-total {
+      font-family: 'Oswald', sans-serif; font-size: 32px; font-weight: 600;
+      color: var(--text); margin: 2px 0 2px; letter-spacing: -0.02em; line-height: 1;
+    }
+    .inv-date { font-size: 10px; color: var(--muted); margin-bottom: 14px; }
 
-    /* Source rows */
-    .bk-src-row {
-      display: flex; align-items: stretch; gap: 0;
-      border-bottom: 1px solid var(--border); padding: 10px 0;
+    /* Line items */
+    .inv-line {
+      display: grid; grid-template-columns: 1fr auto auto;
+      gap: 0 12px; align-items: center;
+      padding: 8px 0; border-bottom: 1px dashed var(--border);
     }
-    .bk-src-row:last-child { border-bottom: none; }
-    .bk-src-accent {
-      width: 3px; border-radius: 2px; flex-shrink: 0;
-      margin-right: 12px; align-self: stretch; min-height: 36px;
-    }
-    .bk-src-body { flex: 1; min-width: 0; }
-    .bk-src-top {
-      display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
-    }
-    .bk-src-name { font-size: 12px; font-weight: 600; flex: 1; }
-    .bk-src-badge {
-      font-size: 10px; padding: 1px 7px; border-radius: 10px;
-      background: var(--bg3); border: 1px solid var(--border);
-      color: var(--muted); font-weight: 600; white-space: nowrap;
-    }
-    .bk-src-amt {
-      font-family: 'Oswald', sans-serif; font-size: 15px;
-      font-weight: 500; color: var(--text); white-space: nowrap;
-    }
-    .bk-src-progress {
-      height: 3px; background: var(--border); border-radius: 2px; overflow: hidden;
-    }
-    .bk-src-fill { height: 100%; border-radius: 2px; transition: width 0.6s ease; }
+    .inv-line:last-child { border-bottom: none; }
+    .inv-line-name { font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 7px; }
+    .inv-line-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .inv-line-qty { font-size: 10px; color: var(--muted); white-space: nowrap; text-align: right; }
+    .inv-line-amt { font-family: 'Oswald', sans-serif; font-size: 14px; font-weight: 500; color: var(--text); text-align: right; white-space: nowrap; }
 
-    /* Total summary box */
-    .bk-total-box {
+    /* Subtotal + Grand total */
+    .inv-subtotal-row {
       display: flex; justify-content: space-between; align-items: center;
-      background: var(--bg3); border: 1px solid var(--border2);
-      border-radius: 8px; padding: 10px 14px; margin-top: 12px;
+      padding: 7px 0; font-size: 11px; color: var(--muted);
+      border-bottom: 1px solid var(--border);
     }
-    .bk-total-box-label { font-size: 11px; font-weight: 600; color: var(--muted2); }
-    .bk-total-box-sub { font-size: 10px; color: var(--muted); margin-top: 1px; }
-    .bk-total-box-amt {
-      font-family: 'Oswald', sans-serif; font-size: 20px;
-      font-weight: 600; color: var(--text);
-    }
-
-    /* Failed section */
-    .bk-failed-box {
-      background: rgba(220,38,38,.05); border: 1px solid rgba(220,38,38,.18);
-      border-radius: 8px; padding: 10px 14px; margin-top: 12px;
-    }
-    .bk-failed-title {
-      font-size: 9px; text-transform: uppercase; letter-spacing: 0.09em;
-      color: #dc2626; font-weight: 700; margin-bottom: 8px;
-    }
-    .bk-failed-row {
+    .inv-subtotal-row:last-child { border-bottom: none; }
+    .inv-subtotal-amt { font-family: 'Oswald', sans-serif; font-size: 14px; color: var(--muted2); }
+    .inv-grand {
       display: flex; justify-content: space-between; align-items: center;
-      font-size: 11px; color: #b91c1c; padding: 4px 0;
+      background: var(--text); border-radius: 9px; padding: 11px 16px; margin-top: 12px;
     }
-    .bk-failed-total {
-      display: flex; justify-content: space-between; align-items: center;
-      font-size: 12px; font-weight: 700; color: #dc2626;
-      padding-top: 8px; margin-top: 6px;
-      border-top: 1px solid rgba(220,38,38,.2);
-    }
-    .bk-failed-amt { font-family: 'Oswald', sans-serif; font-size: 13px; }
+    .inv-grand-lbl { font-size: 10px; font-weight: 700; color: rgba(255,255,255,.55); text-transform: uppercase; letter-spacing: 0.09em; }
+    .inv-grand-sub { font-size: 9px; color: rgba(255,255,255,.35); margin-top: 2px; }
+    .inv-grand-amt { font-family: 'Oswald', sans-serif; font-size: 22px; font-weight: 600; color: #fff; }
 
-    /* Stats grid */
-    .bk-stats {
-      display: grid; grid-template-columns: 1fr 1fr;
-      gap: 10px 8px; margin-top: 14px; padding-top: 14px;
+    /* Failed note */
+    .inv-failed {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-top: 10px; padding: 8px 12px;
+      background: rgba(220,38,38,.06); border: 1px solid rgba(220,38,38,.18); border-radius: 7px;
+      font-size: 11px;
+    }
+    .inv-failed-lbl { color: #dc2626; font-weight: 600; }
+    .inv-failed-items { font-size: 10px; color: #b91c1c; margin-top: 2px; }
+    .inv-failed-amt { font-family: 'Oswald', sans-serif; font-size: 15px; color: #dc2626; font-weight: 600; }
+
+    /* Footer stats */
+    .inv-footer {
+      display: flex; gap: 0; margin-top: 12px; padding-top: 12px;
       border-top: 1px solid var(--border);
     }
-    .bk-stat-card {
-      background: var(--bg3); border: 1px solid var(--border);
-      border-radius: 7px; padding: 8px 12px;
+    .inv-footer-stat {
+      flex: 1; text-align: center; font-size: 10px; color: var(--muted);
+      border-right: 1px solid var(--border); padding: 0 4px;
     }
-    .bk-stat-label {
-      font-size: 9px; text-transform: uppercase; letter-spacing: 0.07em;
-      color: var(--muted); font-weight: 600; margin-bottom: 3px;
-    }
-    .bk-stat-val {
-      font-family: 'Oswald', sans-serif; font-size: 20px;
-      font-weight: 500; color: var(--text); line-height: 1;
-    }
+    .inv-footer-stat:last-child { border-right: none; }
+    .inv-footer-stat strong { display: block; font-family: 'Oswald', sans-serif; font-size: 16px; color: var(--text); font-weight: 500; margin-bottom: 1px; }
 
     .up   { color: var(--green); }
     .down { color: var(--red); }
@@ -577,11 +546,11 @@
 
       <!-- Intraday chart + breakdown -->
       <div class="intraday-wrap" id="s-revenue">
-        <!-- Left: intraday area chart -->
-        <div class="dark-panel">
+        <!-- Left: intraday area chart (dark) -->
+        <div class="dark-panel" id="intraday-panel">
           <div class="intraday-head">
             <div>
-              <div class="intraday-label">Orders <span class="today-badge">TODAY</span></div>
+              <div class="intraday-label" id="intraday-label">Revenue <span class="sep">·</span> Today</div>
               <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
                 <div class="intraday-big" id="intraday-big">—</div>
                 <div class="intraday-delta" id="intraday-delta">—</div>
@@ -594,12 +563,13 @@
           </div>
           <div class="intraday-chart-wrap"><canvas id="intraday-chart"></canvas></div>
         </div>
-        <!-- Right: breakdown -->
+        <!-- Right: invoice breakdown -->
         <div class="dark-panel">
-          <div class="bk-label">Total sales breakdown</div>
+          <div class="bk-label">Sales Receipt</div>
           <div class="bk-total" id="bk-total">—</div>
+          <div class="inv-date" id="inv-date">—</div>
           <div id="bk-rows"></div>
-          <div class="bk-stats" id="bk-stats"></div>
+          <div id="bk-stats" class="inv-footer"></div>
         </div>
       </div>
 
@@ -1909,7 +1879,13 @@ function renderIntradayChart(d) {
   var todayVal  = isRev ? totals.revenue_cents / 100 : (totals.orders || 0);
   var yesterVal = isRev ? yest.revenue_cents / 100    : (yest.orders || 0);
   var bigEl = document.getElementById('intraday-big');
-  bigEl.textContent = isRev ? '$' + todayVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : todayVal.toLocaleString();
+  if (isRev) {
+    var dollars = Math.floor(todayVal).toLocaleString('en-US');
+    var centsStr = (todayVal % 1).toFixed(2).slice(1); /* ".85" */
+    bigEl.innerHTML = '$' + dollars + '<span class="cents">' + centsStr + '</span>';
+  } else {
+    bigEl.textContent = todayVal.toLocaleString();
+  }
 
   var deltaEl = document.getElementById('intraday-delta');
   if (yesterVal > 0) {
@@ -1926,119 +1902,100 @@ function renderIntradayChart(d) {
   var fmtC = function(c) { return '$' + ((c || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
   document.getElementById('bk-total').textContent = fmtC(totals.revenue_cents);
 
-  /* Source rows with colored accent + progress bar */
-  var totalCents = totals.revenue_cents || 1;
+  /* Invoice date */
+  var invDateEl = document.getElementById('inv-date');
+  if (invDateEl) {
+    invDateEl.textContent = new Date().toLocaleDateString('en-GB', {
+      timeZone: 'Europe/Amsterdam', weekday: 'short', year: 'numeric', month: 'short', day: 'numeric'
+    });
+  }
+
+  /* Invoice line items */
   var sources = [
     { label: 'CheckoutChamp', color: '#3b82f6', orders: totals.cc_orders, cents: totals.cc_cents },
     { label: 'Recharge',      color: '#22c55e', orders: totals.rc_orders, cents: totals.rc_cents },
     { label: 'Whop',          color: '#7c3aed', orders: totals.wh_orders, cents: totals.wh_cents }
   ];
-  var salesRows = sources.map(function(r) {
-    var pct = (r.cents || 0) / totalCents * 100;
-    return '<div class="bk-src-row">' +
-      '<div class="bk-src-accent" style="background:' + r.color + '"></div>' +
-      '<div class="bk-src-body">' +
-        '<div class="bk-src-top">' +
-          '<span class="bk-src-name" style="color:' + r.color + '">' + r.label + '</span>' +
-          '<span class="bk-src-badge">' + (r.orders || 0) + ' orders</span>' +
-          '<span class="bk-src-amt">' + fmtC(r.cents) + '</span>' +
-        '</div>' +
-        '<div class="bk-src-progress"><div class="bk-src-fill" style="width:' + pct.toFixed(1) + '%;background:' + r.color + '66"></div></div>' +
-      '</div>' +
+  var invLines = sources.map(function(r) {
+    return '<div class="inv-line">' +
+      '<div class="inv-line-name"><span class="inv-line-dot" style="background:' + r.color + '"></span>' + r.label + '</div>' +
+      '<div class="inv-line-qty">' + (r.orders || 0) + ' orders</div>' +
+      '<div class="inv-line-amt">' + fmtC(r.cents) + '</div>' +
     '</div>';
   }).join('');
 
-  /* Total sales summary box */
-  salesRows += '<div class="bk-total-box">' +
-    '<div><div class="bk-total-box-label">Total sales</div><div class="bk-total-box-sub">' + (totals.orders || 0) + ' orders today</div></div>' +
-    '<div class="bk-total-box-amt">' + fmtC(totals.revenue_cents) + '</div>' +
+  /* Grand total */
+  var grandBox = '<div class="inv-grand">' +
+    '<div><div class="inv-grand-lbl">Total Today</div><div class="inv-grand-sub">' + (totals.orders || 0) + ' orders · all sources</div></div>' +
+    '<div class="inv-grand-amt">' + fmtC(totals.revenue_cents) + '</div>' +
   '</div>';
 
-  /* Failed / declined section */
-  var failRows = '';
+  /* Failed note */
+  var failBlock = '';
   if ((totals.failed_orders || 0) > 0) {
-    var failItems = [
-      { label: 'CheckoutChamp', orders: totals.cc_failed, cents: totals.cc_failed_cents },
-      { label: 'Recharge',      orders: totals.rc_failed, cents: totals.rc_failed_cents },
-      { label: 'Whop',          orders: totals.wh_failed, cents: totals.wh_failed_cents }
-    ].filter(function(r) { return (r.orders || 0) > 0; }).map(function(r) {
-      return '<div class="bk-failed-row">' +
-        '<span>' + r.label + ' <span style="opacity:.6;font-size:10px">× ' + r.orders + '</span></span>' +
-        '<span class="bk-failed-amt">' + fmtC(r.cents) + '</span>' +
-      '</div>';
-    }).join('');
-    failRows = '<div class="bk-failed-box">' +
-      '<div class="bk-failed-title">⚠ Failed / Declined today</div>' +
-      failItems +
-      '<div class="bk-failed-total">' +
-        '<span>Total failed <span style="opacity:.7;font-size:11px">× ' + totals.failed_orders + '</span></span>' +
-        '<span class="bk-failed-amt">' + fmtC(totals.failed_cents) + '</span>' +
-      '</div>' +
+    failBlock = '<div class="inv-failed">' +
+      '<div><div class="inv-failed-lbl">Failed / Declined</div>' +
+      '<div class="inv-failed-items">' + totals.failed_orders + ' transactions</div></div>' +
+      '<div class="inv-failed-amt">' + fmtC(totals.failed_cents) + '</div>' +
     '</div>';
   }
 
-  document.getElementById('bk-rows').innerHTML = salesRows + failRows;
+  document.getElementById('bk-rows').innerHTML = invLines + grandBox + failBlock;
 
+  /* Footer stats */
   var failColor = (totals.failed_orders || 0) > 0 ? '#dc2626' : 'var(--muted)';
   document.getElementById('bk-stats').innerHTML =
-    '<div class="bk-stat-card"><div class="bk-stat-label">Successful</div><div class="bk-stat-val">' + (totals.orders || 0) + '</div></div>' +
-    '<div class="bk-stat-card"><div class="bk-stat-label">Recurring</div><div class="bk-stat-val">' + (totals.recurring || 0) + '</div></div>' +
-    '<div class="bk-stat-card"><div class="bk-stat-label">Failed</div><div class="bk-stat-val" style="color:' + failColor + '">' + (totals.failed_orders || 0) + '</div></div>' +
-    '<div class="bk-stat-card"><div class="bk-stat-label">Failed value</div><div class="bk-stat-val" style="color:' + failColor + ';font-size:16px">' + fmtC(totals.failed_cents) + '</div></div>';
+    '<div class="inv-footer-stat"><strong>' + (totals.orders || 0) + '</strong>Successful</div>' +
+    '<div class="inv-footer-stat"><strong>' + (totals.recurring || 0) + '</strong>Recurring</div>' +
+    '<div class="inv-footer-stat"><strong style="color:' + failColor + '">' + (totals.failed_orders || 0) + '</strong>Failed</div>' +
+    '<div class="inv-footer-stat"><strong style="color:' + failColor + '">' + fmtC(totals.failed_cents) + '</strong>Failed $</div>';
 
-  /* ── Chart data — trim to current Amsterdam hour so future zeros don't crowd the view ── */
-  var nowH     = amsHourNow();
-  var showUpto = Math.min(nowH + 1, 24);          /* include current hour slot */
-  var trimmed  = hourly.slice(0, showUpto);
+  /* ── Update header label ── */
+  var labelEl = document.getElementById('intraday-label');
+  if (labelEl) labelEl.innerHTML = (isRev ? 'Revenue' : 'Orders') + ' <span class="sep">·</span> Today';
 
-  var labels     = trimmed.map(function(h) { return String(h.hour).padStart(2, '0') + ':00'; });
-  var dataPoints = trimmed.map(function(h) { return isRev ? h.revenue_cents / 100 : h.orders; });
+  /* ── Chart data — all 24 hours ── */
+  var nowH = amsHourNow();
+  var labels     = hourly.map(function(h) { return String(h.hour).padStart(2, '0') + ':00'; });
+  var dataPoints = hourly.map(function(h) { return isRev ? h.revenue_cents / 100 : h.orders; });
 
-  /* Canvas + orange gradient */
+  /* Neon green on dark canvas */
   var canvas = document.getElementById('intraday-chart');
   if (!canvas) return;
   var ctx    = canvas.getContext('2d');
-  var chartH = canvas.offsetHeight || 320;
+  var chartH = canvas.offsetHeight || 210;
   var grad   = ctx.createLinearGradient(0, 0, 0, chartH);
-  grad.addColorStop(0,   'rgba(240,78,0, 0.28)');
-  grad.addColorStop(0.45,'rgba(240,78,0, 0.08)');
-  grad.addColorStop(1,   'rgba(240,78,0, 0)');
+  grad.addColorStop(0,   'rgba(0,230,118, 0.30)');
+  grad.addColorStop(0.55,'rgba(0,230,118, 0.06)');
+  grad.addColorStop(1,   'rgba(0,230,118, 0)');
 
-  /* Glow plugin — draws an orange halo behind the line */
+  /* Neon glow plugin */
   var glowPlugin = {
-    id: 'lineGlow',
+    id: 'neonGlow',
     beforeDatasetsDraw: function(chart) {
-      var c = chart.ctx;
-      c.save();
-      c.shadowColor   = 'rgba(240,78,0, 0.55)';
-      c.shadowBlur    = 18;
-      c.shadowOffsetY = 3;
+      var c = chart.ctx; c.save();
+      c.shadowColor = 'rgba(0,230,118, 0.65)';
+      c.shadowBlur  = 20;
     },
     afterDatasetsDraw: function(chart) { chart.ctx.restore(); }
   };
 
-  /* NOW vertical marker plugin */
+  /* NOW dashed marker */
   var nowLinePlugin = {
     id: 'nowLine',
     afterDraw: function(chart) {
       var ca = chart.chartArea, c = chart.ctx;
-      var xPx = ca.right;
+      var xPx = chart.scales.x.getPixelForValue(nowH);
+      if (xPx < ca.left || xPx > ca.right) return;
       c.save();
-      c.strokeStyle = 'rgba(100,100,100,.35)';
-      c.lineWidth   = 1;
-      c.setLineDash([4, 4]);
+      c.strokeStyle = 'rgba(255,255,255,.18)';
+      c.lineWidth = 1; c.setLineDash([4,4]);
       c.beginPath(); c.moveTo(xPx, ca.top); c.lineTo(xPx, ca.bottom); c.stroke();
       c.setLineDash([]);
-      var lbl = String(nowH).padStart(2,'0') + ':00';
       c.font = '600 9px Inter,sans-serif';
-      var tw = c.measureText(lbl).width;
-      c.fillStyle = 'rgba(240,78,0,.15)';
-      if (c.roundRect) c.roundRect(xPx - tw/2 - 5, ca.top, tw + 10, 15, 3);
-      else c.rect(xPx - tw/2 - 5, ca.top, tw + 10, 15);
-      c.fill();
-      c.fillStyle = '#f04e00';
+      c.fillStyle = 'rgba(0,230,118,.85)';
       c.textAlign = 'center';
-      c.fillText(lbl, xPx, ca.top + 10);
+      c.fillText('NOW', xPx, ca.top + 10);
       c.restore();
     }
   };
@@ -2051,39 +2008,36 @@ function renderIntradayChart(d) {
       labels: labels,
       datasets: [{
         data:                      dataPoints,
-        borderColor:               '#f04e00',
+        borderColor:               '#00e676',
         backgroundColor:           grad,
         fill:                      true,
         tension:                   0.45,
         borderWidth:               2.5,
-        pointRadius:               dataPoints.map(function(v) { return v > 0 ? 3 : 0; }),
-        pointBackgroundColor:      '#f04e00',
-        pointBorderColor:          '#fff',
-        pointBorderWidth:          1.5,
+        pointRadius:               0,
         pointHoverRadius:          5,
-        pointHoverBackgroundColor: '#f04e00',
+        pointHoverBackgroundColor: '#00e676',
         pointHoverBorderColor:     '#fff',
         pointHoverBorderWidth:     2
       }]
     },
     options: {
       responsive: true, maintainAspectRatio: false,
-      animation: { duration: 1200, easing: 'easeOutQuart' },
+      animation: { duration: 1000, easing: 'easeOutCubic' },
       animations: {
         y: {
-          duration: 900, easing: 'easeOutQuart', from: 0,
-          delay: function(ctx) { return ctx.type !== 'data' ? 0 : ctx.dataIndex * 35; }
+          duration: 800, easing: 'easeOutCubic', from: 0,
+          delay: function(ctx) { return ctx.type !== 'data' ? 0 : ctx.dataIndex * 25; }
         }
       },
       plugins: {
         legend: { display: false },
         tooltip: {
           mode: 'index', intersect: false,
-          backgroundColor: '#1c1917', borderColor: 'rgba(240,78,0,.4)', borderWidth: 1,
-          titleColor: '#f97316', bodyColor: '#fafaf9',
+          backgroundColor: '#111', borderColor: 'rgba(0,230,118,.3)', borderWidth: 1,
+          titleColor: '#00e676', bodyColor: '#e5e7eb',
           padding: 10, cornerRadius: 8,
           callbacks: {
-            title: function(items) { return items[0] ? items[0].label + ' (Amsterdam)' : ''; },
+            title: function(items) { return items[0] ? items[0].label + ' · Amsterdam' : ''; },
             label: function(c) {
               return isRev ? '  $' + c.parsed.y.toFixed(2) : '  ' + c.parsed.y + ' orders';
             }
@@ -2093,16 +2047,13 @@ function renderIntradayChart(d) {
       scales: {
         x: {
           ticks: {
-            color: '#78716c', font: { size: 10 }, maxTicksLimit: 9,
+            color: 'rgba(255,255,255,.3)', font: { size: 10 }, maxTicksLimit: 9,
             callback: function(val, idx) { return idx % 3 === 0 ? labels[idx] : ''; }
           },
-          grid:   { display: false },
+          grid:   { color: 'rgba(255,255,255,.05)' },
           border: { display: false }
         },
-        y: {
-          display:     false,
-          beginAtZero: true
-        }
+        y: { display: false, beginAtZero: true }
       }
     }
   });
