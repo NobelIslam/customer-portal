@@ -59,6 +59,24 @@ function ccParseDate(s) {
   return new Date(iso + sign + pad + ':00');
 }
 
+/* Parse a timestamp that is expressed in Europe/Amsterdam LOCAL time (no offset)
+   into a correct absolute Date. Recharge returns charge created_at in the shop
+   timezone (Europe/Berlin = same offset as Amsterdam, +02:00 CEST / +01:00 CET),
+   NOT UTC — appending 'Z' would shift every charge forward by 1-2 hours and place
+   the intraday spike in the wrong hour.                                          */
+function amsParseLocal(s) {
+  if (!s) return null;
+  var iso     = s.replace(' ', 'T');
+  var noonUTC = new Date(iso.split('T')[0] + 'T12:00:00Z');
+  var amsHour = parseInt(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Amsterdam', hour: 'numeric', hour12: false
+  }).format(noonUTC));
+  var off     = amsHour - 12;                                  /* +2 CEST, +1 CET */
+  var sign    = off < 0 ? '-' : '+';
+  var pad     = String(Math.abs(off)).padStart(2, '0');
+  return new Date(iso + sign + pad + ':00');
+}
+
 function adminCreateToken(payload) {
   payload.expires = Date.now() + 24 * 60 * 60 * 1000;
   var data = Buffer.from(JSON.stringify(payload)).toString('base64url');
@@ -925,7 +943,7 @@ async function fetchRechargeRebillsToday(todayStart, todayEnd, todayAms) {
           last_name:   c.last_name  || null,
           product:     (c.line_items && c.line_items[0] && c.line_items[0].title) || null,
           price_cents: Math.round(parseFloat(c.total_price || 0) * 100),
-          ts:          new Date((c.created_at || '').replace(' ', 'T') + 'Z'),
+          ts:          amsParseLocal(c.created_at),
           status:      c.status
         };
         if (BILLED[c.status])      billed.push(row);
