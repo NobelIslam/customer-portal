@@ -264,29 +264,96 @@
 
     /* ── Breakdown panel ── */
     .bk-total {
-      font-size: 32px; font-weight: 700; color: var(--text); margin: 6px 0 14px;
-      letter-spacing: -0.02em;
+      font-family: 'Oswald', sans-serif;
+      font-size: 36px; font-weight: 600; color: var(--text); margin: 4px 0 16px;
+      letter-spacing: -0.02em; line-height: 1;
     }
     .bk-label {
-      font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em;
-      color: var(--muted); font-weight: 600; margin-bottom: 4px;
+      font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em;
+      color: var(--muted); font-weight: 600; margin-bottom: 2px;
     }
-    .bk-row {
+
+    /* Source rows */
+    .bk-src-row {
+      display: flex; align-items: stretch; gap: 0;
+      border-bottom: 1px solid var(--border); padding: 10px 0;
+    }
+    .bk-src-row:last-child { border-bottom: none; }
+    .bk-src-accent {
+      width: 3px; border-radius: 2px; flex-shrink: 0;
+      margin-right: 12px; align-self: stretch; min-height: 36px;
+    }
+    .bk-src-body { flex: 1; min-width: 0; }
+    .bk-src-top {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+    }
+    .bk-src-name { font-size: 12px; font-weight: 600; flex: 1; }
+    .bk-src-badge {
+      font-size: 10px; padding: 1px 7px; border-radius: 10px;
+      background: var(--bg3); border: 1px solid var(--border);
+      color: var(--muted); font-weight: 600; white-space: nowrap;
+    }
+    .bk-src-amt {
+      font-family: 'Oswald', sans-serif; font-size: 15px;
+      font-weight: 500; color: var(--text); white-space: nowrap;
+    }
+    .bk-src-progress {
+      height: 3px; background: var(--border); border-radius: 2px; overflow: hidden;
+    }
+    .bk-src-fill { height: 100%; border-radius: 2px; transition: width 0.6s ease; }
+
+    /* Total summary box */
+    .bk-total-box {
       display: flex; justify-content: space-between; align-items: center;
-      padding: 9px 0; border-bottom: 1px solid var(--border);
-      font-size: 12px; color: var(--muted2);
+      background: var(--bg3); border: 1px solid var(--border2);
+      border-radius: 8px; padding: 10px 14px; margin-top: 12px;
     }
-    .bk-row:last-child { border-bottom: none; }
-    .bk-row.bold { font-weight: 600; color: var(--text); border-top: 1px solid var(--border2); border-bottom: none; margin-top: 2px; padding-top: 11px; }
-    .bk-val { font-family: 'Oswald', sans-serif; font-size: 14px; font-weight: 500; color: var(--text); }
+    .bk-total-box-label { font-size: 11px; font-weight: 600; color: var(--muted2); }
+    .bk-total-box-sub { font-size: 10px; color: var(--muted); margin-top: 1px; }
+    .bk-total-box-amt {
+      font-family: 'Oswald', sans-serif; font-size: 20px;
+      font-weight: 600; color: var(--text);
+    }
+
+    /* Failed section */
+    .bk-failed-box {
+      background: rgba(220,38,38,.05); border: 1px solid rgba(220,38,38,.18);
+      border-radius: 8px; padding: 10px 14px; margin-top: 12px;
+    }
+    .bk-failed-title {
+      font-size: 9px; text-transform: uppercase; letter-spacing: 0.09em;
+      color: #dc2626; font-weight: 700; margin-bottom: 8px;
+    }
+    .bk-failed-row {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 11px; color: #b91c1c; padding: 4px 0;
+    }
+    .bk-failed-total {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 12px; font-weight: 700; color: #dc2626;
+      padding-top: 8px; margin-top: 6px;
+      border-top: 1px solid rgba(220,38,38,.2);
+    }
+    .bk-failed-amt { font-family: 'Oswald', sans-serif; font-size: 13px; }
+
+    /* Stats grid */
     .bk-stats {
       display: grid; grid-template-columns: 1fr 1fr;
-      gap: 8px 12px; margin-top: 14px; padding-top: 14px;
-      border-top: 1px solid var(--border); font-size: 11px; color: var(--muted);
+      gap: 10px 8px; margin-top: 14px; padding-top: 14px;
+      border-top: 1px solid var(--border);
     }
-    .bk-stats > div { display: flex; flex-direction: column; gap: 2px; }
-    .bk-stats .bk-stat-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
-    .bk-stats .bk-stat-val { font-family: 'Oswald', sans-serif; font-size: 16px; font-weight: 500; color: var(--text); }
+    .bk-stat-card {
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 7px; padding: 8px 12px;
+    }
+    .bk-stat-label {
+      font-size: 9px; text-transform: uppercase; letter-spacing: 0.07em;
+      color: var(--muted); font-weight: 600; margin-bottom: 3px;
+    }
+    .bk-stat-val {
+      font-family: 'Oswald', sans-serif; font-size: 20px;
+      font-weight: 500; color: var(--text); line-height: 1;
+    }
 
     .up   { color: var(--green); }
     .down { color: var(--red); }
@@ -1850,21 +1917,35 @@ function renderIntradayChart(d) {
   var fmtC = function(c) { return '$' + ((c || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
   document.getElementById('bk-total').textContent = fmtC(totals.revenue_cents);
 
-  /* Successful (net) sales by platform — orders + value */
-  var salesRows = [
-    { label: 'CheckoutChamp',  orders: totals.cc_orders, cents: totals.cc_cents },
-    { label: 'Recharge',       orders: totals.rc_orders, cents: totals.rc_cents },
-    { label: 'Whop',           orders: totals.wh_orders, cents: totals.wh_cents, color: '#7c3aed' },
-    { label: 'Total sales',    orders: totals.orders,    cents: totals.revenue_cents, bold: true }
-  ].map(function(r) {
-    return '<div class="bk-row' + (r.bold ? ' bold' : '') + '">' +
-      '<span' + (r.color ? ' style="color:'+r.color+';font-weight:600"' : '') + '>' + r.label +
-        ' <span style="color:var(--muted);font-weight:500">' + (r.orders || 0) + '</span></span>' +
-      '<span class="bk-val">' + fmtC(r.cents) + '</span>' +
+  /* Source rows with colored accent + progress bar */
+  var totalCents = totals.revenue_cents || 1;
+  var sources = [
+    { label: 'CheckoutChamp', color: '#3b82f6', orders: totals.cc_orders, cents: totals.cc_cents },
+    { label: 'Recharge',      color: '#22c55e', orders: totals.rc_orders, cents: totals.rc_cents },
+    { label: 'Whop',          color: '#7c3aed', orders: totals.wh_orders, cents: totals.wh_cents }
+  ];
+  var salesRows = sources.map(function(r) {
+    var pct = (r.cents || 0) / totalCents * 100;
+    return '<div class="bk-src-row">' +
+      '<div class="bk-src-accent" style="background:' + r.color + '"></div>' +
+      '<div class="bk-src-body">' +
+        '<div class="bk-src-top">' +
+          '<span class="bk-src-name" style="color:' + r.color + '">' + r.label + '</span>' +
+          '<span class="bk-src-badge">' + (r.orders || 0) + ' orders</span>' +
+          '<span class="bk-src-amt">' + fmtC(r.cents) + '</span>' +
+        '</div>' +
+        '<div class="bk-src-progress"><div class="bk-src-fill" style="width:' + pct.toFixed(1) + '%;background:' + r.color + '66"></div></div>' +
+      '</div>' +
     '</div>';
   }).join('');
 
-  /* Failed / declined / skipped recurring attempts (excluded from sales above) */
+  /* Total sales summary box */
+  salesRows += '<div class="bk-total-box">' +
+    '<div><div class="bk-total-box-label">Total sales</div><div class="bk-total-box-sub">' + (totals.orders || 0) + ' orders today</div></div>' +
+    '<div class="bk-total-box-amt">' + fmtC(totals.revenue_cents) + '</div>' +
+  '</div>';
+
+  /* Failed / declined section */
   var failRows = '';
   if ((totals.failed_orders || 0) > 0) {
     var failItems = [
@@ -1872,28 +1953,29 @@ function renderIntradayChart(d) {
       { label: 'Recharge',      orders: totals.rc_failed, cents: totals.rc_failed_cents },
       { label: 'Whop',          orders: totals.wh_failed, cents: totals.wh_failed_cents }
     ].filter(function(r) { return (r.orders || 0) > 0; }).map(function(r) {
-      return '<div class="bk-row" style="color:#fca5a5">' +
-        '<span>' + r.label + ' <span style="opacity:.7">' + r.orders + '</span></span>' +
-        '<span class="bk-val" style="color:#fca5a5">' + fmtC(r.cents) + '</span>' +
+      return '<div class="bk-failed-row">' +
+        '<span>' + r.label + ' <span style="opacity:.6;font-size:10px">× ' + r.orders + '</span></span>' +
+        '<span class="bk-failed-amt">' + fmtC(r.cents) + '</span>' +
       '</div>';
     }).join('');
-    failRows =
-      '<div class="bk-label" style="color:#ef4444;margin-top:16px">Failed / declined today</div>' +
+    failRows = '<div class="bk-failed-box">' +
+      '<div class="bk-failed-title">⚠ Failed / Declined today</div>' +
       failItems +
-      '<div class="bk-row bold" style="color:#fca5a5">' +
-        '<span>Total failed <span style="opacity:.7">' + totals.failed_orders + '</span></span>' +
-        '<span class="bk-val" style="color:#fca5a5">' + fmtC(totals.failed_cents) + '</span>' +
-      '</div>';
+      '<div class="bk-failed-total">' +
+        '<span>Total failed <span style="opacity:.7;font-size:11px">× ' + totals.failed_orders + '</span></span>' +
+        '<span class="bk-failed-amt">' + fmtC(totals.failed_cents) + '</span>' +
+      '</div>' +
+    '</div>';
   }
 
   document.getElementById('bk-rows').innerHTML = salesRows + failRows;
 
-  var failedColor = (totals.failed_orders || 0) > 0 ? '#dc2626' : 'var(--muted)';
+  var failColor = (totals.failed_orders || 0) > 0 ? '#dc2626' : 'var(--muted)';
   document.getElementById('bk-stats').innerHTML =
-    '<div><div class="bk-stat-label">Successful</div><div class="bk-stat-val">' + (totals.orders || 0) + '</div></div>' +
-    '<div><div class="bk-stat-label">Recurring</div><div class="bk-stat-val">' + (totals.recurring || 0) + '</div></div>' +
-    '<div><div class="bk-stat-label">Failed</div><div class="bk-stat-val" style="color:' + failedColor + '">' + (totals.failed_orders || 0) + '</div></div>' +
-    '<div><div class="bk-stat-label">Failed value</div><div class="bk-stat-val" style="color:' + failedColor + '">' + fmtC(totals.failed_cents) + '</div></div>';
+    '<div class="bk-stat-card"><div class="bk-stat-label">Successful</div><div class="bk-stat-val">' + (totals.orders || 0) + '</div></div>' +
+    '<div class="bk-stat-card"><div class="bk-stat-label">Recurring</div><div class="bk-stat-val">' + (totals.recurring || 0) + '</div></div>' +
+    '<div class="bk-stat-card"><div class="bk-stat-label">Failed</div><div class="bk-stat-val" style="color:' + failColor + '">' + (totals.failed_orders || 0) + '</div></div>' +
+    '<div class="bk-stat-card"><div class="bk-stat-label">Failed value</div><div class="bk-stat-val" style="color:' + failColor + ';font-size:16px">' + fmtC(totals.failed_cents) + '</div></div>';
 
   /* Chart data */
   var labels = hourly.map(function(h) {
