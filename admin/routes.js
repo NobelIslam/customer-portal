@@ -1724,19 +1724,27 @@ router.get('/api/today-revenue', async function(req, res) {
         return rows;
       })(),
 
-      /* Recharge DB: today's billed subscriptions (last_billed_at in today's window) */
+      /* Recharge DB: billed today + scheduled today (same logic as today-orders).
+         Use last_billed_at as chart timestamp when available; fall back to next_bill_at
+         (midnight UTC = 02:00 Amsterdam) for subscriptions not yet confirmed billed. */
       (async function() {
         var rows = [];
         try {
           var rc = await db.many(`
-            SELECT last_billed_at AS ts, price_cents
+            SELECT COALESCE(last_billed_at, next_bill_at) AS ts, price_cents,
+                   (last_billed_at IS NOT NULL AND last_billed_at >= $1) AS is_billed
             FROM   subscriptions
             WHERE  source = 'recharge'
               AND  status = 'ACTIVE'
-              AND  last_billed_at >= $1 AND last_billed_at < $2
+              AND  (
+                (last_billed_at >= $1 AND last_billed_at < $2)
+                OR (next_bill_at >= $1 AND next_bill_at < $2
+                    AND (last_billed_at IS NULL OR last_billed_at < $1))
+              )
           `, [todayStart, todayEnd]);
           rc.forEach(function(r) {
-            rows.push({ ts: new Date(r.ts), price_cents: r.price_cents || 0, source: 'recharge' });
+            rows.push({ ts: new Date(r.ts), price_cents: r.price_cents || 0, source: 'recharge',
+                        confirmed: r.is_billed });
           });
         } catch (e) { console.error('[today-revenue] RC DB error:', e.message); }
         return rows;
@@ -1757,15 +1765,22 @@ router.get('/api/today-revenue', async function(req, res) {
         .catch(function() { return { wh_cents: '0', wh_orders: 0 }; })
     ]);
 
-    /* Aggregate by Amsterdam hour */
+    /* Aggregate by Amsterdam hour.
+       Revenue: only confirmed CC + confirmed RC billed (not scheduled).
+       Order count: all rows including scheduled. */
     const hourMap = {};
     var ccCents = 0, rcCents = 0;
     ccRows.concat(rcRows).forEach(function(o) {
       var h = parseInt(o.ts.toLocaleString('en-US', { timeZone: 'Europe/Amsterdam', hour: 'numeric', hour12: false }));
       if (!hourMap[h]) hourMap[h] = { revenue_cents: 0, orders: 0 };
-      hourMap[h].revenue_cents += o.price_cents;
       hourMap[h].orders++;
-      if (o.source === 'cc') ccCents += o.price_cents; else rcCents += o.price_cents;
+      if (o.source === 'cc') {
+        hourMap[h].revenue_cents += o.price_cents;
+        ccCents += o.price_cents;
+      } else if (o.confirmed) {
+        hourMap[h].revenue_cents += o.price_cents;
+        rcCents += o.price_cents;
+      }
     });
 
     const full24 = Array.from({ length: 24 }, function(_, h) {
