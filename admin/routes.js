@@ -900,7 +900,7 @@ router.get('/api/today-orders', async function(req, res) {
     const ccTodayStr = tm + '/' + td + '/' + ty;
 
     /* Run all four source queries in parallel for speed */
-    const [ccRows, ccPendingRows, rcRows, dbRows] = await Promise.all([
+    const [ccRows, ccPendingRows, rcRows, whopRows] = await Promise.all([
 
       /* ── CC: transactions/query for today's CHARGED RECURRING billings ──
          CC stores timestamps in EDT (UTC-4). User is in Amsterdam (CEST = UTC+2).
@@ -1078,18 +1078,48 @@ router.get('/api/today-orders', async function(req, res) {
         return rows;
       })(),
 
-      Promise.resolve([])   /* placeholder to keep destructuring indexes aligned */
+      /* ── Whop: subscriptions renewing today (DB) ── */
+      (async function() {
+        var rows = [], seenEmails = [];
+        try {
+          var whop = await db.many(`
+            SELECT s.customer_email, s.product, s.price_cents,
+                   s.next_bill_at, c.first_name, c.last_name
+            FROM   subscriptions s
+            LEFT JOIN customers c ON LOWER(c.email) = LOWER(s.customer_email)
+            WHERE  s.source = 'whop'
+              AND  s.status = 'ACTIVE'
+              AND  s.next_bill_at >= $1 AND s.next_bill_at < $2
+            ORDER  BY s.price_cents DESC
+          `, [todayStart, todayEnd]);
+          whop.forEach(function(s) {
+            var email = (s.customer_email || '').toLowerCase();
+            if (!email || TEST_EMAILS.has(email) || seenEmails.includes(email)) return;
+            seenEmails.push(email);
+            rows.push({
+              source: 'whop', native_id: email,
+              customer_email: email,
+              product: s.product || null,
+              price_cents: s.price_cents || 0,
+              next_bill_at: s.next_bill_at ? new Date(s.next_bill_at).toISOString() : null,
+              status: 'ACTIVE',
+              first_name: s.first_name || null, last_name: s.last_name || null,
+              frequency: null, last_billed_at: null
+            });
+          });
+        } catch (e) { console.error('[today-orders] Whop DB query failed:', e.message); }
+        return rows;
+      })()
     ]);
 
-    /* Merge: CC charged (live) + CC pending (live) + RC (live)
-       Priority: ccRows (charged) > ccPendingRows (pending) */
+    /* Merge: CC charged + CC pending + Recharge + Whop */
     const ccLiveEmails = new Set(ccRows.map(function(r) { return r.customer_email; }));
 
     const filteredCcPending = ccPendingRows.filter(function(r) {
       return !ccLiveEmails.has(r.customer_email);
     });
 
-    const allOrders = ccRows.concat(filteredCcPending).concat(rcRows);
+    const allOrders = ccRows.concat(filteredCcPending).concat(rcRows).concat(whopRows);
     console.log('[today-orders] total:', allOrders.length);
     res.json({ orders: allOrders, count: allOrders.length });
   } catch (err) {
@@ -1694,26 +1724,21 @@ router.get('/api/today-revenue', async function(req, res) {
         return rows;
       })(),
 
-      /* Recharge live: today's successful recurring charges */
+      /* Recharge DB: today's billed subscriptions (last_billed_at in today's window) */
       (async function() {
-        if (!process.env.RECHARGE_API_KEY) return [];
-        const headers = { 'X-Recharge-Access-Token': process.env.RECHARGE_API_KEY };
-        var rows = [], page = 1;
-        while (page <= 5) {
-          const url = RC_API_BASE + '/charges?limit=250&page=' + page +
-            '&created_at_min=' + encodeURIComponent(todayStart.toISOString()) +
-            '&created_at_max=' + encodeURIComponent(todayEnd.toISOString()) +
-            '&status=success';
-          const r = await fetch(url, { headers });
-          const d = await r.json();
-          (d.charges || []).forEach(function(c) {
-            if (c.type !== 'recurring') return;
-            var ts = new Date(c.created_at.endsWith('Z') ? c.created_at : c.created_at + 'Z');
-            rows.push({ ts: ts, price_cents: Math.round(parseFloat(c.total_price || 0) * 100), source: 'recharge' });
+        var rows = [];
+        try {
+          var rc = await db.many(`
+            SELECT last_billed_at AS ts, price_cents
+            FROM   subscriptions
+            WHERE  source = 'recharge'
+              AND  status = 'ACTIVE'
+              AND  last_billed_at >= $1 AND last_billed_at < $2
+          `, [todayStart, todayEnd]);
+          rc.forEach(function(r) {
+            rows.push({ ts: new Date(r.ts), price_cents: r.price_cents || 0, source: 'recharge' });
           });
-          if ((d.charges || []).length < 250) break;
-          page++;
-        }
+        } catch (e) { console.error('[today-revenue] RC DB error:', e.message); }
         return rows;
       })(),
 
