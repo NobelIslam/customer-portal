@@ -971,12 +971,13 @@ router.get('/api/today-orders', async function(req, res) {
       })(),
 
       /* ── Recharge: charges first (already billed), then scheduled subs ──
-         Process 2b (charges) BEFORE 2a (subscriptions) so customers billed
-         today get status "Billed today" — not "Scheduled". Subscriptions
-         whose email already appears in seenEmails (from charges) are skipped.
-         next_charge_scheduled_at is compared as a UTC range to avoid the
-         startsWith edge case where midnight-Amsterdam subs are stored as
-         "prev-day 22:00 UTC" by Recharge.                                    */
+         Charges use c.customer.email (nested object — c.email is absent in v1).
+         Subscriptions have no email at all — resolved via one batch DB lookup
+         on the customers table (recharge_id = customer_id).
+         Process 2b before 2a so billed customers show "Billed today", not
+         "Scheduled". Subs already in seenEmails from charges are skipped.
+         next_charge_scheduled_at compared as a UTC range so date-only strings
+         and midnight-Amsterdam entries (stored as prev-day 22:00 UTC) both match. */
       (async function() {
         if (!process.env.RECHARGE_API_KEY) return [];
         var rows = [], seenEmails = [];
@@ -993,7 +994,8 @@ router.get('/api/today-orders', async function(req, res) {
             const d = await r.json();
             const charges = d.charges || [];
             charges.forEach(function(c) {
-              const email = (c.email || '').toLowerCase();
+              /* email lives in c.customer.email in Recharge v1; c.email is fallback */
+              const email = ((c.customer && c.customer.email) || c.email || '').toLowerCase();
               if (!email || seenEmails.includes(email)) return;
               seenEmails.push(email);
               rows.push({
@@ -1011,8 +1013,8 @@ router.get('/api/today-orders', async function(req, res) {
           }
           console.log('[today-orders] RC billed today:', rows.length);
 
-          /* 2a SECOND. Active subscriptions scheduled for today but not yet charged */
-          var rcPage = 1, noEmailCount = 0;
+          /* 2a SECOND. Active subs scheduled today — collect then batch-resolve email from DB */
+          var todaySubs = [], rcPage = 1;
           while (rcPage <= 20) {
             const url = RC_API_BASE + '/subscriptions?status=active&limit=250&page=' + rcPage;
             const r = await fetch(url, { headers: headers });
@@ -1020,31 +1022,42 @@ router.get('/api/today-orders', async function(req, res) {
             const subs = d.subscriptions || [];
             subs.forEach(function(s) {
               const nextCharge = (s.next_charge_scheduled_at || '');
-              if (!nextCharge) return;
-              /* Range check: covers both "YYYY-MM-DD" and "YYYY-MM-DDTHH:MM:SS[Z]" formats.
-                 Appending T00:00:00Z when there is no T treats date-only strings as UTC midnight,
-                 which falls within the Amsterdam day window (starts at UTC prev-day 22:00). */
+              if (!nextCharge || !s.customer_id) return;
+              /* Range check: covers "YYYY-MM-DD" and "YYYY-MM-DDTHH:MM:SS[Z]".
+                 Date-only strings get T00:00:00Z → UTC midnight, which falls
+                 within the Amsterdam day window (starts at UTC prev-day 22:00). */
               var ncd = new Date(nextCharge.includes('T') ? nextCharge : nextCharge + 'T00:00:00Z');
               if (isNaN(ncd) || ncd < todayStart || ncd >= todayEnd) return;
-              const email = (s.email || '').toLowerCase();
-              if (!email) { noEmailCount++; return; }
-              if (seenEmails.includes(email)) return;
+              todaySubs.push(s);
+            });
+            if (subs.length < 250) break;
+            rcPage++;
+          }
+          console.log('[today-orders] RC subs scheduled today:', todaySubs.length);
+          if (todaySubs.length > 0) {
+            /* One batch query to resolve customer_id → email */
+            var custIds = [...new Set(todaySubs.map(function(s) { return String(s.customer_id); }))];
+            var custRows = await db.many(
+              'SELECT recharge_id, email FROM customers WHERE recharge_id = ANY($1)', [custIds]
+            ).catch(function() { return []; });
+            var emailMap = {};
+            custRows.forEach(function(cr) { if (cr.recharge_id) emailMap[String(cr.recharge_id)] = cr.email; });
+            todaySubs.forEach(function(s) {
+              var email = (emailMap[String(s.customer_id)] || '').toLowerCase();
+              if (!email || seenEmails.includes(email)) return;
               seenEmails.push(email);
               rows.push({
                 source: 'recharge', native_id: String(s.id),
                 customer_email: email,
                 product: s.product_title || s.title || null,
                 price_cents: Math.round(parseFloat(s.price || 0) * 100),
-                next_bill_at: nextCharge, status: 'ACTIVE',
+                next_bill_at: s.next_charge_scheduled_at, status: 'ACTIVE',
                 first_name: null, last_name: null,
                 frequency: s.order_interval_frequency + ' ' + s.order_interval_unit,
                 last_billed_at: null
               });
             });
-            if (subs.length < 250) break;
-            rcPage++;
           }
-          if (noEmailCount > 0) console.warn('[today-orders] RC subs with no email field:', noEmailCount);
         } catch (e) { console.error('[today-orders] RC query failed:', e.message); }
         console.log('[today-orders] RC today (billed+sched):', rows.length);
         return rows;
