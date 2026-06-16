@@ -150,6 +150,12 @@ router.get('/', function(req, res) {
   res.sendFile(path.join(__dirname, '..', 'public', 'admin', 'index.html'));
 });
 
+/* Build marker — hit /admin/build to confirm which build is live (no auth). */
+router.get('/build', function(req, res) {
+  res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.json({ build: 'failed-orders-breakdown-v1', ts: new Date().toISOString() });
+});
+
 router.get('/integrations', function(req, res) {
   res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.sendFile(path.join(__dirname, '..', 'public', 'admin', 'integrations.html'));
