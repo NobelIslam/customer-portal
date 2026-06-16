@@ -901,7 +901,7 @@ router.get('/api/today-orders', async function(req, res) {
     const ccTodayStr = tm + '/' + td + '/' + ty;
 
     /* Run all queries in parallel for speed */
-    const [ccRows, ccPendingRows, rcRows, whopRows, shopifyEmailsToday] = await Promise.all([
+    const [ccRows, ccPendingRows, rcRows, whopRows, shopifyResult] = await Promise.all([
 
       /* ── CC: transactions/query for today's CHARGED RECURRING billings ──
          CC stores timestamps in EDT (UTC-4). User is in Amsterdam (CEST = UTC+2).
@@ -1115,26 +1115,33 @@ router.get('/api/today-orders', async function(req, res) {
       /* ── Shopify: emails of customers with orders today (confirms Recharge billing) ── */
       (async function() {
         var emails = new Set();
-        if (!SHOPIFY_TOKEN) return emails;
+        var nativeSubEmails = new Set(); /* subscription_contract_checkout_one = definitely recurring */
+        if (!SHOPIFY_TOKEN) return { emails: emails, nativeSubEmails: nativeSubEmails };
         try {
           var url = 'https://' + SHOPIFY_STORE + '/admin/api/2024-01/orders.json' +
-            '?status=any&limit=250&fields=email,created_at' +
+            '?status=any&limit=250&fields=email,created_at,source_name' +
             '&created_at_min=' + encodeURIComponent(todayStart.toISOString());
           while (url) {
             var r = await fetch(url, { headers: { 'X-Shopify-Access-Token': SHOPIFY_TOKEN } });
             var link = r.headers.get('link') || '';
             var d = await r.json();
             (d.orders || []).forEach(function(o) {
-              if (o.email) emails.add(o.email.toLowerCase().trim());
+              if (!o.email) return;
+              var e = o.email.toLowerCase().trim();
+              emails.add(e);
+              if (o.source_name === 'subscription_contract_checkout_one') nativeSubEmails.add(e);
             });
             var next = link.match(/<([^>]+)>;\s*rel="next"/);
             url = next ? next[1] : null;
           }
-          console.log('[today-orders] Shopify billed emails today:', emails.size);
+          console.log('[today-orders] Shopify billed emails today:', emails.size, '| native-sub:', nativeSubEmails.size);
         } catch (e) { console.error('[today-orders] Shopify orders fetch failed:', e.message); }
-        return emails;
+        return { emails: emails, nativeSubEmails: nativeSubEmails };
       })()
     ]);
+
+    var shopifyEmailsToday    = (shopifyResult && shopifyResult.emails)         || new Set();
+    var shopifyNativeSubEmails = (shopifyResult && shopifyResult.nativeSubEmails) || new Set();
 
     /* Cross-reference Recharge pending rows against Shopify orders.
        If a customer's email has a Shopify order today → confirmed billed.
@@ -1161,6 +1168,54 @@ router.get('/api/today-orders', async function(req, res) {
       }).catch(function(e) {
         console.error('[today-orders] Shopify confirm DB update failed:', e.message);
       });
+    }
+
+    /* Catch subscription_contract_checkout_one recurring orders not already in rcRows.
+       These are Shopify-native subscription renewals whose DB record may have a stale
+       next_bill_at (e.g. already updated to next month) so they fall outside today's window. */
+    var rcRowEmailSet = new Set(rcRows.map(function(r) { return r.customer_email; }));
+    var missingNativeSubs = [...shopifyNativeSubEmails].filter(function(e) { return !rcRowEmailSet.has(e); });
+    if (missingNativeSubs.length > 0) {
+      try {
+        var nativeRows = await db.many(`
+          SELECT DISTINCT ON (s.customer_email)
+                 s.customer_email, s.product, s.price_cents,
+                 s.last_billed_at, s.next_bill_at,
+                 c.first_name, c.last_name
+          FROM   subscriptions s
+          LEFT JOIN customers c ON LOWER(c.email) = LOWER(s.customer_email)
+          WHERE  s.source = 'recharge' AND s.status = 'ACTIVE'
+            AND  LOWER(s.customer_email) = ANY($1)
+          ORDER  BY s.customer_email, s.next_bill_at DESC NULLS LAST
+        `, [missingNativeSubs]);
+        var foundEmails = new Set(nativeRows.map(function(r) { return r.customer_email; }));
+        nativeRows.forEach(function(s) {
+          rcRows.push({
+            source: 'recharge', native_id: s.customer_email,
+            customer_email: s.customer_email,
+            product: s.product || null,
+            price_cents: s.price_cents || 0,
+            next_bill_at: s.next_bill_at ? new Date(s.next_bill_at).toISOString() : null,
+            last_billed_at: now.toISOString(),
+            status: 'ACTIVE',
+            first_name: s.first_name || null,
+            last_name: s.last_name || null,
+            frequency: null
+          });
+        });
+        /* Customers billed via Shopify native contracts but absent from DB entirely */
+        missingNativeSubs.filter(function(e) { return !foundEmails.has(e); }).forEach(function(e) {
+          rcRows.push({
+            source: 'recharge', native_id: e,
+            customer_email: e,
+            product: null, price_cents: 0,
+            next_bill_at: null, last_billed_at: now.toISOString(),
+            status: 'ACTIVE', first_name: null, last_name: null, frequency: null
+          });
+        });
+        console.log('[today-orders] native-sub fallback: added', missingNativeSubs.length,
+          '(', nativeRows.length, 'from DB,', (missingNativeSubs.length - nativeRows.length), 'synthetic)');
+      } catch (e) { console.error('[today-orders] native-sub lookup failed:', e.message); }
     }
 
     /* Merge: CC charged + CC pending + Recharge + Whop */
