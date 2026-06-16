@@ -864,13 +864,13 @@ function renderKpis(k, sources) {
     '</span>';
   document.getElementById('kpi-row1').innerHTML = [
     { label: 'MRR',                  value: $m(k.mrrCents),   sparkId: 'sp-subs',    sparkColor: '#f04e00' },
-    { label: 'Orders today',         value: $n(k.todayOrders),sparkId: 'sp-new',     sparkColor: '#22c55e' },
+    { label: 'Orders today',         value: $n(k.todayOrders),sparkId: 'sp-new',     sparkColor: '#22c55e', valId: 'kpi-orders-today' },
     { label: 'Active subscriptions', value: $n(k.activeSubs), sparkId: 'sp-cancels', sparkColor: '#3b82f6' }
   ].map(function(c) {
     return '<div class="dkpi">' +
       '<div class="dkpi-period">30D</div>' +
       '<div class="dkpi-label">' + c.label + '</div>' +
-      '<div class="dkpi-value">' + c.value + '</div>' +
+      '<div class="dkpi-value"' + (c.valId ? ' id="' + c.valId + '"' : '') + '>' + c.value + '</div>' +
       '<div class="dkpi-spark"><canvas id="' + c.sparkId + '"></canvas></div>' +
     '</div>';
   }).join('');
@@ -1808,6 +1808,10 @@ function renderIntradayChart(d) {
   var hourly   = d.hourly || [];
   var totals   = d.totals || {};
   var yest     = d.yesterday || {};
+
+  /* Keep the ORDERS TODAY KPI card in sync with this authoritative count */
+  var kpiOrdersEl = document.getElementById('kpi-orders-today');
+  if (kpiOrdersEl) kpiOrdersEl.textContent = (totals.orders || 0).toLocaleString();
 
   /* Big number + delta */
   var isRev = intradayTab === 'revenue';

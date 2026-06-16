@@ -208,14 +208,7 @@ router.get('/api/overview', async function(req, res) {
     ] = await Promise.all([
       db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW() ${NO_PAYPAL}`),
       db.one(`SELECT COALESCE(SUM(price_cents),0)::bigint AS cents FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW() ${NO_PAYPAL}`),
-      db.one(`SELECT COUNT(*)::int AS n, 0::bigint AS cents
-              FROM subscriptions
-              WHERE status = 'ACTIVE'
-                AND (
-                  (last_billed_at >= $1 AND last_billed_at < $2)
-                  OR (next_bill_at >= $1 AND next_bill_at < $2
-                      AND (last_billed_at IS NULL OR last_billed_at < $1))
-                ) ${NO_PAYPAL}`, [todayStart, todayEnd]),
+      db.one(`SELECT COALESCE(SUM(amount_cents),0)::bigint AS cents, COUNT(*)::int AS n FROM orders WHERE created_at >= $1`, [todayStart]),
       db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE started_at >= $1 ${NO_PAYPAL}`, [todayStart]),
       db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE cancelled_at >= $1 ${NO_PAYPAL}`, [todayStart]),
       db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE started_at >= $1 AND started_at < $2 ${NO_PAYPAL}`,
