@@ -1020,32 +1020,30 @@ router.get('/api/today-orders', async function(req, res) {
         return rows;
       })(),
 
-      /* ── Recharge: charges first (already billed), then scheduled subs ──
-         Charges use c.customer.email (nested object — c.email is absent in v1).
-         Subscriptions have no email at all — resolved via one batch DB lookup
-         on the customers table (recharge_id = customer_id).
-         Process 2b before 2a so billed customers show "Billed today", not
-         "Scheduled". Subs already in seenEmails from charges are skipped.
-         next_charge_scheduled_at compared as a UTC range so date-only strings
-         and midnight-Amsterdam entries (stored as prev-day 22:00 UTC) both match. */
+      /* ── Recharge: already-billed charges first, then still-scheduled subs ──
+         Billed: filter by scheduled_at = todayAms (plain YYYY-MM-DD, no TZ encoding).
+           scheduled_at on a charge equals the subscription's next_charge_scheduled_at
+           at the time of billing — the cleanest way to find today's billing run.
+           Recharge v1 puts email directly on the charge object (c.email).
+         Scheduled: active subs whose next_charge_scheduled_at starts with todayAms,
+           email resolved via one batch DB lookup (no email on sub objects).        */
       (async function() {
         if (!process.env.RECHARGE_API_KEY) return [];
         var rows = [], seenEmails = [];
         const headers = { 'X-Recharge-Access-Token': process.env.RECHARGE_API_KEY };
         try {
-          /* 2b FIRST. Already billed today: successful charges created today */
+          /* 2b FIRST — charges where scheduled_at = today (simple date, no encoding needed) */
           var chPage = 1;
           while (chPage <= 10) {
             const url = RC_API_BASE + '/charges?status=success' +
-              '&created_at_min=' + encodeURIComponent(todayStart.toISOString()) +
-              '&created_at_max=' + encodeURIComponent(todayEnd.toISOString()) +
+              '&scheduled_at_min=' + todayUTC +
+              '&scheduled_at_max=' + todayUTC +
               '&limit=250&page=' + chPage;
             const r = await fetch(url, { headers: headers });
             const d = await r.json();
             const charges = d.charges || [];
             charges.forEach(function(c) {
-              /* email lives in c.customer.email in Recharge v1; c.email is fallback */
-              const email = ((c.customer && c.customer.email) || c.email || '').toLowerCase();
+              const email = (c.email || '').trim().toLowerCase();
               if (!email || seenEmails.includes(email)) return;
               seenEmails.push(email);
               rows.push({
@@ -1054,7 +1052,7 @@ router.get('/api/today-orders', async function(req, res) {
                 product: (c.line_items && c.line_items[0]) ? c.line_items[0].title : null,
                 price_cents: Math.round(parseFloat(c.total_price || 0) * 100),
                 next_bill_at: null, status: 'ACTIVE',
-                first_name: null, last_name: null,
+                first_name: c.first_name || null, last_name: c.last_name || null,
                 frequency: null, last_billed_at: c.created_at || now.toISOString()
               });
             });
@@ -1063,7 +1061,9 @@ router.get('/api/today-orders', async function(req, res) {
           }
           console.log('[today-orders] RC billed today:', rows.length);
 
-          /* 2a SECOND. Active subs scheduled today — collect then batch-resolve email from DB */
+          /* 2a SECOND — active subs still scheduled for today (not yet charged)
+             next_charge_scheduled_at is stored as "YYYY-MM-DD" by Recharge.
+             No email on sub objects — batch-resolve from customers table.       */
           var todaySubs = [], rcPage = 1;
           while (rcPage <= 20) {
             const url = RC_API_BASE + '/subscriptions?status=active&limit=250&page=' + rcPage;
@@ -1071,23 +1071,18 @@ router.get('/api/today-orders', async function(req, res) {
             const d = await r.json();
             const subs = d.subscriptions || [];
             subs.forEach(function(s) {
-              const nextCharge = (s.next_charge_scheduled_at || '');
-              if (!nextCharge || !s.customer_id) return;
-              /* Range check: covers "YYYY-MM-DD" and "YYYY-MM-DDTHH:MM:SS[Z]".
-                 Date-only strings get T00:00:00Z → UTC midnight, which falls
-                 within the Amsterdam day window (starts at UTC prev-day 22:00). */
-              var ncd = new Date(nextCharge.includes('T') ? nextCharge : nextCharge + 'T00:00:00Z');
-              if (isNaN(ncd) || ncd < todayStart || ncd >= todayEnd) return;
+              if (!s.customer_id) return;
+              var nc = (s.next_charge_scheduled_at || '').slice(0, 10); /* take YYYY-MM-DD part */
+              if (nc !== todayUTC) return;
               todaySubs.push(s);
             });
             if (subs.length < 250) break;
             rcPage++;
           }
-          console.log('[today-orders] RC subs scheduled today:', todaySubs.length);
+          console.log('[today-orders] RC subs still scheduled today:', todaySubs.length);
           if (todaySubs.length > 0) {
-            /* One batch query to resolve customer_id → email */
             var custIds = [...new Set(todaySubs.map(function(s) { return String(s.customer_id); }))];
-            var custRows = await db.many(
+            var custRows = await db.any(
               'SELECT recharge_id, email FROM customers WHERE recharge_id = ANY($1)', [custIds]
             ).catch(function() { return []; });
             var emailMap = {};
