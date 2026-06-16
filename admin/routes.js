@@ -1015,7 +1015,7 @@ router.get('/api/today-orders', async function(req, res) {
       (async function() {
         var rows = [], seenEmails = [];
         try {
-          var billed = await db.any(`
+          var billed = await db.many(`
             SELECT s.customer_email, s.product, s.price_cents,
                    s.last_billed_at, s.next_bill_at,
                    c.first_name, c.last_name
@@ -1044,7 +1044,7 @@ router.get('/api/today-orders', async function(req, res) {
           });
           console.log('[today-orders] RC billed today (DB):', rows.length);
 
-          var scheduled = await db.any(`
+          var scheduled = await db.many(`
             SELECT s.customer_email, s.product, s.price_cents,
                    s.last_billed_at, s.next_bill_at,
                    c.first_name, c.last_name
