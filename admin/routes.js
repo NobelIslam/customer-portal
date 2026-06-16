@@ -885,6 +885,48 @@ const TEST_EMAILS = new Set([
   'wardun@eydigitalmedia.com'
 ]);
 
+/* ── Recharge: today's recurring rebills, straight from the Charges API ──
+   This is the source of truth for "billed today". The subscriptions table is NOT:
+   the instant Recharge creates a charge it advances next_charge_scheduled_at to next
+   month, so any next_bill_at = today window query misses every sub billed today.
+   We count type=RECURRING charges whose status means money is moving
+   (QUEUED / SUCCESS / PENDING) and exclude SKIPPED / ERROR / REFUNDED.            */
+async function fetchRechargeRebillsToday(todayStart, todayEnd, todayAms) {
+  var key = process.env.RECHARGE_API_KEY;
+  if (!key) return [];
+  var headers = { 'X-Recharge-Access-Token': key, 'Content-Type': 'application/json' };
+  var BILLED  = { QUEUED: 1, SUCCESS: 1, PENDING: 1 };
+  var rows = [], page = 1, limit = 250;
+  try {
+    while (page <= 20) {
+      var url = RC_API_BASE + '/charges?limit=' + limit + '&page=' + page +
+                '&created_at_min=' + encodeURIComponent(todayStart.toISOString());
+      var r = await fetch(url, { headers });
+      var d = await r.json();
+      var charges = d.charges || [];
+      charges.forEach(function(c) {
+        if (c.type !== 'RECURRING' || !BILLED[c.status]) return;
+        /* Recharge created_at has no tz suffix; its date portion is the billing day. */
+        if ((c.created_at || '').slice(0, 10) !== todayAms) return;
+        var email = (c.email || '').toLowerCase().trim();
+        if (!email || TEST_EMAILS.has(email)) return;
+        rows.push({
+          email:       email,
+          first_name:  c.first_name || null,
+          last_name:   c.last_name  || null,
+          product:     (c.line_items && c.line_items[0] && c.line_items[0].title) || null,
+          price_cents: Math.round(parseFloat(c.total_price || 0) * 100),
+          ts:          new Date((c.created_at || '').replace(' ', 'T') + 'Z'),
+          status:      c.status
+        });
+      });
+      if (charges.length < limit) break;
+      page++;
+    }
+  } catch (e) { console.error('[recharge-rebills] fetch failed:', e.message); }
+  return rows;
+}
+
 router.get('/api/today-orders', async function(req, res) {
   try {
     const now        = new Date();
@@ -901,7 +943,7 @@ router.get('/api/today-orders', async function(req, res) {
     const ccTodayStr = tm + '/' + td + '/' + ty;
 
     /* Run all queries in parallel for speed */
-    const [ccRows, ccPendingRows, rcRows, whopRows, shopifyResult] = await Promise.all([
+    const [ccRows, ccPendingRows, rcRows, whopRows] = await Promise.all([
 
       /* ── CC: transactions/query for today's CHARGED RECURRING billings ──
          CC stores timestamps in EDT (UTC-4). User is in Amsterdam (CEST = UTC+2).
@@ -1009,73 +1051,26 @@ router.get('/api/today-orders', async function(req, res) {
         return rows;
       })(),
 
-      /* ── Recharge: query DB directly — no live API calls ──
-         The sync maintains last_billed_at and next_bill_at on every subscription.
-         Billed today:    last_billed_at in today's Amsterdam window.
-         Scheduled today: next_bill_at in today's Amsterdam window, not yet billed.  */
+      /* ── Recharge: today's recurring rebills, live from the Charges API ──
+         Source of truth — see fetchRechargeRebillsToday. Deduped per email. */
       (async function() {
+        var charges = await fetchRechargeRebillsToday(todayStart, todayEnd, todayUTC);
         var rows = [], seenEmails = [];
-        try {
-          var billed = await db.many(`
-            SELECT s.customer_email, s.product, s.price_cents,
-                   s.last_billed_at, s.next_bill_at,
-                   c.first_name, c.last_name
-            FROM   subscriptions s
-            LEFT JOIN customers c ON LOWER(c.email) = LOWER(s.customer_email)
-            WHERE  s.source = 'recharge'
-              AND  s.status = 'ACTIVE'
-              AND  s.last_billed_at >= $1 AND s.last_billed_at < $2
-            ORDER  BY s.last_billed_at DESC
-          `, [todayStart, todayEnd]);
-
-          billed.forEach(function(s) {
-            var email = (s.customer_email || '').toLowerCase();
-            if (!email || TEST_EMAILS.has(email) || seenEmails.includes(email)) return;
-            seenEmails.push(email);
-            rows.push({
-              source: 'recharge', native_id: email,
-              customer_email: email,
-              product: s.product || null,
-              price_cents: s.price_cents || 0,
-              next_bill_at: null, status: 'ACTIVE',
-              first_name: s.first_name || null, last_name: s.last_name || null,
-              frequency: null,
-              last_billed_at: s.last_billed_at ? new Date(s.last_billed_at).toISOString() : null
-            });
+        charges.forEach(function(c) {
+          if (seenEmails.includes(c.email)) return;
+          seenEmails.push(c.email);
+          rows.push({
+            source: 'recharge', native_id: c.email,
+            customer_email: c.email,
+            product: c.product || null,
+            price_cents: c.price_cents || 0,
+            next_bill_at: null, status: 'ACTIVE',
+            first_name: c.first_name || null, last_name: c.last_name || null,
+            frequency: null,
+            last_billed_at: c.ts ? c.ts.toISOString() : now.toISOString()
           });
-          console.log('[today-orders] RC billed today (DB):', rows.length);
-
-          var scheduled = await db.many(`
-            SELECT s.customer_email, s.product, s.price_cents,
-                   s.last_billed_at, s.next_bill_at,
-                   c.first_name, c.last_name
-            FROM   subscriptions s
-            LEFT JOIN customers c ON LOWER(c.email) = LOWER(s.customer_email)
-            WHERE  s.source = 'recharge'
-              AND  s.status = 'ACTIVE'
-              AND  s.next_bill_at >= $1 AND s.next_bill_at < $2
-              AND  (s.last_billed_at IS NULL OR s.last_billed_at < $1)
-            ORDER  BY s.next_bill_at
-          `, [todayStart, todayEnd]);
-
-          scheduled.forEach(function(s) {
-            var email = (s.customer_email || '').toLowerCase();
-            if (!email || TEST_EMAILS.has(email) || seenEmails.includes(email)) return;
-            seenEmails.push(email);
-            rows.push({
-              source: 'recharge', native_id: email,
-              customer_email: email,
-              product: s.product || null,
-              price_cents: s.price_cents || 0,
-              next_bill_at: s.next_bill_at ? new Date(s.next_bill_at).toISOString() : null,
-              status: 'ACTIVE',
-              first_name: s.first_name || null, last_name: s.last_name || null,
-              frequency: null, last_billed_at: null
-            });
-          });
-          console.log('[today-orders] RC scheduled today (DB):', scheduled.length);
-        } catch (e) { console.error('[today-orders] RC DB query failed:', e.message); }
-        console.log('[today-orders] RC today total:', rows.length);
+        });
+        console.log('[today-orders] RC rebills today (Charges API):', rows.length);
         return rows;
       })(),
 
@@ -1110,127 +1105,8 @@ router.get('/api/today-orders', async function(req, res) {
           });
         } catch (e) { console.error('[today-orders] Whop DB query failed:', e.message); }
         return rows;
-      })(),
-
-      /* ── Shopify: emails of customers with orders today (confirms Recharge billing) ── */
-      (async function() {
-        var emails = new Set();
-        var nativeSubEmails = new Set(); /* subscription_contract_checkout_one = definitely recurring */
-        if (!SHOPIFY_TOKEN) return { emails: emails, nativeSubEmails: nativeSubEmails };
-        try {
-          var url = 'https://' + SHOPIFY_STORE + '/admin/api/2024-01/orders.json' +
-            '?status=any&limit=250&fields=email,created_at,source_name' +
-            '&created_at_min=' + encodeURIComponent(todayStart.toISOString());
-          while (url) {
-            var r = await fetch(url, { headers: { 'X-Shopify-Access-Token': SHOPIFY_TOKEN } });
-            var link = r.headers.get('link') || '';
-            var d = await r.json();
-            (d.orders || []).forEach(function(o) {
-              if (!o.email) return;
-              var e = o.email.toLowerCase().trim();
-              emails.add(e);
-              if (o.source_name === 'subscription_contract_checkout_one') nativeSubEmails.add(e);
-            });
-            var next = link.match(/<([^>]+)>;\s*rel="next"/);
-            url = next ? next[1] : null;
-          }
-          console.log('[today-orders] Shopify billed emails today:', emails.size, '| native-sub:', nativeSubEmails.size);
-        } catch (e) { console.error('[today-orders] Shopify orders fetch failed:', e.message); }
-        return { emails: emails, nativeSubEmails: nativeSubEmails };
       })()
     ]);
-
-    var shopifyEmailsToday    = (shopifyResult && shopifyResult.emails)         || new Set();
-    var shopifyNativeSubEmails = (shopifyResult && shopifyResult.nativeSubEmails) || new Set();
-
-    /* Cross-reference Recharge pending rows against Shopify orders.
-       If a customer's email has a Shopify order today → confirmed billed.
-       Update DB in background so subsequent calls reflect the confirmed billing. */
-    var shopifyConfirmed = [];
-    rcRows.forEach(function(r) {
-      if (!r.last_billed_at && shopifyEmailsToday.has(r.customer_email)) {
-        r.last_billed_at = now.toISOString();
-        shopifyConfirmed.push(r.customer_email);
-      }
-    });
-    if (shopifyConfirmed.length > 0) {
-      console.log('[today-orders] Shopify confirmed', shopifyConfirmed.length, 'Recharge subs');
-      db.query(
-        `UPDATE subscriptions
-         SET last_billed_at = NOW()
-         WHERE source = 'recharge' AND status = 'ACTIVE'
-           AND LOWER(customer_email) = ANY($1)
-           AND next_bill_at >= $2 AND next_bill_at < $3
-           AND (last_billed_at IS NULL OR last_billed_at < $2)`,
-        [shopifyConfirmed, todayStart, todayEnd]
-      ).then(function(r) {
-        console.log('[today-orders] stamped last_billed_at on', r.rowCount, 'Recharge subs via Shopify');
-      }).catch(function(e) {
-        console.error('[today-orders] Shopify confirm DB update failed:', e.message);
-      });
-    }
-
-    /* Catch subscription_contract_checkout_one recurring orders not already in rcRows.
-       These are Shopify-native subscription renewals whose DB record may have a stale
-       next_bill_at (e.g. already updated to next month) so they fall outside today's window. */
-    var rcRowEmailSet = new Set(rcRows.map(function(r) { return r.customer_email; }));
-    var missingNativeSubs = [...shopifyNativeSubEmails].filter(function(e) { return !rcRowEmailSet.has(e); });
-    if (missingNativeSubs.length > 0) {
-      try {
-        var nativeRows = await db.many(`
-          SELECT DISTINCT ON (s.customer_email)
-                 s.customer_email, s.product, s.price_cents,
-                 s.last_billed_at, s.next_bill_at,
-                 c.first_name, c.last_name
-          FROM   subscriptions s
-          LEFT JOIN customers c ON LOWER(c.email) = LOWER(s.customer_email)
-          WHERE  s.source = 'recharge' AND s.status = 'ACTIVE'
-            AND  LOWER(s.customer_email) = ANY($1)
-          ORDER  BY s.customer_email, s.next_bill_at DESC NULLS LAST
-        `, [missingNativeSubs]);
-        var foundEmails = new Set(nativeRows.map(function(r) { return r.customer_email; }));
-        nativeRows.forEach(function(s) {
-          rcRows.push({
-            source: 'recharge', native_id: s.customer_email,
-            customer_email: s.customer_email,
-            product: s.product || null,
-            price_cents: s.price_cents || 0,
-            next_bill_at: s.next_bill_at ? new Date(s.next_bill_at).toISOString() : null,
-            last_billed_at: now.toISOString(),
-            status: 'ACTIVE',
-            first_name: s.first_name || null,
-            last_name: s.last_name || null,
-            frequency: null
-          });
-        });
-        /* Customers billed via Shopify native contracts but absent from DB entirely */
-        missingNativeSubs.filter(function(e) { return !foundEmails.has(e); }).forEach(function(e) {
-          rcRows.push({
-            source: 'recharge', native_id: e,
-            customer_email: e,
-            product: null, price_cents: 0,
-            next_bill_at: null, last_billed_at: now.toISOString(),
-            status: 'ACTIVE', first_name: null, last_name: null, frequency: null
-          });
-        });
-        /* Stamp last_billed_at in DB so today-revenue picks them up on next poll */
-        if (nativeRows.length > 0) {
-          db.query(
-            `UPDATE subscriptions SET last_billed_at = NOW()
-             WHERE source = 'recharge' AND status = 'ACTIVE'
-               AND LOWER(customer_email) = ANY($1)
-               AND (last_billed_at IS NULL OR last_billed_at < $2)`,
-            [nativeRows.map(function(r) { return r.customer_email; }), todayStart]
-          ).then(function(r) {
-            console.log('[today-orders] stamped last_billed_at on', r.rowCount, 'native-sub Recharge subs');
-          }).catch(function(e) {
-            console.error('[today-orders] native-sub DB stamp failed:', e.message);
-          });
-        }
-        console.log('[today-orders] native-sub fallback: added', missingNativeSubs.length,
-          '(', nativeRows.length, 'from DB,', (missingNativeSubs.length - nativeRows.length), 'synthetic)');
-      } catch (e) { console.error('[today-orders] native-sub lookup failed:', e.message); }
-    }
 
     /* Merge: CC charged + CC pending + Recharge + Whop */
     const ccLiveEmails = new Set(ccRows.map(function(r) { return r.customer_email; }));
@@ -1817,7 +1693,7 @@ router.get('/api/today-revenue', async function(req, res) {
     const ccEnd     = tm + '/' + td + '/' + ty;
 
     /* ── Fetch CC recurring transactions + Recharge charges + yesterday DB + Whop DB in parallel ── */
-    const [ccRows, rcRows, yesterday, whopRow, nativeSubEmails] = await Promise.all([
+    const [ccRows, rcRows, yesterday, whopRow] = await Promise.all([
 
       /* CC live: today's RECURRING charged transactions */
       (async function() {
@@ -1844,31 +1720,13 @@ router.get('/api/today-revenue', async function(req, res) {
         return rows;
       })(),
 
-      /* Recharge DB: billed today + scheduled today (same logic as today-orders).
-         Use last_billed_at as chart timestamp when available; fall back to next_bill_at
-         (midnight UTC = 02:00 Amsterdam) for subscriptions not yet confirmed billed. */
+      /* Recharge: today's recurring rebills, live from the Charges API (source of truth).
+         Every billed charge is revenue-confirmed; ts = charge created_at. */
       (async function() {
-        var rows = [];
-        try {
-          var rc = await db.many(`
-            SELECT LOWER(customer_email) AS email,
-                   COALESCE(last_billed_at, next_bill_at) AS ts, price_cents,
-                   (last_billed_at IS NOT NULL AND last_billed_at >= $1) AS is_billed
-            FROM   subscriptions
-            WHERE  source = 'recharge'
-              AND  status = 'ACTIVE'
-              AND  (
-                (last_billed_at >= $1 AND last_billed_at < $2)
-                OR (next_bill_at >= $1 AND next_bill_at < $2
-                    AND (last_billed_at IS NULL OR last_billed_at < $1))
-              )
-          `, [todayStart, todayEnd]);
-          rc.forEach(function(r) {
-            rows.push({ ts: new Date(r.ts), price_cents: r.price_cents || 0, source: 'recharge',
-                        confirmed: r.is_billed, _email: r.email });
-          });
-        } catch (e) { console.error('[today-revenue] RC DB error:', e.message); }
-        return rows;
+        var charges = await fetchRechargeRebillsToday(todayStart, todayEnd, todayAms);
+        return charges.map(function(c) {
+          return { ts: c.ts || now, price_cents: c.price_cents || 0, source: 'recharge', confirmed: true };
+        });
       })(),
 
       /* Yesterday totals from DB for delta */
@@ -1883,59 +1741,8 @@ router.get('/api/today-revenue', async function(req, res) {
                 AND status IN ('ACTIVE','TRIALING')
                 AND next_bill_at >= $1 AND next_bill_at < $2`,
         [todayStart, todayEnd])
-        .catch(function() { return { wh_cents: '0', wh_orders: 0 }; }),
-
-      /* Shopify: subscription_contract_checkout_one emails billed today.
-         These are native Shopify recurring orders whose next_bill_at in DB may already
-         point to next month (Recharge advanced it after billing), falling outside
-         today's window and getting missed by the rcRows DB query above. */
-      (async function() {
-        var emails = new Set();
-        if (!SHOPIFY_TOKEN) return emails;
-        try {
-          var url = 'https://' + SHOPIFY_STORE + '/admin/api/2024-01/orders.json' +
-            '?status=any&limit=250&fields=email,source_name' +
-            '&created_at_min=' + encodeURIComponent(todayStart.toISOString());
-          while (url) {
-            var r = await fetch(url, { headers: { 'X-Shopify-Access-Token': SHOPIFY_TOKEN } });
-            var link = r.headers.get('link') || '';
-            var d = await r.json();
-            (d.orders || []).forEach(function(o) {
-              if (o.email && o.source_name === 'subscription_contract_checkout_one')
-                emails.add(o.email.toLowerCase().trim());
-            });
-            var next = link.match(/<([^>]+)>;\s*rel="next"/);
-            url = next ? next[1] : null;
-          }
-        } catch (e) { console.error('[today-revenue] Shopify native-sub fetch failed:', e.message); }
-        return emails;
-      })()
+        .catch(function() { return { wh_cents: '0', wh_orders: 0 }; })
     ]);
-
-    /* Add native-sub rows missing from the DB-window rcRows query */
-    var rcEmailsForDedup = new Set(rcRows.map(function(r) { return r._email; }).filter(Boolean));
-    var missingNative = [...nativeSubEmails].filter(function(e) { return !rcEmailsForDedup.has(e); });
-    if (missingNative.length > 0) {
-      try {
-        var nativeDbRows = await db.many(`
-          SELECT DISTINCT ON (s.customer_email) s.customer_email, s.price_cents
-          FROM   subscriptions s
-          WHERE  s.source = 'recharge' AND s.status = 'ACTIVE'
-            AND  LOWER(s.customer_email) = ANY($1)
-          ORDER  BY s.customer_email, s.next_bill_at DESC NULLS LAST
-        `, [missingNative]);
-        var foundNativeEmails = new Set(nativeDbRows.map(function(r) { return r.customer_email; }));
-        nativeDbRows.forEach(function(s) {
-          rcRows.push({ ts: now, price_cents: s.price_cents || 0, source: 'recharge', confirmed: true, _email: s.customer_email });
-        });
-        /* Synthetic for any completely absent from DB */
-        missingNative.filter(function(e) { return !foundNativeEmails.has(e); }).forEach(function(e) {
-          rcRows.push({ ts: now, price_cents: 0, source: 'recharge', confirmed: true, _email: e });
-        });
-        if (missingNative.length > 0)
-          console.log('[today-revenue] native-sub added', missingNative.length, 'RC rows (', nativeDbRows.length, 'from DB )');
-      } catch (e) { console.error('[today-revenue] native-sub DB lookup failed:', e.message); }
-    }
 
     /* Aggregate by Amsterdam hour.
        Revenue: only confirmed CC + confirmed RC billed (not scheduled).
