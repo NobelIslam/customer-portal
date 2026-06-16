@@ -987,8 +987,8 @@ router.get('/api/today-orders', async function(req, res) {
           var chPage = 1;
           while (chPage <= 10) {
             const url = RC_API_BASE + '/charges?status=success' +
-              '&created_at_min=' + todayStart.toISOString() +
-              '&created_at_max=' + todayEnd.toISOString() +
+              '&created_at_min=' + encodeURIComponent(todayStart.toISOString()) +
+              '&created_at_max=' + encodeURIComponent(todayEnd.toISOString()) +
               '&limit=250&page=' + chPage;
             const r = await fetch(url, { headers: headers });
             const d = await r.json();
