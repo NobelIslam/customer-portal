@@ -2001,6 +2001,93 @@ router.get('/api/debug/today-breakdown', async function(req, res) {
   }
 });
 
+/* ── GET /admin/api/debug/shopify-rc-diff
+   Compares today's Shopify orders against Recharge subscriptions in DB.
+   Shows: in Shopify but missing from DB, in DB but no Shopify order, and both.
+   Helps explain count discrepancies between Shopify (72) and our DB (67).       */
+router.get('/api/debug/shopify-rc-diff', async function(req, res) {
+  try {
+    const now        = new Date();
+    const todayStart = amsMidnightUTC(now);
+    const todayEnd   = new Date(todayStart.getTime() + 24 * 3600 * 1000);
+
+    /* 1. All Shopify orders created today */
+    var shopifyOrders = [];
+    if (SHOPIFY_TOKEN) {
+      var url = 'https://' + SHOPIFY_STORE + '/admin/api/2024-01/orders.json' +
+        '?status=any&limit=250' +
+        '&fields=id,name,email,created_at,source_name,tags,note_attributes,financial_status' +
+        '&created_at_min=' + encodeURIComponent(todayStart.toISOString());
+      while (url) {
+        var r = await fetch(url, { headers: { 'X-Shopify-Access-Token': SHOPIFY_TOKEN } });
+        var link = r.headers.get('link') || '';
+        var d = await r.json();
+        shopifyOrders = shopifyOrders.concat(d.orders || []);
+        var next = link.match(/<([^>]+)>;\s*rel="next"/);
+        url = next ? next[1] : null;
+      }
+    }
+
+    /* 2. Our Recharge subscriptions for today (DB) */
+    var dbSubs = await db.many(`
+      SELECT customer_email, product, price_cents, next_bill_at, last_billed_at, last_synced_at
+      FROM subscriptions
+      WHERE source = 'recharge' AND status = 'ACTIVE'
+        AND (
+          (last_billed_at >= $1 AND last_billed_at < $2)
+          OR (next_bill_at >= $1 AND next_bill_at < $2 AND (last_billed_at IS NULL OR last_billed_at < $1))
+        )
+      ORDER BY customer_email
+    `, [todayStart, todayEnd]);
+
+    /* 3. Build email sets */
+    var shopifyEmailMap = {};
+    shopifyOrders.forEach(function(o) {
+      var e = (o.email || '').toLowerCase().trim();
+      if (!e) return;
+      if (!shopifyEmailMap[e]) shopifyEmailMap[e] = [];
+      shopifyEmailMap[e].push({ id: o.id, name: o.name, source_name: o.source_name,
+        tags: o.tags, financial_status: o.financial_status, created_at: o.created_at });
+    });
+
+    var dbEmailMap = {};
+    dbSubs.forEach(function(s) {
+      var e = (s.customer_email || '').toLowerCase();
+      if (!e) return;
+      if (!dbEmailMap[e]) dbEmailMap[e] = [];
+      dbEmailMap[e].push(s);
+    });
+
+    var shopifyEmails = new Set(Object.keys(shopifyEmailMap));
+    var dbEmails      = new Set(Object.keys(dbEmailMap));
+
+    var inShopifyNotDb = [...shopifyEmails].filter(function(e) { return !dbEmails.has(e); });
+    var inDbNotShopify = [...dbEmails].filter(function(e) { return !shopifyEmails.has(e); });
+    var inBoth         = [...shopifyEmails].filter(function(e) { return dbEmails.has(e); });
+
+    res.json({
+      as_of: now.toISOString(),
+      summary: {
+        shopify_orders_today_total:    shopifyOrders.length,
+        shopify_unique_emails:         shopifyEmails.size,
+        db_recharge_rows:              dbSubs.length,
+        db_unique_emails:              dbEmails.size,
+        in_shopify_missing_from_db:    inShopifyNotDb.length,
+        in_db_missing_from_shopify:    inDbNotShopify.length,
+        confirmed_in_both:             inBoth.length
+      },
+      in_shopify_missing_from_db: inShopifyNotDb.map(function(e) {
+        return { email: e, shopify_orders: shopifyEmailMap[e] };
+      }),
+      in_db_missing_from_shopify: inDbNotShopify.map(function(e) {
+        return { email: e, db_subs: dbEmailMap[e] };
+      })
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* ── /admin/api/debug/whop-status — whop sync diagnostics ── */
 
 /* ════════════════════════════════════════════════════
