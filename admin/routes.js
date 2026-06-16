@@ -1021,28 +1021,33 @@ router.get('/api/today-orders', async function(req, res) {
       })(),
 
       /* ── Recharge: already-billed charges first, then still-scheduled subs ──
-         Billed: filter by scheduled_at = todayAms (plain YYYY-MM-DD, no TZ encoding).
-           scheduled_at on a charge equals the subscription's next_charge_scheduled_at
-           at the time of billing — the cleanest way to find today's billing run.
-           Recharge v1 puts email directly on the charge object (c.email).
-         Scheduled: active subs whose next_charge_scheduled_at starts with todayAms,
-           email resolved via one batch DB lookup (no email on sub objects).        */
+         Recharge API date-filter params (scheduled_at_min/max, created_at_min/max)
+         are unreliable in v1 — the API ignores them and returns all records.
+         So we do NOT use server-side date filters. Instead:
+           Charges: sort_by=created_at-desc (most recent first), filter client-side
+             against todayStart/todayEnd. Stop paginating once we go past todayStart.
+           Subs: compare next_charge_scheduled_at.slice(0,10) === todayUTC client-side,
+             resolve email via one batch DB lookup (subs have no email field).        */
       (async function() {
         if (!process.env.RECHARGE_API_KEY) return [];
         var rows = [], seenEmails = [];
         const headers = { 'X-Recharge-Access-Token': process.env.RECHARGE_API_KEY };
         try {
-          /* 2b FIRST — charges where scheduled_at = today (simple date, no encoding needed) */
-          var chPage = 1;
-          while (chPage <= 10) {
-            const url = RC_API_BASE + '/charges?status=success' +
-              '&scheduled_at_min=' + todayUTC +
-              '&scheduled_at_max=' + todayUTC +
-              '&limit=250&page=' + chPage;
+          /* 2b FIRST — recent successful charges, most-recent first.
+             Stop as soon as a charge falls before todayStart.             */
+          var chPage = 1, chDone = false;
+          while (chPage <= 10 && !chDone) {
+            const url = RC_API_BASE + '/charges?status=success&sort_by=created_at-desc&limit=250&page=' + chPage;
             const r = await fetch(url, { headers: headers });
             const d = await r.json();
             const charges = d.charges || [];
             charges.forEach(function(c) {
+              if (chDone) return;
+              /* Recharge timestamps have no Z — append it so Date parses as UTC */
+              var ca = (c.created_at || '');
+              var chargeDate = new Date(ca && !ca.endsWith('Z') && !ca.includes('+') ? ca + 'Z' : ca);
+              if (isNaN(chargeDate) || chargeDate < todayStart) { chDone = true; return; }
+              if (chargeDate >= todayEnd) return;
               const email = (c.email || '').trim().toLowerCase();
               if (!email || seenEmails.includes(email)) return;
               seenEmails.push(email);
@@ -1053,10 +1058,10 @@ router.get('/api/today-orders', async function(req, res) {
                 price_cents: Math.round(parseFloat(c.total_price || 0) * 100),
                 next_bill_at: null, status: 'ACTIVE',
                 first_name: c.first_name || null, last_name: c.last_name || null,
-                frequency: null, last_billed_at: c.created_at || now.toISOString()
+                frequency: null, last_billed_at: ca || now.toISOString()
               });
             });
-            if (charges.length < 250) break;
+            if (charges.length < 250 || chDone) break;
             chPage++;
           }
           console.log('[today-orders] RC billed today:', rows.length);
