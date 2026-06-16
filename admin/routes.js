@@ -786,6 +786,56 @@ router.get('/api/debug/rc-charges', async function(req, res) {
   }
 });
 
+/* ── GET /admin/api/debug/rc-today-charges — raw Recharge charges for today ──
+   Diagnostic: shows exactly what the charges API returns, email field location,
+   and whether the date filter is working.                                       */
+router.get('/api/debug/rc-today-charges', async function(req, res) {
+  try {
+    const now       = new Date();
+    const todayStart = amsMidnightUTC(now);
+    const todayEnd   = new Date(todayStart.getTime() + 24 * 3600 * 1000);
+    const RC_KEY    = process.env.RECHARGE_API_KEY;
+    if (!RC_KEY) return res.status(500).json({ error: 'RECHARGE_API_KEY not set' });
+    const headers   = { 'X-Recharge-Access-Token': RC_KEY };
+
+    const url = 'https://api.rechargeapps.com/charges?status=success' +
+      '&created_at_min=' + encodeURIComponent(todayStart.toISOString()) +
+      '&created_at_max=' + encodeURIComponent(todayEnd.toISOString()) +
+      '&limit=5&page=1';
+
+    const r = await fetch(url, { headers });
+    const d = await r.json();
+    const charges = d.charges || [];
+
+    /* Count how many have email at each location */
+    var withEmailDirect = 0, withEmailNested = 0, withNeither = 0;
+    charges.forEach(function(c) {
+      if (c.email) withEmailDirect++;
+      else if (c.customer && c.customer.email) withEmailNested++;
+      else withNeither++;
+    });
+
+    /* Also count all pages */
+    var countUrl = 'https://api.rechargeapps.com/charges?status=success' +
+      '&created_at_min=' + encodeURIComponent(todayStart.toISOString()) +
+      '&created_at_max=' + encodeURIComponent(todayEnd.toISOString()) +
+      '&limit=250&page=1';
+    var countR = await fetch(countUrl, { headers });
+    var countD = await countR.json();
+    var totalCount = (countD.charges || []).length;
+
+    res.json({
+      window: { from: todayStart.toISOString(), to: todayEnd.toISOString() },
+      total_charges_page1: totalCount,
+      first_5_charges: charges,
+      email_field_analysis: { withEmailDirect, withEmailNested, withNeither },
+      raw_url_used: url
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* ── GET /admin/api/shopify/tracking?email=xxx — Shopify fulfillment tracking ── */
 
 router.get('/api/shopify/tracking', async function(req, res) {
