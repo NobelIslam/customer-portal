@@ -170,6 +170,7 @@ router.get('/api/overview', async function(req, res) {
     /* Use Amsterdam midnight — not UTC midnight — so today's counts correctly
        reflect the Amsterdam day (off by 1–2 h otherwise in CEST/CET). */
     const todayStart = amsMidnightUTC(now);
+    const todayEnd   = new Date(todayStart.getTime() + 24 * 3600 * 1000);
     const periodDays = Math.min(Math.max(parseInt(req.query.days || '30', 10), 1), 365);
     const periodAgo  = new Date(todayStart); periodAgo.setUTCDate(periodAgo.getUTCDate() - periodDays);
     const tomorrowEnd   = new Date(todayStart); tomorrowEnd.setUTCDate(tomorrowEnd.getUTCDate() + 2);
@@ -207,7 +208,14 @@ router.get('/api/overview', async function(req, res) {
     ] = await Promise.all([
       db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW() ${NO_PAYPAL}`),
       db.one(`SELECT COALESCE(SUM(price_cents),0)::bigint AS cents FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW() ${NO_PAYPAL}`),
-      db.one(`SELECT COALESCE(SUM(amount_cents),0)::bigint AS cents, COUNT(*)::int AS n FROM orders WHERE created_at >= $1`, [todayStart]),
+      db.one(`SELECT COUNT(*)::int AS n, 0::bigint AS cents
+              FROM subscriptions
+              WHERE status = 'ACTIVE'
+                AND (
+                  (last_billed_at >= $1 AND last_billed_at < $2)
+                  OR (next_bill_at >= $1 AND next_bill_at < $2
+                      AND (last_billed_at IS NULL OR last_billed_at < $1))
+                ) ${NO_PAYPAL}`, [todayStart, todayEnd]),
       db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE started_at >= $1 ${NO_PAYPAL}`, [todayStart]),
       db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE cancelled_at >= $1 ${NO_PAYPAL}`, [todayStart]),
       db.one(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE started_at >= $1 AND started_at < $2 ${NO_PAYPAL}`,
