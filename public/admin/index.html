@@ -544,8 +544,16 @@
       .panel, .dark-panel { padding: 14px 14px; overflow-x: auto; }
       .section-label { font-size: 13px; margin: 16px 0 8px; }
 
-      /* Tables scroll horizontally instead of squashing */
-      .tod-table { min-width: 460px; }
+      /* Tables: smaller type, scroll horizontally instead of squashing */
+      .tod-table { min-width: 440px; font-size: 10.5px; }
+      .tod-table th { font-size: 8.5px; padding: 0 7px 6px 0; }
+      .tod-table td { padding: 7px 7px 7px 0; }
+      .tod-date { font-size: 9.5px; }
+      .mini-btn { font-size: 9px; padding: 3px 7px; }
+      /* Product rows */
+      .prod-name { font-size: 11px; }
+      .prod-count, .prod-mrr { font-size: 12px; }
+      .prod-mrr { min-width: 56px; }
     }
 
     @media (max-width: 380px) {
