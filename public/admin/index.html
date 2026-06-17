@@ -149,6 +149,7 @@
     .section-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 
     /* ── Grids ── */
+    .grid-5   { display: grid; grid-template-columns: repeat(5,1fr); gap: 10px; margin-bottom: 10px; }
     .grid-4   { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 10px; }
     .grid-3   { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 10px; }
     .row-2    { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-bottom: 10px; }
@@ -932,17 +933,19 @@ function renderKpis(k, sources) {
     { label: 'MRR',                      value: $m(k.mrrCents),  sparkId: 'sp-subs',    sparkColor: '#f04e00' },
     { label: 'Total MRR collection',     value: '—',             sparkId: 'sp-new',     sparkColor: '#22c55e', valId: 'kpi-mrr-collected', subId: 'kpi-mrr-collected-sub' },
     { label: 'Pending MRR collection',   value: '—',             sparkId: 'sp-cancels', sparkColor: '#3b82f6', valId: 'kpi-mrr-pending',   subId: 'kpi-mrr-pending-sub' },
-    { label: 'Total active subscriptions', value: $n(k.activeSubs), sparkId: 'sp-active', sparkColor: '#3b82f6' }
+    { label: 'Total active subscriptions', value: $n(k.activeSubs), sparkId: 'sp-active', sparkColor: '#3b82f6' },
+    { label: 'Tomorrow expected rebill', value: $m(k.tomorrowForecastCents), sparkId: 'sp-tomorrow', sparkColor: '#d97706', sub: $n(k.tomorrowRebillCount) + ' subscriptions due' }
   ].map(function(c) {
     return '<div class="dkpi">' +
       '<div class="dkpi-period">30D</div>' +
       '<div class="dkpi-label">' + c.label + '</div>' +
       '<div class="dkpi-value"' + (c.valId ? ' id="' + c.valId + '"' : '') + '>' + c.value + '</div>' +
-      (c.subId ? '<div class="dkpi-sub" id="' + c.subId + '"></div>' : '') +
+      (c.subId ? '<div class="dkpi-sub" id="' + c.subId + '"></div>'
+        : c.sub ? '<div class="dkpi-sub" style="color:var(--muted2)">' + c.sub + '</div>' : '') +
       '<div class="dkpi-spark"><canvas id="' + c.sparkId + '"></canvas></div>' +
     '</div>';
   }).join('');
-  document.getElementById('kpi-row1').className = 'grid-4';
+  document.getElementById('kpi-row1').className = 'grid-5';
 
   /* Row 2: supporting stats */
   var net = k.netToday || 0;
@@ -981,8 +984,7 @@ function renderMetricCards(k) {
   var cards = [
     { label: 'New subscriptions today',      value: $n(k.newToday) },
     { label: 'New subscriptions this week',  value: $n(k.newThisWeek) },
-    { label: 'Cancelled today',              value: $n(k.cancelsToday), color: (k.cancelsToday > 0 ? '#ef4444' : '') },
-    { label: 'Tomorrow expected rebill',     value: $m(k.tomorrowForecastCents), sub: $n(k.tomorrowRebillCount) + ' subscriptions due' }
+    { label: 'Cancelled today',              value: $n(k.cancelsToday), color: (k.cancelsToday > 0 ? '#ef4444' : '') }
   ];
   var s = document.getElementById('metric-subs');
   if (s) s.innerHTML = cards.map(metricCard).join('');
