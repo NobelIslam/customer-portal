@@ -515,6 +515,18 @@
       }
       .sidebar.open { transform: translateX(0); }
       .sidebar-overlay.show { display: block; }
+
+      /* Date filter → sticky bottom bar (app style) */
+      .date-range {
+        position: fixed; left: 0; right: 0; bottom: 0; z-index: 150;
+        border: none; border-top: 1px solid var(--border); border-radius: 0;
+        background: var(--bg2); padding: 9px 12px; gap: 6px;
+        justify-content: center; overflow-x: auto;
+        box-shadow: 0 -2px 14px rgba(0,0,0,.07);
+        padding-bottom: calc(9px + env(safe-area-inset-bottom, 0px));
+      }
+      .dr-pill { padding: 8px 16px; font-size: 13px; }
+      .main { padding-bottom: 70px; }  /* clear the bottom bar */
     }
 
     @media (max-width: 640px) {
@@ -524,11 +536,6 @@
       .search-wrap { display: none; }
       .sync-info { display: none; }
       .live-pill { display: none; }
-      .date-range {
-        order: 3; flex: 1 1 100%; justify-content: center;
-        overflow-x: auto; -webkit-overflow-scrolling: touch;
-      }
-      .topbar { flex-wrap: wrap; height: auto; padding: 8px 12px; }
       .topbar-right { gap: 6px; }
       .topbar-right .btn { padding: 6px 9px; font-size: 11px; }
 
