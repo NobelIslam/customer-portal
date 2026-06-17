@@ -911,30 +911,30 @@ const TEST_EMAILS = new Set([
 ]);
 
 /* ── Recharge: today's recurring charges, straight from the Charges API ──
-   This is the source of truth for "billed today". The subscriptions table is NOT:
-   the instant Recharge creates a charge it advances next_charge_scheduled_at to next
-   month, so any next_bill_at = today window query misses every sub billed today.
+   Filter by BILLING DATE (date_min/date_max), NOT created_at. Recharge creates the
+   next cycle's charge the instant one succeeds, so created_at ≈ 30 days before money
+   actually moves — a created_at filter counts next-cycle charges, not today's billings.
+   The `date` filter targets the charge's scheduled/processed day; date_max is EXCLUSIVE.
    Returns { billed, failed }:
-     billed = type=RECURRING with status QUEUED / SUCCESS / PENDING (money moving)
-     failed = type=RECURRING with status SKIPPED / ERROR (declined / skipped attempt) */
+     billed = status QUEUED / SUCCESS / PENDING (captured or in-flight today)
+     failed = status ERROR / SKIPPED / REFUNDED (declined / skipped / reversed)        */
 async function fetchRechargeRebillsToday(todayStart, todayEnd, todayAms) {
   var key = process.env.RECHARGE_API_KEY;
   if (!key) return { billed: [], failed: [] };
   var headers = { 'X-Recharge-Access-Token': key, 'Content-Type': 'application/json' };
   var BILLED  = { QUEUED: 1, SUCCESS: 1, PENDING: 1 };
-  var FAILED  = { SKIPPED: 1, ERROR: 1 };
+  var FAILED  = { SKIPPED: 1, ERROR: 1, REFUNDED: 1 };
+  var tomorrowAms = amsDateStr(new Date(todayStart.getTime() + 24 * 3600 * 1000));
   var billed = [], failed = [], page = 1, limit = 250;
   try {
     while (page <= 20) {
       var url = RC_API_BASE + '/charges?limit=' + limit + '&page=' + page +
-                '&created_at_min=' + encodeURIComponent(todayStart.toISOString());
+                '&date_min=' + todayAms + '&date_max=' + tomorrowAms;
       var r = await fetch(url, { headers });
       var d = await r.json();
       var charges = d.charges || [];
       charges.forEach(function(c) {
         if (c.type !== 'RECURRING') return;
-        /* Recharge created_at has no tz suffix; its date portion is the billing day. */
-        if ((c.created_at || '').slice(0, 10) !== todayAms) return;
         var email = (c.email || '').toLowerCase().trim();
         if (!email || TEST_EMAILS.has(email)) return;
         var row = {
@@ -943,7 +943,7 @@ async function fetchRechargeRebillsToday(todayStart, todayEnd, todayAms) {
           last_name:   c.last_name  || null,
           product:     (c.line_items && c.line_items[0] && c.line_items[0].title) || null,
           price_cents: Math.round(parseFloat(c.total_price || 0) * 100),
-          ts:          amsParseLocal(c.created_at),
+          ts:          amsParseLocal(c.processed_at || c.scheduled_at || c.created_at),
           status:      c.status
         };
         if (BILLED[c.status])      billed.push(row);
@@ -1829,15 +1829,24 @@ router.get('/api/today-revenue', async function(req, res) {
       })(),
 
       /* Recharge: today's recurring charges, live from the Charges API (source of truth).
-         billed → revenue-confirmed rows; failed → SKIPPED/ERROR tally. */
+         billed rows feed the chart; we also split them into captured (SUCCESS) vs
+         pending (QUEUED/PENDING — created at the processor, not yet captured). */
       (async function() {
         var rc = await fetchRechargeRebillsToday(todayStart, todayEnd, todayAms);
-        var rows = rc.billed.map(function(c) {
-          return { ts: c.ts || now, price_cents: c.price_cents || 0, source: 'recharge', confirmed: true };
+        var rows = [], succO = 0, succC = 0, pendO = 0, pendC = 0;
+        rc.billed.forEach(function(c) {
+          rows.push({ ts: c.ts || now, price_cents: c.price_cents || 0, source: 'recharge', confirmed: true });
+          if (c.status === 'SUCCESS') { succO++; succC += c.price_cents || 0; }
+          else                        { pendO++; pendC += c.price_cents || 0; }  /* QUEUED / PENDING */
         });
         var failCents = 0;
         rc.failed.forEach(function(c) { failCents += c.price_cents || 0; });
-        return { rows: rows, failed: { orders: rc.failed.length, cents: failCents } };
+        return {
+          rows: rows,
+          success: { orders: succO, cents: succC },
+          pending: { orders: pendO, cents: pendC },
+          failed:  { orders: rc.failed.length, cents: failCents }
+        };
       })(),
 
       /* Yesterday totals from DB for delta */
@@ -1845,13 +1854,22 @@ router.get('/api/today-revenue', async function(req, res) {
               FROM orders WHERE created_at >= $1 AND created_at < $2`, [yesterStart, todayStart]),
 
       /* Whop: today's recurring rebills, live from the Payments API (source of truth).
-         billed = subscription_cycle + paid; failed = subscription_cycle not paid (open/unpaid). */
+         billed = subscription_cycle + paid (captured). Non-paid subscription_cycle is
+         split: 'open' = still pending capture; anything else = terminal failure. */
       (async function() {
         var wh = await fetchWhopRebillsToday(todayStart, todayEnd);
-        var cents = 0, failCents = 0;
+        var cents = 0, pendO = 0, pendC = 0, failO = 0, failC = 0;
         wh.billed.forEach(function(p) { cents += p.price_cents || 0; });
-        wh.failed.forEach(function(p) { failCents += p.price_cents || 0; });
-        return { wh_cents: cents, wh_orders: wh.billed.length, failed: { orders: wh.failed.length, cents: failCents } };
+        wh.failed.forEach(function(p) {
+          if (p.status === 'open') { pendO++; pendC += p.price_cents || 0; }
+          else                     { failO++; failC += p.price_cents || 0; }
+        });
+        return {
+          wh_cents: cents, wh_orders: wh.billed.length,
+          success: { orders: wh.billed.length, cents: cents },
+          pending: { orders: pendO, cents: pendC },
+          failed:  { orders: failO, cents: failC }
+        };
       })()
     ]);
 
@@ -1892,6 +1910,17 @@ router.get('/api/today-revenue', async function(req, res) {
     const failedOrders = ccFailed.orders + rcFailed.orders + whFailed.orders;
     const failedCents  = ccFailed.cents  + rcFailed.cents  + whFailed.cents;
 
+    /* Today's rebills split: captured (success) vs in-flight (pending) vs failed.
+       CC SALE/SUCCESS settles immediately → all CC billed rows are success, no pending. */
+    const rcSuccess = rcResult.success || { orders: 0, cents: 0 };
+    const rcPending = rcResult.pending || { orders: 0, cents: 0 };
+    const whSuccess = whopResult.success || { orders: 0, cents: 0 };
+    const whPending = whopResult.pending || { orders: 0, cents: 0 };
+    const successOrders = ccRows.length + rcSuccess.orders + whSuccess.orders;
+    const successCents  = ccCents       + rcSuccess.cents  + whSuccess.cents;
+    const pendingOrders = rcPending.orders + whPending.orders;
+    const pendingCents  = rcPending.cents  + whPending.cents;
+
     res.json({
       hourly: full24,
       totals: {
@@ -1905,6 +1934,9 @@ router.get('/api/today-revenue', async function(req, res) {
         wh_cents:      whCents,
         recurring:     totalOrders,
         new_orders:    0,
+        /* today's rebill outcome split */
+        success_orders: successOrders, success_cents: successCents,
+        pending_orders: pendingOrders, pending_cents: pendingCents,
         /* failed / declined / skipped recurring billings today */
         failed_orders: failedOrders,
         failed_cents:  failedCents,
@@ -1916,6 +1948,154 @@ router.get('/api/today-revenue', async function(req, res) {
     });
   } catch (err) {
     console.error('[admin/api/today-revenue]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ── GET /admin/api/mrr-summary — MRR collection picture for the current calendar month.
+   collected_mtd:  recurring revenue actually CAPTURED this month so far, summed live
+                   from each platform's billing API (the orders table is unreliable:
+                   it lags sync and mislabels Recharge rebills as 'initial').
+   pending_mtd:    MRR value still SCHEDULED to bill before month-end (active subs, DB).
+   Loaded separately from /overview so the heavier month-pagination doesn't block the
+   first dashboard paint. Cached 5 min — Whop's month sum is ~115 paginated calls.    */
+var _mrrSummaryCache = { ts: 0, data: null };
+router.get('/api/mrr-summary', async function(req, res) {
+  try {
+    if (_mrrSummaryCache.data && (Date.now() - _mrrSummaryCache.ts) < 5 * 60 * 1000) {
+      return res.json(_mrrSummaryCache.data);
+    }
+    const now        = new Date();
+    const todayAms   = amsDateStr(now);
+    const ty   = parseInt(todayAms.slice(0, 4), 10);
+    const tmo  = parseInt(todayAms.slice(5, 7), 10);
+    const monthStartAms = ty + '-' + String(tmo).padStart(2, '0') + '-01';
+    const nextMo = tmo === 12 ? 1 : tmo + 1, nextYr = tmo === 12 ? ty + 1 : ty;
+    const monthEndAms   = nextYr + '-' + String(nextMo).padStart(2, '0') + '-01';
+    const monthStart = amsMidnightUTC(new Date(monthStartAms + 'T12:00:00Z'));
+    const monthEnd   = amsMidnightUTC(new Date(monthEndAms   + 'T12:00:00Z'));
+    /* Recharge date filter is by billing day, date_max EXCLUSIVE → use tomorrow to include today */
+    const tomorrowAms = amsDateStr(new Date(amsMidnightUTC(now).getTime() + 24 * 3600 * 1000));
+
+    const NO_PAYPAL = `AND NOT (source = 'cc' AND raw->>'merchant' ILIKE '%paypal%')
+      AND NOT (source = 'cc' AND COALESCE(NULLIF(TRIM(raw->>'merchant'), ''), '') = '')`;
+
+    /* CC date strings (MM/DD/YYYY) for the month window */
+    const [my, mm, md] = monthStartAms.split('-');
+    const [ey, em, ed] = todayAms.split('-');
+    const ccMonthStart = mm + '/' + md + '/' + my;
+    const ccMonthEnd   = em + '/' + ed + '/' + ey;
+
+    const [rcCollected, whCollected, ccCollected, pendingRow, mrrRow] = await Promise.all([
+
+      /* Recharge: SUCCESS recurring charges captured this month */
+      (async function() {
+        var key = process.env.RECHARGE_API_KEY;
+        if (!key) return 0;
+        var headers = { 'X-Recharge-Access-Token': key, 'Content-Type': 'application/json' };
+        var cents = 0, page = 1;
+        try {
+          while (page <= 60) {
+            var url = RC_API_BASE + '/charges?limit=250&page=' + page +
+                      '&status=success&date_min=' + monthStartAms + '&date_max=' + tomorrowAms;
+            var r = await fetch(url, { headers });
+            var d = await r.json();
+            var charges = d.charges || [];
+            charges.forEach(function(c) {
+              if (c.type !== 'RECURRING') return;
+              cents += Math.round(parseFloat(c.total_price || 0) * 100);
+            });
+            if (charges.length < 250) break;
+            page++;
+          }
+        } catch (e) { console.error('[mrr-summary] RC collected failed:', e.message); }
+        return cents;
+      })(),
+
+      /* Whop: subscription_cycle paid payments this month */
+      (async function() {
+        var key = await getWhopKey();
+        if (!key) return 0;
+        var headers = { 'Authorization': 'Bearer ' + key, 'accept': 'application/json' };
+        var cents = 0, page = 1, MAX_PAGES = 200;
+        try {
+          /* Whop ignores date filters but honours status + billing_reason server-side
+             and returns newest-first, so paginate filtered renewals until we pass
+             month-start. (~10 rows/page → ~115 pages for a full month; cached upstream.) */
+          while (page <= MAX_PAGES) {
+            var r = await fetch(WHOP_API_BASE +
+              '/payments?per_page=50&status=paid&billing_reason=subscription_cycle&page=' + page, { headers });
+            if (!r.ok) break;
+            var d = await r.json();
+            var items = d.data || [];
+            if (!items.length) break;
+            var sawOlder = false;
+            items.forEach(function(p) {
+              var ts = p.created_at ? new Date(p.created_at * 1000) : null;
+              if (!ts) return;
+              if (ts < monthStart) { sawOlder = true; return; }
+              if (ts >= monthEnd) return;
+              cents += Math.round(parseFloat(p.final_amount || p.total || 0) * 100);
+            });
+            if (sawOlder) break;
+            page++;
+          }
+        } catch (e) { console.error('[mrr-summary] Whop collected failed:', e.message); }
+        return cents;
+      })(),
+
+      /* CheckoutChamp: RECURRING SALE SUCCESS transactions this month */
+      (async function() {
+        if (!process.env.CC_LOGIN_ID || !process.env.CC_API_PASSWORD) return 0;
+        var cents = 0, page = 1;
+        try {
+          while (page <= 30) {
+            var p = new URLSearchParams({
+              loginId: process.env.CC_LOGIN_ID, password: process.env.CC_API_PASSWORD,
+              startDate: ccMonthStart, endDate: ccMonthEnd,
+              billType: 'RECURRING', txnType: 'SALE', responseType: 'SUCCESS',
+              resultsPerPage: 200, page: page
+            });
+            var r = await fetch(CC_API_BASE + '/transactions/query/?' + p.toString(), { method: 'POST' });
+            var d = await r.json();
+            var txns = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+            txns.forEach(function(t) {
+              var ts = ccParseDate(t.dateCreated || '');
+              if (!ts || ts < monthStart || ts >= monthEnd) return;
+              cents += Math.round(parseFloat(t.amount || t.totalAmount || 0) * 100);
+            });
+            if (txns.length < 200) break;
+            page++;
+          }
+        } catch (e) { console.error('[mrr-summary] CC collected failed:', e.message); }
+        return cents;
+      })(),
+
+      /* Pending: MRR scheduled to bill from now through month-end (DB) */
+      db.one(`SELECT COALESCE(SUM(price_cents),0)::bigint AS cents, COUNT(*)::int AS n
+              FROM subscriptions
+              WHERE status = 'ACTIVE' AND next_bill_at >= $1 AND next_bill_at < $2 ${NO_PAYPAL}`,
+             [now, monthEnd]),
+
+      /* Active MRR run-rate (matches /overview) */
+      db.one(`SELECT COALESCE(SUM(price_cents),0)::bigint AS cents
+              FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW() ${NO_PAYPAL}`)
+    ]);
+
+    const collected = rcCollected + whCollected + ccCollected;
+    const payload = {
+      month:               monthStartAms.slice(0, 7),
+      mrr_cents:           Number(mrrRow.cents),
+      collected_mtd_cents: collected,
+      collected_breakdown: { cc: ccCollected, recharge: rcCollected, whop: whCollected },
+      pending_mtd_cents:   Number(pendingRow.cents),
+      pending_mtd_count:   pendingRow.n,
+      generated_at:        now.toISOString()
+    };
+    _mrrSummaryCache = { ts: Date.now(), data: payload };
+    res.json(payload);
+  } catch (err) {
+    console.error('[admin/api/mrr-summary]', err);
     res.status(500).json({ error: err.message });
   }
 });

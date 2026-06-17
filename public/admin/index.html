@@ -210,6 +210,23 @@
       min-height: 14px;
     }
     .dkpi-sub:empty { margin-top: 0; }
+    /* ── Key-metric cards (below intraday chart) ── */
+    .metric-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 12px;
+    }
+    .metric-card {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 12px; padding: 14px 16px;
+    }
+    .metric-card .m-label {
+      font-size: 9px; text-transform: uppercase; letter-spacing: 0.07em;
+      color: var(--muted); font-weight: 600; margin-bottom: 8px; line-height: 1.3; min-height: 24px;
+    }
+    .metric-card .m-value {
+      font-family: 'Oswald', sans-serif; font-size: 26px; font-weight: 600;
+      color: var(--text); line-height: 1;
+    }
+    .metric-card .m-sub { font-size: 11px; color: var(--muted2); margin-top: 6px; min-height: 14px; }
     .dkpi-spark {
       position: absolute; top: 10px; right: 10px;
       width: 100px; height: 36px;
@@ -573,6 +590,12 @@
         </div>
       </div>
 
+      <!-- Key metrics: subscriptions + rebills -->
+      <div class="section-label">Subscriptions</div>
+      <div class="metric-grid" id="metric-subs"></div>
+      <div class="section-label" style="margin-top:20px">Rebill status</div>
+      <div class="metric-grid" id="metric-rebills"></div>
+
       <!-- Revenue & Forecast -->
       <div class="section-label">Revenue &amp; forecast</div>
       <div class="row-2">
@@ -910,9 +933,9 @@ function renderKpis(k, sources) {
     '<span style="color:#7c3aed;font-weight:600">Whop</span> ' + $n(bySrc.whop) +
     '</span>';
   document.getElementById('kpi-row1').innerHTML = [
-    { label: 'MRR',                  value: $m(k.mrrCents),   sparkId: 'sp-subs',    sparkColor: '#f04e00' },
-    { label: 'Orders today',         value: $n(k.todayOrders),sparkId: 'sp-new',     sparkColor: '#22c55e', valId: 'kpi-orders-today', subId: 'kpi-orders-failed' },
-    { label: 'Active subscriptions', value: $n(k.activeSubs), sparkId: 'sp-cancels', sparkColor: '#3b82f6' }
+    { label: 'MRR',                    value: $m(k.mrrCents),  sparkId: 'sp-subs',    sparkColor: '#f04e00' },
+    { label: 'Total MRR collection',   value: '—',             sparkId: 'sp-new',     sparkColor: '#22c55e', valId: 'kpi-mrr-collected', subId: 'kpi-mrr-collected-sub' },
+    { label: 'Pending MRR collection', value: '—',             sparkId: 'sp-cancels', sparkColor: '#3b82f6', valId: 'kpi-mrr-pending',   subId: 'kpi-mrr-pending-sub' }
   ].map(function(c) {
     return '<div class="dkpi">' +
       '<div class="dkpi-period">30D</div>' +
@@ -942,6 +965,40 @@ function renderKpis(k, sources) {
       '<div class="kpi-delta">' + c.delta + '</div>' +
     '</div>';
   }).join('');
+
+  renderMetricCards(k);
+}
+
+/* ── Key-metric cards (subscriptions + rebill status) below the intraday chart ── */
+function metricCard(c) {
+  return '<div class="metric-card">' +
+    '<div class="m-label">' + c.label + '</div>' +
+    '<div class="m-value"' + (c.id ? ' id="' + c.id + '"' : '') +
+      (c.color ? ' style="color:' + c.color + '"' : '') + '>' + c.value + '</div>' +
+    (c.sub || c.subId
+      ? '<div class="m-sub"' + (c.subId ? ' id="' + c.subId + '"' : '') + '>' + (c.sub || '') + '</div>'
+      : '') +
+  '</div>';
+}
+function renderMetricCards(k) {
+  var subs = [
+    { label: 'Monthly recurring value',      value: $m(k.mrrCents) },
+    { label: 'Total active subscriptions',   value: $n(k.activeSubs) },
+    { label: 'New subscriptions today',      value: $n(k.newToday) },
+    { label: 'New subscriptions this week',  value: $n(k.newThisWeek) },
+    { label: 'Cancelled today',              value: $n(k.cancelsToday),    color: (k.cancelsToday    > 0 ? '#ef4444' : '') },
+    { label: 'Cancelled this week',          value: $n(k.cancelsThisWeek), color: (k.cancelsThisWeek > 0 ? '#ef4444' : '') }
+  ];
+  var rebills = [
+    { label: 'Today rebill success',            value: '—', id: 'm-rebill-success', color: '#16a34a' },
+    { label: 'Today rebill failed',             value: '—', id: 'm-rebill-failed',  color: '#ef4444' },
+    { label: 'Total rebill pending for charge', value: '—', id: 'm-rebill-pending', color: '#d97706' },
+    { label: 'Tomorrow expected rebill',        value: $m(k.tomorrowForecastCents), sub: $n(k.tomorrowRebillCount) + ' subscriptions due' }
+  ];
+  var s = document.getElementById('metric-subs');
+  if (s) s.innerHTML = subs.map(metricCard).join('');
+  var rb = document.getElementById('metric-rebills');
+  if (rb) rb.innerHTML = rebills.map(metricCard).join('');
 }
 
 /* ── Sparklines ── */
@@ -1511,6 +1568,7 @@ async function loadData() {
     renderKpis(d.kpis, d.sourceBreakdown || []);
     renderSparklines(d.newSubsTrend, d.cancelsTrend, d.revenueTrend);
     loadTodayRevenue();
+    loadMrrSummary();
     renderGreeting();
     renderRevChart(d.revenueTrend);
     renderForecastChart(d.forecast7d);
@@ -1864,15 +1922,11 @@ function renderIntradayChart(d) {
   var totals   = d.totals || {};
   var yest     = d.yesterday || {};
 
-  /* Keep the ORDERS TODAY KPI card in sync with this authoritative count.
-     The count is NET — failed/declined/skipped recurring attempts are excluded. */
-  var kpiOrdersEl = document.getElementById('kpi-orders-today');
-  if (kpiOrdersEl) kpiOrdersEl.textContent = (totals.orders || 0).toLocaleString();
-  var kpiFailedEl = document.getElementById('kpi-orders-failed');
-  if (kpiFailedEl) {
-    var fO = totals.failed_orders || 0;
-    kpiFailedEl.textContent = fO > 0 ? ('− ' + fO + ' failed / declined') : '';
-  }
+  /* Fill the "Rebill status" metric cards from this authoritative today split. */
+  var setM = function(id, v) { var e = document.getElementById(id); if (e) e.textContent = v; };
+  setM('m-rebill-success', (totals.success_orders || 0).toLocaleString());
+  setM('m-rebill-failed',  (totals.failed_orders  || 0).toLocaleString());
+  setM('m-rebill-pending', (totals.pending_orders || 0).toLocaleString());
 
   /* Big number + delta */
   var isRev = intradayTab === 'revenue';
@@ -2066,6 +2120,23 @@ async function loadTodayRevenue() {
     var d = await r.json();
     renderIntradayChart(d);
   } catch(e) { console.error('[today-revenue]', e); }
+}
+
+/* ── MRR collection (top-row centre/right cards) — loaded separately; heavier call ── */
+async function loadMrrSummary() {
+  try {
+    var r = await fetch('/admin/api/mrr-summary', { headers: H });
+    if (!r.ok) return;
+    var d = await r.json();
+    var col = document.getElementById('kpi-mrr-collected');
+    if (col) col.textContent = $m(d.collected_mtd_cents || 0);
+    var colSub = document.getElementById('kpi-mrr-collected-sub');
+    if (colSub) { colSub.textContent = (d.month || '') + ' to date'; colSub.style.color = 'var(--muted2)'; }
+    var pen = document.getElementById('kpi-mrr-pending');
+    if (pen) pen.textContent = $m(d.pending_mtd_cents || 0);
+    var penSub = document.getElementById('kpi-mrr-pending-sub');
+    if (penSub) { penSub.textContent = $n(d.pending_mtd_count || 0) + ' subs left this month'; penSub.style.color = 'var(--muted2)'; }
+  } catch(e) { console.error('[mrr-summary]', e); }
 }
 
 /* ── Greeting ── */
