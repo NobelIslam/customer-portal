@@ -911,46 +911,101 @@ const TEST_EMAILS = new Set([
 ]);
 
 /* ── Recharge: today's recurring charges, straight from the Charges API ──
-   Filter by BILLING DATE (date_min/date_max), NOT created_at. Recharge creates the
-   next cycle's charge the instant one succeeds, so created_at ≈ 30 days before money
-   actually moves — a created_at filter counts next-cycle charges, not today's billings.
-   The `date` filter targets the charge's scheduled/processed day; date_max is EXCLUSIVE.
-   Returns { billed, failed }:
-     billed = status QUEUED / SUCCESS / PENDING (captured or in-flight today)
-     failed = status ERROR / SKIPPED / REFUNDED (declined / skipped / reversed)        */
+   The `date`/`scheduled_at` filters are unreliable and miss same-day captures
+   (a charge scheduled/created on another day can still PROCESS today — e.g. a
+   retry). The field that reflects when money actually moved is `processed_at`.
+   Returns { billed, failed }, billed carrying its status so callers can split
+   captured (SUCCESS) vs in-flight (QUEUED):
+     billed  = SUCCESS charges processed today  +  QUEUED charges scheduled today
+     failed  = ERROR / SKIPPED charges scheduled today (declined / skipped)
+   Recharge timestamps are shop-local (Europe/Berlin = Amsterdam) → amsParseLocal. */
 async function fetchRechargeRebillsToday(todayStart, todayEnd, todayAms) {
   var key = process.env.RECHARGE_API_KEY;
   if (!key) return { billed: [], failed: [] };
   var headers = { 'X-Recharge-Access-Token': key, 'Content-Type': 'application/json' };
-  var BILLED  = { QUEUED: 1, SUCCESS: 1, PENDING: 1 };
-  var FAILED  = { SKIPPED: 1, ERROR: 1, REFUNDED: 1 };
-  var tomorrowAms = amsDateStr(new Date(todayStart.getTime() + 24 * 3600 * 1000));
-  var billed = [], failed = [], page = 1, limit = 250;
+  var billed = [], failed = [], nowTs = new Date();
+
+  function mkRow(c, ts) {
+    return {
+      email:       (c.email || '').toLowerCase().trim(),
+      first_name:  c.first_name || null,
+      last_name:   c.last_name  || null,
+      product:     (c.line_items && c.line_items[0] && c.line_items[0].title) || null,
+      price_cents: Math.round(parseFloat(c.total_price || 0) * 100),
+      ts:          ts || nowTs,
+      status:      c.status
+    };
+  }
+  function keep(c) {
+    if (c.type !== 'RECURRING') return false;
+    var em = (c.email || '').toLowerCase().trim();
+    return em && !TEST_EMAILS.has(em);
+  }
+  function inToday(d) { return d && d >= todayStart && d < todayEnd; }
+
   try {
-    while (page <= 20) {
-      var url = RC_API_BASE + '/charges?limit=' + limit + '&page=' + page +
-                '&date_min=' + todayAms + '&date_max=' + tomorrowAms;
-      var r = await fetch(url, { headers });
+    /* 1) SUCCESS charges that PROCESSED today (money captured today).
+          Sorted newest-updated first; stop once a page is fully older than today. */
+    var page = 1;
+    while (page <= 40) {
+      var r = await fetch(RC_API_BASE + '/charges?limit=250&page=' + page +
+              '&status=success&sort_by=updated_at-desc', { headers });
       var d = await r.json();
-      var charges = d.charges || [];
-      charges.forEach(function(c) {
-        if (c.type !== 'RECURRING') return;
-        var email = (c.email || '').toLowerCase().trim();
-        if (!email || TEST_EMAILS.has(email)) return;
-        var row = {
-          email:       email,
-          first_name:  c.first_name || null,
-          last_name:   c.last_name  || null,
-          product:     (c.line_items && c.line_items[0] && c.line_items[0].title) || null,
-          price_cents: Math.round(parseFloat(c.total_price || 0) * 100),
-          ts:          amsParseLocal(c.processed_at || c.scheduled_at || c.created_at),
-          status:      c.status
-        };
-        if (BILLED[c.status])      billed.push(row);
-        else if (FAILED[c.status]) failed.push(row);
+      var ch = d.charges || [];
+      if (!ch.length) break;
+      var pageOldest = null;
+      ch.forEach(function(c) {
+        var p = amsParseLocal(c.processed_at);
+        if (p && (!pageOldest || p < pageOldest)) pageOldest = p;
+        if (keep(c) && inToday(p)) billed.push(mkRow(c, p));
       });
-      if (charges.length < limit) break;
+      if (pageOldest && pageOldest < todayStart) break;   /* gone past today */
       page++;
+    }
+
+    /* 2) QUEUED charges SCHEDULED today (due today, not yet captured = pending).
+          Sorted by scheduled_at asc; collect today, stop once we pass today. */
+    page = 1;
+    while (page <= 40) {
+      var rq = await fetch(RC_API_BASE + '/charges?limit=250&page=' + page +
+               '&status=queued&sort_by=scheduled_at-asc', { headers });
+      var dq = await rq.json();
+      var chq = dq.charges || [];
+      if (!chq.length) break;
+      var passedToday = false;
+      chq.forEach(function(c) {
+        var day = (c.scheduled_at || '').slice(0, 10);
+        if (day < todayAms) return;                 /* overdue/earlier — skip */
+        if (day > todayAms) { passedToday = true; return; }
+        if (keep(c)) billed.push(mkRow(c, amsParseLocal(c.scheduled_at)));
+      });
+      if (passedToday || chq.length < 250) break;
+      page++;
+    }
+
+    /* 3) ERROR / SKIPPED charges for today (failed attempts). Recently updated
+          first; match those scheduled or processed today. */
+    var failStatuses = ['error', 'skipped'];
+    for (var fi = 0; fi < failStatuses.length; fi++) {
+      var pg = 1;
+      while (pg <= 10) {
+        var rf = await fetch(RC_API_BASE + '/charges?limit=250&page=' + pg +
+                 '&status=' + failStatuses[fi] + '&sort_by=updated_at-desc', { headers });
+        var df = await rf.json();
+        var chf = df.charges || [];
+        if (!chf.length) break;
+        var pageOldestUpd = null;
+        chf.forEach(function(c) {
+          var upd = amsParseLocal(c.updated_at);
+          if (upd && (!pageOldestUpd || upd < pageOldestUpd)) pageOldestUpd = upd;
+          if (!keep(c)) return;
+          var schedToday = (c.scheduled_at || '').slice(0, 10) === todayAms;
+          var procToday  = inToday(amsParseLocal(c.processed_at));
+          if (schedToday || procToday) failed.push(mkRow(c, amsParseLocal(c.scheduled_at)));
+        });
+        if (pageOldestUpd && pageOldestUpd < todayStart) break;
+        pg++;
+      }
     }
   } catch (e) { console.error('[recharge-rebills] fetch failed:', e.message); }
   return { billed: billed, failed: failed };
