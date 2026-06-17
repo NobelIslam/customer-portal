@@ -213,7 +213,7 @@
     .dkpi-sub:empty { margin-top: 0; }
     /* ── Key-metric cards (below intraday chart) ── */
     .metric-grid {
-      display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 12px;
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
     }
     .metric-card {
       background: var(--bg2); border: 1px solid var(--border);
@@ -280,7 +280,7 @@
       background: none; border: none; font-family: inherit;
     }
     .chart-tab.on { background: #f04e00; color: #fff; }
-    .intraday-chart-wrap { height: 210px; position: relative; }
+    .intraday-chart-wrap { flex: 1; min-height: 210px; position: relative; }
 
     /* ── Invoice / Breakdown panel ── */
     .bk-label {
@@ -580,16 +580,16 @@
             </div>
           </div>
           <div class="intraday-chart-wrap"><canvas id="intraday-chart"></canvas></div>
-          <!-- Key metrics — inside the chart panel -->
-          <div class="metric-grid" id="metric-subs" style="margin-top:16px"></div>
         </div>
-        <!-- Right: invoice breakdown -->
+        <!-- Right: invoice breakdown + key metrics -->
         <div class="dark-panel">
           <div class="bk-label">Sales Receipt</div>
           <div class="bk-total" id="bk-total">—</div>
           <div class="inv-date" id="inv-date">—</div>
           <div id="bk-rows"></div>
           <div id="bk-stats" class="inv-footer"></div>
+          <!-- Key metrics — under the sales receipt -->
+          <div class="metric-grid" id="metric-subs" style="margin-top:16px"></div>
         </div>
       </div>
 
