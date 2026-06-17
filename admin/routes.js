@@ -1864,7 +1864,11 @@ router.get('/api/today-revenue', async function(req, res) {
           if (p.status === 'open') { pendO++; pendC += p.price_cents || 0; }
           else                     { failO++; failC += p.price_cents || 0; }
         });
+        var rows = wh.billed.map(function(p) {
+          return { ts: p.ts || now, price_cents: p.price_cents || 0, source: 'whop', confirmed: true };
+        });
         return {
+          rows: rows,
           wh_cents: cents, wh_orders: wh.billed.length,
           success: { orders: wh.billed.length, cents: cents },
           pending: { orders: pendO, cents: pendC },
@@ -1875,20 +1879,23 @@ router.get('/api/today-revenue', async function(req, res) {
 
     const ccRows  = ccResult.rows;
     const rcRows  = rcResult.rows;
+    const whRows  = whopResult.rows || [];
     const whopRow = whopResult;
 
-    /* Aggregate by Amsterdam hour.
-       Revenue: only confirmed CC + confirmed RC billed (not scheduled).
-       Order count: all rows including scheduled. */
+    /* Aggregate by Amsterdam hour — ALL platforms (CC + Recharge + Whop) so the
+       chart's order count matches the day's total. */
     const hourMap = {};
-    var ccCents = 0, rcCents = 0;
-    ccRows.concat(rcRows).forEach(function(o) {
+    var ccCents = 0, rcCents = 0, whCentsHour = 0;
+    ccRows.concat(rcRows).concat(whRows).forEach(function(o) {
       var h = parseInt(o.ts.toLocaleString('en-US', { timeZone: 'Europe/Amsterdam', hour: 'numeric', hour12: false })) % 24;
       if (!hourMap[h]) hourMap[h] = { revenue_cents: 0, orders: 0 };
       hourMap[h].orders++;
       if (o.source === 'cc') {
         hourMap[h].revenue_cents += o.price_cents;
         ccCents += o.price_cents;
+      } else if (o.source === 'whop') {
+        hourMap[h].revenue_cents += o.price_cents;
+        whCentsHour += o.price_cents;
       } else if (o.confirmed) {
         hourMap[h].revenue_cents += o.price_cents;
         rcCents += o.price_cents;
