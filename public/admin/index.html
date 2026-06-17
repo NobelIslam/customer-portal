@@ -2038,10 +2038,38 @@ function renderIntradayChart(d) {
     }
   };
 
+  /* Orders mode: one dot per order — stack N dots vertically at each hour so a
+     2-order hour shows 2 dots and the dots total the day's order count. */
+  var orderDotsPlugin = {
+    id: 'orderDots',
+    afterDatasetsDraw: function(chart) {
+      if (isRev) return;
+      var meta = chart.getDatasetMeta(0);
+      var yScale = chart.scales.y;
+      if (!meta || !meta.data || !yScale) return;
+      var c = chart.ctx;
+      c.save();
+      meta.data.forEach(function(pt, i) {
+        var n = Math.round(dataPoints[i] || 0);
+        for (var k = 1; k <= n; k++) {
+          var y = yScale.getPixelForValue(k);
+          c.beginPath();
+          c.arc(pt.x, y, 3.5, 0, Math.PI * 2);
+          c.fillStyle = '#00e676';
+          c.fill();
+          c.lineWidth = 1.5;
+          c.strokeStyle = '#ffffff';
+          c.stroke();
+        }
+      });
+      c.restore();
+    }
+  };
+
   if (intradayChart) intradayChart.destroy();
   intradayChart = new Chart(canvas, {
     type: 'line',
-    plugins: [glowPlugin, nowLinePlugin],
+    plugins: [glowPlugin, nowLinePlugin, orderDotsPlugin],
     data: {
       labels: labels,
       datasets: [{
@@ -2051,7 +2079,7 @@ function renderIntradayChart(d) {
         fill:                      true,
         tension:                   0.45,
         borderWidth:               2.5,
-        pointRadius:               function(ctx) { var v = ctx.dataset.data[ctx.dataIndex]; return (v && v > 0) ? 3 : 0; },
+        pointRadius:               function(ctx) { var v = ctx.dataset.data[ctx.dataIndex]; return (isRev && v && v > 0) ? 3 : 0; },
         pointBackgroundColor:      '#00e676',
         pointBorderColor:          '#ffffff',
         pointBorderWidth:          1.5,
