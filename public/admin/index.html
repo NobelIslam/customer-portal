@@ -590,11 +590,9 @@
         </div>
       </div>
 
-      <!-- Key metrics: subscriptions + rebills -->
+      <!-- Key metrics -->
       <div class="section-label">Subscriptions</div>
       <div class="metric-grid" id="metric-subs"></div>
-      <div class="section-label" style="margin-top:20px">Rebill status</div>
-      <div class="metric-grid" id="metric-rebills"></div>
 
       <!-- Revenue & Forecast -->
       <div class="section-label">Revenue &amp; forecast</div>
@@ -933,9 +931,10 @@ function renderKpis(k, sources) {
     '<span style="color:#7c3aed;font-weight:600">Whop</span> ' + $n(bySrc.whop) +
     '</span>';
   document.getElementById('kpi-row1').innerHTML = [
-    { label: 'MRR',                    value: $m(k.mrrCents),  sparkId: 'sp-subs',    sparkColor: '#f04e00' },
-    { label: 'Total MRR collection',   value: '—',             sparkId: 'sp-new',     sparkColor: '#22c55e', valId: 'kpi-mrr-collected', subId: 'kpi-mrr-collected-sub' },
-    { label: 'Pending MRR collection', value: '—',             sparkId: 'sp-cancels', sparkColor: '#3b82f6', valId: 'kpi-mrr-pending',   subId: 'kpi-mrr-pending-sub' }
+    { label: 'MRR',                      value: $m(k.mrrCents),  sparkId: 'sp-subs',    sparkColor: '#f04e00' },
+    { label: 'Total MRR collection',     value: '—',             sparkId: 'sp-new',     sparkColor: '#22c55e', valId: 'kpi-mrr-collected', subId: 'kpi-mrr-collected-sub' },
+    { label: 'Pending MRR collection',   value: '—',             sparkId: 'sp-cancels', sparkColor: '#3b82f6', valId: 'kpi-mrr-pending',   subId: 'kpi-mrr-pending-sub' },
+    { label: 'Total active subscriptions', value: $n(k.activeSubs), sparkId: 'sp-active', sparkColor: '#3b82f6' }
   ].map(function(c) {
     return '<div class="dkpi">' +
       '<div class="dkpi-period">30D</div>' +
@@ -945,7 +944,7 @@ function renderKpis(k, sources) {
       '<div class="dkpi-spark"><canvas id="' + c.sparkId + '"></canvas></div>' +
     '</div>';
   }).join('');
-  document.getElementById('kpi-row1').className = 'grid-3';
+  document.getElementById('kpi-row1').className = 'grid-4';
 
   /* Row 2: supporting stats */
   var net = k.netToday || 0;
@@ -981,23 +980,14 @@ function metricCard(c) {
   '</div>';
 }
 function renderMetricCards(k) {
-  var subs = [
-    { label: 'Total active subscriptions',   value: $n(k.activeSubs) },
+  var cards = [
     { label: 'New subscriptions today',      value: $n(k.newToday) },
     { label: 'New subscriptions this week',  value: $n(k.newThisWeek) },
-    { label: 'Cancelled today',              value: $n(k.cancelsToday),    color: (k.cancelsToday    > 0 ? '#ef4444' : '') },
-    { label: 'Cancelled this week',          value: $n(k.cancelsThisWeek), color: (k.cancelsThisWeek > 0 ? '#ef4444' : '') }
-  ];
-  var rebills = [
-    { label: 'Today rebill success',            value: '—', id: 'm-rebill-success', color: '#16a34a' },
-    { label: 'Today rebill failed',             value: '—', id: 'm-rebill-failed',  color: '#ef4444' },
-    { label: 'Total rebill pending for charge', value: '—', id: 'm-rebill-pending', color: '#d97706' },
-    { label: 'Tomorrow expected rebill',        value: $m(k.tomorrowForecastCents), sub: $n(k.tomorrowRebillCount) + ' subscriptions due' }
+    { label: 'Cancelled today',              value: $n(k.cancelsToday), color: (k.cancelsToday > 0 ? '#ef4444' : '') },
+    { label: 'Tomorrow expected rebill',     value: $m(k.tomorrowForecastCents), sub: $n(k.tomorrowRebillCount) + ' subscriptions due' }
   ];
   var s = document.getElementById('metric-subs');
-  if (s) s.innerHTML = subs.map(metricCard).join('');
-  var rb = document.getElementById('metric-rebills');
-  if (rb) rb.innerHTML = rebills.map(metricCard).join('');
+  if (s) s.innerHTML = cards.map(metricCard).join('');
 }
 
 /* ── Sparklines ── */
@@ -1920,12 +1910,6 @@ function renderIntradayChart(d) {
   var hourly   = d.hourly || [];
   var totals   = d.totals || {};
   var yest     = d.yesterday || {};
-
-  /* Fill the "Rebill status" metric cards from this authoritative today split. */
-  var setM = function(id, v) { var e = document.getElementById(id); if (e) e.textContent = v; };
-  setM('m-rebill-success', (totals.success_orders || 0).toLocaleString());
-  setM('m-rebill-failed',  (totals.failed_orders  || 0).toLocaleString());
-  setM('m-rebill-pending', (totals.pending_orders || 0).toLocaleString());
 
   /* Big number + delta */
   var isRev = intradayTab === 'revenue';
