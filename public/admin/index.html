@@ -2051,7 +2051,10 @@ function renderIntradayChart(d) {
         fill:                      true,
         tension:                   0.45,
         borderWidth:               2.5,
-        pointRadius:               0,
+        pointRadius:               function(ctx) { var v = ctx.dataset.data[ctx.dataIndex]; return (v && v > 0) ? 3 : 0; },
+        pointBackgroundColor:      '#00e676',
+        pointBorderColor:          '#ffffff',
+        pointBorderWidth:          1.5,
         pointHoverRadius:          5,
         pointHoverBackgroundColor: '#00e676',
         pointHoverBorderColor:     '#fff',
@@ -2060,6 +2063,7 @@ function renderIntradayChart(d) {
     },
     options: {
       responsive: true, maintainAspectRatio: false,
+      layout: { padding: { top: 18 } },
       animation: { duration: 1000, easing: 'easeOutCubic' },
       animations: {
         y: {
@@ -2091,7 +2095,7 @@ function renderIntradayChart(d) {
           grid:   { color: 'rgba(0,0,0,.05)' },
           border: { display: false }
         },
-        y: { display: false, beginAtZero: true }
+        y: { display: false, beginAtZero: true, grace: '12%' }
       }
     }
   });
