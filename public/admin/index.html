@@ -2038,10 +2038,32 @@ function renderIntradayChart(d) {
     }
   };
 
+  /* Draw each hour's order count just above its dot (Orders mode only). */
+  var pointCountPlugin = {
+    id: 'pointCounts',
+    afterDatasetsDraw: function(chart) {
+      if (isRev) return;
+      var meta = chart.getDatasetMeta(0);
+      if (!meta || !meta.data) return;
+      var c = chart.ctx;
+      c.save();
+      c.font = '700 10px Inter, sans-serif';
+      c.fillStyle = '#15803d';
+      c.textAlign = 'center';
+      c.textBaseline = 'bottom';
+      meta.data.forEach(function(pt, i) {
+        var v = dataPoints[i];
+        if (!v || v <= 0) return;
+        c.fillText(String(v), pt.x, pt.y - 8);
+      });
+      c.restore();
+    }
+  };
+
   if (intradayChart) intradayChart.destroy();
   intradayChart = new Chart(canvas, {
     type: 'line',
-    plugins: [glowPlugin, nowLinePlugin],
+    plugins: [glowPlugin, nowLinePlugin, pointCountPlugin],
     data: {
       labels: labels,
       datasets: [{
