@@ -379,9 +379,10 @@ async function syncRecharge(opts) {
 }
 
 async function upsertRechargeSub(s) {
-  /* Recharge sub doesn't carry email directly — need a customer lookup
-     For sync efficiency we cache customer-id → email in a small map */
-  const email = await getRechargeEmail(s.customer_id);
+  /* Recharge subscription objects carry `email` directly — use it. The old
+     per-customer /customers lookup rate-limited and (when it failed) cached null
+     permanently, silently dropping hundreds of active subs from the sync. */
+  const email = (s.email || '').trim().toLowerCase() || await getRechargeEmail(s.customer_id);
   if (!email) return;
 
   const customerId = await db.upsertCustomer({
@@ -451,12 +452,13 @@ async function getRechargeEmail(customerId) {
   const email = d.customer && d.customer.email
     ? d.customer.email.toLowerCase().trim()
     : null;
-  _rcEmailCache.set(key, email);
+  /* Only cache successful lookups — caching null made transient failures permanent. */
+  if (email) _rcEmailCache.set(key, email);
   return email;
 }
 
 async function upsertRechargeCharge(c) {
-  const email = await getRechargeEmail(c.customer_id);
+  const email = (c.email || '').trim().toLowerCase() || await getRechargeEmail(c.customer_id);
   if (!email) return;
 
   const customerId = await db.upsertCustomer({ email: email, recharge_id: String(c.customer_id) });

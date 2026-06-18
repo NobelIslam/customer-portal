@@ -2170,6 +2170,33 @@ router.get('/api/mrr-summary', async function(req, res) {
   }
 });
 
+/* ── GET /admin/api/debug/mrr-verify — DB active-subscription stats by source.
+   Lets us confirm the sync captured everything (vs the live platform APIs).        */
+router.get('/api/debug/mrr-verify', async function(req, res) {
+  try {
+    const NO_PAYPAL = `AND NOT (source = 'cc' AND raw->>'merchant' ILIKE '%paypal%')
+      AND NOT (source = 'cc' AND COALESCE(NULLIF(TRIM(raw->>'merchant'), ''), '') = '')`;
+    const rows = await db.many(`
+      SELECT source,
+             COUNT(*)::int                                                        AS active_total,
+             COUNT(*) FILTER (WHERE next_bill_at >= NOW())::int                   AS active_future,
+             COALESCE(SUM(price_cents),0)::bigint                                 AS price_sum_cents,
+             COALESCE(SUM(price_cents) FILTER (WHERE next_bill_at >= NOW()),0)::bigint AS mrr_cents,
+             MAX(last_synced_at)                                                  AS last_synced
+      FROM subscriptions
+      WHERE status = 'ACTIVE' ${NO_PAYPAL}
+      GROUP BY source ORDER BY source
+    `, []);
+    const total = await db.one(`
+      SELECT COALESCE(SUM(price_cents) FILTER (WHERE next_bill_at >= NOW()),0)::bigint AS mrr_cents,
+             COUNT(*) FILTER (WHERE next_bill_at >= NOW())::int AS active_future
+      FROM subscriptions WHERE status = 'ACTIVE' ${NO_PAYPAL}`, []);
+    res.json({ by_source: rows, total: total, as_of: new Date().toISOString() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* ── GET /admin/api/debug/today-breakdown
    Side-by-side comparison: DB subscriptions scheduled for today
    vs CC API recurring orders charged today.
