@@ -79,27 +79,40 @@ function amsParseLocal(s) {
 
 function delay(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
 
-/* Resilient JSON fetch for flaky upstream APIs. CheckoutChamp / Whop / Shopify
-   intermittently reset the connection on Render, which makes node-fetch throw
-   "Invalid response body" — a single drop would otherwise zero out a whole source.
-   Retries the full fetch+body-read with backoff. Reads via text() so a partial
-   body surfaces as a retryable error, and tolerates non-JSON bodies.            */
-async function apiJSON(url, opts, tries) {
+/* Resilient fetch for flaky upstream APIs. CheckoutChamp / Whop / Shopify / Recharge
+   intermittently reset the connection on Render, which node-fetch surfaces as
+   "Invalid response body" / "Premature close". A single drop would otherwise blow up
+   a request (500) or zero out a source. fetchR buffers the FULL body and retries the
+   whole fetch+read with backoff, returning a Response-like object whose
+   .json()/.text()/.headers read from the buffer — so callers never hit a body error.
+   Drop-in for `fetch` (all external calls in this file route through it).         */
+async function fetchR(url, opts, tries) {
   tries = tries || 3;
   var lastErr;
   for (var i = 0; i < tries; i++) {
     try {
-      var r   = await fetch(url, opts);
-      var txt = await r.text();
-      var json = null;
-      if (txt) { try { json = JSON.parse(txt); } catch (e) { json = null; } }
-      return { ok: r.ok, status: r.status, json: json };
+      var r    = await fetch(url, opts);
+      var body = await r.text();
+      var ok = r.ok, status = r.status, headers = r.headers;
+      return {
+        ok: ok, status: status, headers: headers,
+        text: function() { return Promise.resolve(body); },
+        json: function() { return Promise.resolve(body ? JSON.parse(body) : null); }
+      };
     } catch (e) {
       lastErr = e;
       if (i < tries - 1) await delay(350 * (i + 1));
     }
   }
   throw lastErr;
+}
+
+/* JSON convenience wrapper over fetchR; tolerates non-JSON bodies (json:null). */
+async function apiJSON(url, opts, tries) {
+  var r = await fetchR(url, opts, tries);
+  var json = null;
+  try { json = await r.json(); } catch (e) { json = null; }
+  return { ok: r.ok, status: r.status, json: json };
 }
 
 function adminCreateToken(payload) {
@@ -546,7 +559,7 @@ router.get('/api/cc/purchases', async function(req, res) {
     if (req.query.status) extra.status = req.query.status;
 
     const url = 'https://api.checkoutchamp.com/purchase/query/?' + ccTestParams(extra);
-    const r   = await fetch(url, { method: 'POST' });
+    const r   = await fetchR(url, { method: 'POST' });
     const raw = await r.text();
 
     let d;
@@ -598,7 +611,7 @@ router.get('/api/cc/purchases/summary', async function(req, res) {
 
     while (page <= 100) {
       const url = 'https://api.checkoutchamp.com/purchase/query/?' + ccTestParams({ startDate, endDate, resultsPerPage: limit, page });
-      const r   = await fetch(url, { method: 'POST' });
+      const r   = await fetchR(url, { method: 'POST' });
       const d   = await r.json();
       if (page === 1) ccTotalCount = (d.message && d.message.totalCount) || null;
       const rows = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
@@ -665,7 +678,7 @@ router.get('/api/cc/members', async function(req, res) {
       page:           page
     });
 
-    const r   = await fetch(url, { method: 'POST' });
+    const r   = await fetchR(url, { method: 'POST' });
     const raw = await r.text();
     let d;
     try { d = JSON.parse(raw); } catch(e) {
@@ -711,14 +724,14 @@ router.get('/api/cc/db-vs-cc', async function(req, res) {
     const url30 = 'https://api.checkoutchamp.com/purchase/query/?' + ccTestParams({
       startDate: ccFmtDate(ago30), endDate: ccFmtDate(tomorrow), resultsPerPage: 1, page: 1
     });
-    const r30  = await fetch(url30, { method: 'POST' });
+    const r30  = await fetchR(url30, { method: 'POST' });
     const d30  = await r30.json();
 
     /* CC API — all time (from 2015 epoch) */
     const url2y  = 'https://api.checkoutchamp.com/purchase/query/?' + ccTestParams({
       startDate: '01/01/2015', endDate: ccFmtDate(tomorrow), resultsPerPage: 1, page: 1
     });
-    const r2y  = await fetch(url2y, { method: 'POST' });
+    const r2y  = await fetchR(url2y, { method: 'POST' });
     const d2y  = await r2y.json();
 
     res.json({
@@ -766,7 +779,7 @@ router.get('/api/debug/cc-orders', async function(req, res) {
       sortDir:        -1
     });
 
-    const r    = await fetch('https://api.checkoutchamp.com/order/query/?' + params.toString(), { method: 'POST' });
+    const r    = await fetchR('https://api.checkoutchamp.com/order/query/?' + params.toString(), { method: 'POST' });
     const raw  = await r.text();
     let parsed;
     try { parsed = JSON.parse(raw); } catch(e) { parsed = null; }
@@ -803,18 +816,18 @@ router.get('/api/debug/rc-charges', async function(req, res) {
     const headers = { 'X-Recharge-Access-Token': RC_KEY, 'Content-Type': 'application/json' };
 
     /* 1. Find customer by email */
-    const custR = await fetch('https://api.rechargeapps.com/customers?email=' + encodeURIComponent(email), { headers });
+    const custR = await fetchR('https://api.rechargeapps.com/customers?email=' + encodeURIComponent(email), { headers });
     const custD = await custR.json();
     const customer = custD.customers && custD.customers[0];
 
     if (!customer) return res.json({ found: false, email, note: 'No Recharge customer found for this email' });
 
     /* 2. Fetch subscriptions for this customer */
-    const subR = await fetch('https://api.rechargeapps.com/subscriptions?customer_id=' + customer.id, { headers });
+    const subR = await fetchR('https://api.rechargeapps.com/subscriptions?customer_id=' + customer.id, { headers });
     const subD = await subR.json();
 
     /* 3. Fetch recent charges (last 5) */
-    const chgR = await fetch('https://api.rechargeapps.com/charges?customer_id=' + customer.id + '&limit=5&sort_by=scheduled_at-desc', { headers });
+    const chgR = await fetchR('https://api.rechargeapps.com/charges?customer_id=' + customer.id + '&limit=5&sort_by=scheduled_at-desc', { headers });
     const chgD = await chgR.json();
 
     /* 4. Also check our local DB */
@@ -853,7 +866,7 @@ router.get('/api/debug/rc-today-charges', async function(req, res) {
     /* Fetch last 2 days of charges — same window used by today-orders */
     const url = RC_API_BASE + '/charges?status=success&limit=250&page=1' +
       '&created_at_min=' + yesterday.toISOString();
-    const r = await fetch(url, { headers });
+    const r = await fetchR(url, { headers });
     const d = await r.json();
     const all = d.charges || [];
 
@@ -888,7 +901,7 @@ router.get('/api/shopify/tracking', async function(req, res) {
       '?email=' + encodeURIComponent(email) +
       '&status=any&limit=10&fields=id,name,created_at,fulfillment_status,fulfillments';
 
-    const r = await fetch(url, {
+    const r = await fetchR(url, {
       headers: { 'X-Shopify-Access-Token': SHOPIFY_TOKEN, 'Content-Type': 'application/json' }
     });
     if (!r.ok) {
@@ -973,7 +986,7 @@ async function fetchRechargeRebillsToday(todayStart, todayEnd, todayAms) {
           Sorted newest-updated first; stop once a page is fully older than today. */
     var page = 1;
     while (page <= 40) {
-      var r = await fetch(RC_API_BASE + '/charges?limit=250&page=' + page +
+      var r = await fetchR(RC_API_BASE + '/charges?limit=250&page=' + page +
               '&status=success&sort_by=updated_at-desc', { headers });
       var d = await r.json();
       var ch = d.charges || [];
@@ -992,7 +1005,7 @@ async function fetchRechargeRebillsToday(todayStart, todayEnd, todayAms) {
           Sorted by scheduled_at asc; collect today, stop once we pass today. */
     page = 1;
     while (page <= 40) {
-      var rq = await fetch(RC_API_BASE + '/charges?limit=250&page=' + page +
+      var rq = await fetchR(RC_API_BASE + '/charges?limit=250&page=' + page +
                '&status=queued&sort_by=scheduled_at-asc', { headers });
       var dq = await rq.json();
       var chq = dq.charges || [];
@@ -1014,7 +1027,7 @@ async function fetchRechargeRebillsToday(todayStart, todayEnd, todayAms) {
     for (var fi = 0; fi < failStatuses.length; fi++) {
       var pg = 1;
       while (pg <= 10) {
-        var rf = await fetch(RC_API_BASE + '/charges?limit=250&page=' + pg +
+        var rf = await fetchR(RC_API_BASE + '/charges?limit=250&page=' + pg +
                  '&status=' + failStatuses[fi] + '&sort_by=updated_at-desc', { headers });
         var df = await rf.json();
         var chf = df.charges || [];
@@ -1407,7 +1420,7 @@ router.get('/api/activity-feed', auth.requireAdmin, async function(req, res) {
             startDate: ccStart, endDate: ccEnd,
             status: 'CANCELLED', resultsPerPage: 200, page: page
           });
-          const r = await fetch(CC_API_BASE + '/purchase/query/?' + p.toString(), { method: 'POST' });
+          const r = await fetchR(CC_API_BASE + '/purchase/query/?' + p.toString(), { method: 'POST' });
           const d = await r.json();
           const subs = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
           subs.forEach(function(s) {
@@ -1438,7 +1451,7 @@ router.get('/api/activity-feed', auth.requireAdmin, async function(req, res) {
           const url = RC_API_BASE + '/charges?limit=250&page=' + page +
             '&created_at_min=' + encodeURIComponent(since.toISOString()) +
             '&status=success';
-          const r = await fetch(url, { headers: rcHeaders });
+          const r = await fetchR(url, { headers: rcHeaders });
           const d = await r.json();
           const charges = d.charges || [];
           charges.forEach(function(c) {
@@ -1468,7 +1481,7 @@ router.get('/api/activity-feed', auth.requireAdmin, async function(req, res) {
           const url = RC_API_BASE + '/charges?limit=250&page=' + page +
             '&created_at_min=' + encodeURIComponent(since.toISOString()) +
             '&status=error';
-          const r = await fetch(url, { headers: rcHeaders });
+          const r = await fetchR(url, { headers: rcHeaders });
           const d = await r.json();
           const charges = d.charges || [];
           charges.forEach(function(c) {
@@ -1498,7 +1511,7 @@ router.get('/api/activity-feed', auth.requireAdmin, async function(req, res) {
         while (page <= 5) {
           const url = RC_API_BASE + '/subscriptions?limit=250&page=' + page +
             '&created_at_min=' + encodeURIComponent(since.toISOString());
-          const r = await fetch(url, { headers: rcHeaders });
+          const r = await fetchR(url, { headers: rcHeaders });
           const d = await r.json();
           const batch = d.subscriptions || [];
           batch.forEach(function(s) { if (s.customer_id) subs.push(s); });
@@ -1532,7 +1545,7 @@ router.get('/api/activity-feed', auth.requireAdmin, async function(req, res) {
           const url = RC_API_BASE + '/subscriptions?limit=250&page=' + page +
             '&updated_at_min=' + encodeURIComponent(since.toISOString()) +
             '&status=cancelled';
-          const r = await fetch(url, { headers: rcHeaders });
+          const r = await fetchR(url, { headers: rcHeaders });
           const d = await r.json();
           const batch = d.subscriptions || [];
           batch.forEach(function(s) {
@@ -1618,7 +1631,7 @@ router.post('/api/magic-link', async function(req, res) {
           clubId: CC_CLUB_ID, loginId: CC_LOGIN_ID, password: CC_API_PASS,
           emailAddress: email, startDate: '01/01/2016', endDate, resultsPerPage: 200
         });
-        const r = await fetch(CC_API_BASE + '/members/query/?' + params.toString(), { method: 'POST' });
+        const r = await fetchR(CC_API_BASE + '/members/query/?' + params.toString(), { method: 'POST' });
         const d = await r.json();
         if (d.result === 'SUCCESS' && d.message && d.message.data && d.message.data.length > 0) {
           const records = d.message.data;
@@ -1665,7 +1678,7 @@ router.get('/api/debug/cc-billed-today', async function(req, res) {
         loginId: process.env.CC_LOGIN_ID, password: process.env.CC_API_PASSWORD,
         startDate: todayStr, endDate: todayStr, resultsPerPage: 200, page, sortDir: -1
       });
-      const r = await fetch(CC_API_BASE + '/order/query/?' + p.toString(), { method: 'POST' });
+      const r = await fetchR(CC_API_BASE + '/order/query/?' + p.toString(), { method: 'POST' });
       const d = await r.json();
       const batch = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
       allOrders = allOrders.concat(batch);
@@ -1724,7 +1737,7 @@ router.get('/api/debug/billed-and-exported', async function(req, res) {
         loginId: process.env.CC_LOGIN_ID, password: process.env.CC_API_PASSWORD,
         startDate, endDate, resultsPerPage: 200, page, sortDir: -1
       });
-      const r = await fetch(CC_API_BASE + '/order/query/?' + p.toString(), { method: 'POST' });
+      const r = await fetchR(CC_API_BASE + '/order/query/?' + p.toString(), { method: 'POST' });
       const d = await r.json();
       const batch = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
       const recurring = batch.filter(function(o) {
@@ -1748,7 +1761,7 @@ router.get('/api/debug/billed-and-exported', async function(req, res) {
           loginId: process.env.CC_LOGIN_ID, password: process.env.CC_API_PASSWORD,
           purchaseId: pid, resultsPerPage: 1, page: 1
         });
-        const r = await fetch(CC_API_BASE + '/purchase/query/?' + p.toString(), { method: 'POST' });
+        const r = await fetchR(CC_API_BASE + '/purchase/query/?' + p.toString(), { method: 'POST' });
         const d = await r.json();
         const row = (d.result === 'SUCCESS' && d.message && d.message.data && d.message.data[0]);
         if (row) purchaseMap[pid] = { nextBillDate: row.nextBillDate, status: row.status, merchant: row.merchant };
@@ -1768,7 +1781,7 @@ router.get('/api/debug/billed-and-exported', async function(req, res) {
           const url = 'https://' + SHOPIFY_STORE + '/admin/api/2024-01/orders.json' +
             '?email=' + encodeURIComponent(email) +
             '&status=any&limit=5&fields=id,name,created_at,fulfillment_status,fulfillments';
-          const r = await fetch(url, { headers: { 'X-Shopify-Access-Token': SHOPIFY_TOKEN } });
+          const r = await fetchR(url, { headers: { 'X-Shopify-Access-Token': SHOPIFY_TOKEN } });
           if (r.ok) {
             const d = await r.json();
             const orders = (d.orders || []);
@@ -2275,7 +2288,7 @@ router.get('/api/debug/today-breakdown', async function(req, res) {
             loginId: process.env.CC_LOGIN_ID, password: process.env.CC_API_PASSWORD,
             startDate: todayStr, endDate: todayStr, resultsPerPage: 200, page: page, sortDir: -1
           });
-          const r = await fetch(CC_API_BASE + '/order/query/?' + p.toString(), { method: 'POST' });
+          const r = await fetchR(CC_API_BASE + '/order/query/?' + p.toString(), { method: 'POST' });
           const d = await r.json();
           const batch = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
           ccOrders = ccOrders.concat(batch);
@@ -2383,7 +2396,7 @@ router.get('/api/debug/shopify-rc-diff', async function(req, res) {
         '&fields=id,name,email,created_at,source_name,tags,note_attributes,financial_status' +
         '&created_at_min=' + encodeURIComponent(todayStart.toISOString());
       while (url) {
-        var r = await fetch(url, { headers: { 'X-Shopify-Access-Token': SHOPIFY_TOKEN } });
+        var r = await fetchR(url, { headers: { 'X-Shopify-Access-Token': SHOPIFY_TOKEN } });
         var link = r.headers.get('link') || '';
         var d = await r.json();
         shopifyOrders = shopifyOrders.concat(d.orders || []);
@@ -2625,7 +2638,7 @@ router.post('/api/integrations/:name/test', auth.requireAdmin, async function(re
     if (name === 'recharge') {
       var key = creds['RECHARGE_API_KEY'];
       if (!key) return res.json({ ok: false, message: 'RECHARGE_API_KEY not configured' });
-      var r = await fetch('https://api.rechargeapps.com/shop', {
+      var r = await fetchR('https://api.rechargeapps.com/shop', {
         headers: { 'X-Recharge-Access-Token': key, 'X-Recharge-Version': '2021-11' }
       });
       if (r.ok) {
@@ -2639,7 +2652,7 @@ router.post('/api/integrations/:name/test', auth.requireAdmin, async function(re
     } else if (name === 'checkoutchamp') {
       var loginId = creds['CC_LOGIN_ID'], pw = creds['CC_API_PASSWORD'];
       if (!loginId || !pw) return res.json({ ok: false, message: 'Login ID and API Password are required' });
-      var r2 = await fetch(CC_API_BASE + '/purchase/query/', {
+      var r2 = await fetchR(CC_API_BASE + '/purchase/query/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ loginId: loginId, password: pw, startDate: '01/01/2026', endDate: '01/01/2026', resultsPerPage: 1, page: 1 })
@@ -2655,7 +2668,7 @@ router.post('/api/integrations/:name/test', auth.requireAdmin, async function(re
       var store = creds['SHOPIFY_STORE'] || SHOPIFY_STORE;
       var token = creds['SHOPIFY_ACCESS_TOKEN'] || SHOPIFY_TOKEN;
       if (!token) return res.json({ ok: false, message: 'Access Token not configured' });
-      var r3 = await fetch('https://' + store + '/admin/api/2024-01/shop.json', {
+      var r3 = await fetchR('https://' + store + '/admin/api/2024-01/shop.json', {
         headers: { 'X-Shopify-Access-Token': token }
       });
       if (r3.ok) {
@@ -2668,7 +2681,7 @@ router.post('/api/integrations/:name/test', auth.requireAdmin, async function(re
     } else if (name === 'klaviyo') {
       var kkey = creds['KLAVIYO_API_KEY'];
       if (!kkey) return res.json({ ok: false, message: 'KLAVIYO_API_KEY not configured' });
-      var r4 = await fetch('https://a.klaviyo.com/api/accounts/', {
+      var r4 = await fetchR('https://a.klaviyo.com/api/accounts/', {
         headers: { 'Authorization': 'Klaviyo-API-Key ' + kkey, 'revision': '2024-10-15', 'accept': 'application/json' }
       });
       if (r4.ok) {
@@ -2682,14 +2695,14 @@ router.post('/api/integrations/:name/test', auth.requireAdmin, async function(re
       if (!wkey) return res.json({ ok: false, message: 'WHOP_API_KEY not configured' });
       var whopH = { 'Authorization': 'Bearer ' + wkey, 'accept': 'application/json' };
       /* Test 1: products (basic key check) */
-      var r5 = await fetch('https://api.whop.com/api/v2/products?per_page=1', { headers: whopH });
+      var r5 = await fetchR('https://api.whop.com/api/v2/products?per_page=1', { headers: whopH });
       if (!r5.ok) {
         message = r5.status === 401
           ? 'Invalid API key — check your Whop API key and try again'
           : 'API returned HTTP ' + r5.status;
       } else {
         /* Test 2: memberships (required for sync) */
-        var r5b = await fetch('https://api.whop.com/api/v2/memberships?per_page=1&status=active', { headers: whopH });
+        var r5b = await fetchR('https://api.whop.com/api/v2/memberships?per_page=1&status=active', { headers: whopH });
         if (r5b.ok) {
           var d5b = await r5b.json();
           var mCount = (d5b.pagination && d5b.pagination.total_count) || 0;
