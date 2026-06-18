@@ -2585,7 +2585,7 @@ function openPicker() {
   } else {
     pickerViewYear = pickerStart.getFullYear(); pickerViewMonth = pickerStart.getMonth();
   }
-  pickerSelecting = false; pickerHover = null;
+  pickerSelecting = false; pickerHover = null; pickerHoverIso = null;
   renderPicker();
   ov.classList.add('open');
 }
@@ -2650,8 +2650,7 @@ function renderPickerCal(id, year, month, hideLeftNav) {
   var todayIso = pickerIso(today);
   var startIso = pickerIso(pickerStart);
   var endIso   = pickerIso(pickerEnd || pickerStart);
-  var hoverIso = pickerIso(pickerHover);
-  var rangeEnd = (pickerSelecting && hoverIso) ? hoverIso : endIso;
+  var rangeEnd = (pickerSelecting && pickerHoverIso) ? pickerHoverIso : endIso;
 
   var firstDay    = new Date(year, month, 1).getDay();
   var daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -2681,10 +2680,17 @@ function renderPickerCal(id, year, month, hideLeftNav) {
       if (iso === lo && lo === hi) cls += ' p-range-start';
     }
 
-    html += '<div class="' + cls + '" onclick="pickerDayClick(\'' + iso + '\')" onmouseenter="pickerDayHover(\'' + iso + '\')">' + day + '</div>';
+    html += '<div class="' + cls + '" data-iso="' + iso + '" onclick="pickerDayClick(\'' + iso + '\')">' + day + '</div>';
   }
   html += '</div>';
   el.innerHTML = html;
+
+  /* Attach hover via delegation on the grid (avoids destroying elements on re-render) */
+  var grid = el.querySelector('.picker-grid');
+  if (grid) grid.addEventListener('mouseover', function(e) {
+    var cell = e.target.closest('[data-iso]');
+    if (cell) pickerDayHover(cell.dataset.iso);
+  });
 }
 
 function pickerNav(dir) {
@@ -2698,28 +2704,49 @@ function pickerDayClick(iso) {
   var p = iso.split('-').map(Number), d = new Date(p[0], p[1]-1, p[2]);
   if (!pickerSelecting || !pickerStart) {
     pickerStart = d; pickerEnd = null; pickerSelecting = true;
+    pickerHoverIso = null;
   } else {
     if (d < pickerStart) { pickerEnd = pickerStart; pickerStart = d; }
     else { pickerEnd = d; }
-    pickerSelecting = false; pickerHover = null;
+    pickerSelecting = false; pickerHoverIso = null;
   }
   renderPickerInputs();
-  var lY = pickerViewYear, lM = pickerViewMonth;
-  var rM = lM === 11 ? 0  : lM + 1;
-  var rY = lM === 11 ? lY + 1 : lY;
-  renderPickerCal('picker-cal-left',  lY, lM, false);
-  renderPickerCal('picker-cal-right', rY, rM, true);
+  updatePickerRangeClasses();
 }
+
+var pickerHoverIso = null; /* iso string, avoids Date allocation on every hover */
 
 function pickerDayHover(iso) {
   if (!pickerSelecting) return;
-  var p = iso.split('-').map(Number);
-  pickerHover = new Date(p[0], p[1]-1, p[2]);
-  var lY = pickerViewYear, lM = pickerViewMonth;
-  var rM = lM === 11 ? 0  : lM + 1;
-  var rY = lM === 11 ? lY + 1 : lY;
-  renderPickerCal('picker-cal-left',  lY, lM, false);
-  renderPickerCal('picker-cal-right', rY, rM, true);
+  if (pickerHoverIso === iso) return; /* no change — skip */
+  pickerHoverIso = iso;
+  updatePickerRangeClasses();
+}
+
+/* Update range highlight classes WITHOUT re-rendering the grid */
+function updatePickerRangeClasses() {
+  var startIso = pickerIso(pickerStart);
+  var endIso   = pickerIso(pickerEnd || pickerStart);
+  var rangeEnd = (pickerSelecting && pickerHoverIso) ? pickerHoverIso : endIso;
+  var todayIso = pickerIso(pickerToday());
+
+  document.querySelectorAll('.picker-day[data-iso]').forEach(function(el) {
+    var iso = el.dataset.iso;
+    var cls = 'picker-day';
+    if (iso === todayIso) cls += ' p-today';
+    if (startIso && rangeEnd) {
+      var lo = startIso <= rangeEnd ? startIso : rangeEnd;
+      var hi = startIso <= rangeEnd ? rangeEnd : startIso;
+      if (iso > lo && iso < hi) cls += ' p-in-range';
+      if (iso === lo && lo !== hi) cls += ' p-range-start p-in-range';
+      if (iso === hi && lo !== hi) cls += ' p-range-end p-in-range';
+      if (iso === lo && lo === hi) cls += ' p-range-start';
+    }
+    el.className = cls;
+  });
+
+  /* also sync inputs */
+  renderPickerInputs();
 }
 
 function applyPreset(i) {
