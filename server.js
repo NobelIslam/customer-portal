@@ -4,6 +4,42 @@ const cors    = require('cors');
 const fetch   = require('node-fetch');
 const crypto  = require('crypto');
 const path    = require('path');
+const _https  = require('https');
+const _http   = require('http');
+
+/* Resilient fetch (same as admin/routes.js & admin/sync.js). Node 19+ defaults the
+   global agent to keepAlive:true; CheckoutChamp/Whop drop idle pooled sockets, so a
+   reused socket throws "Premature close" on a long-running server. Force a fresh
+   socket, time out a stalled one, buffer the body, and retry. Drop-in for fetch. */
+const _agentHttps = new _https.Agent({ keepAlive: false });
+const _agentHttp  = new _http.Agent({ keepAlive: false });
+function _agentFor(parsedURL) {
+  return (parsedURL && parsedURL.protocol === 'http:') ? _agentHttp : _agentHttps;
+}
+function _delay(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
+async function fetchR(url, opts, tries) {
+  tries = tries || 4;
+  const o = Object.assign({}, opts || {});
+  if (!o.agent)   o.agent   = _agentFor;
+  if (!o.timeout) o.timeout = 25000;
+  let lastErr;
+  for (let i = 0; i < tries; i++) {
+    try {
+      const r    = await fetch(url, o);
+      const body = await r.text();
+      const ok = r.ok, status = r.status, headers = r.headers;
+      return {
+        ok: ok, status: status, headers: headers,
+        text: function() { return Promise.resolve(body); },
+        json: function() { return Promise.resolve(body ? JSON.parse(body) : null); }
+      };
+    } catch (e) {
+      lastErr = e;
+      if (i < tries - 1) await _delay(350 * (i + 1));
+    }
+  }
+  throw lastErr;
+}
 
 const app = express();
 app.use(express.json());
@@ -46,12 +82,12 @@ app.get('/recharge/subscriptions', async (req, res) => {
     const email = req.query.email;
     if (!email) return res.status(400).json({ error: 'email required' });
 
-    const custRes  = await fetch(RECHARGE_BASE + '/customers?email=' + encodeURIComponent(email), { headers: rcHeaders() });
+    const custRes  = await fetchR(RECHARGE_BASE + '/customers?email=' + encodeURIComponent(email), { headers: rcHeaders() });
     const custData = await custRes.json();
     if (!custData.customers || !custData.customers.length) return res.json({ subscriptions: [] });
 
     const customerId = custData.customers[0].id;
-    const subRes     = await fetch(RECHARGE_BASE + '/subscriptions?customer_id=' + customerId + '&limit=50', { headers: rcHeaders() });
+    const subRes     = await fetchR(RECHARGE_BASE + '/subscriptions?customer_id=' + customerId + '&limit=50', { headers: rcHeaders() });
     const subData    = await subRes.json();
 
     res.json({
@@ -83,7 +119,7 @@ app.get('/recharge/subscriptions', async (req, res) => {
 ═══════════════════════════ */
 app.post('/recharge/subscriptions/:id/cancel', async (req, res) => {
   try {
-    const r    = await fetch(RECHARGE_BASE + '/subscriptions/' + req.params.id + '/cancel', {
+    const r    = await fetchR(RECHARGE_BASE + '/subscriptions/' + req.params.id + '/cancel', {
       method: 'POST', headers: rcHeaders(),
       body: JSON.stringify({ cancellation_reason: req.body.reason || 'Customer requested' })
     });
@@ -101,7 +137,7 @@ app.post('/recharge/subscriptions/:id/pause', async (req, res) => {
     const months = parseInt(req.body.months || 3);
     var d = new Date(); d.setMonth(d.getMonth() + months);
     var dateStr = d.toISOString().split('T')[0];
-    const r    = await fetch(RECHARGE_BASE + '/subscriptions/' + req.params.id + '/set_next_charge_date', {
+    const r    = await fetchR(RECHARGE_BASE + '/subscriptions/' + req.params.id + '/set_next_charge_date', {
       method: 'POST', headers: rcHeaders(), body: JSON.stringify({ date: dateStr })
     });
     const data = await r.json();
@@ -115,7 +151,7 @@ app.post('/recharge/subscriptions/:id/pause', async (req, res) => {
 ═══════════════════════════ */
 app.post('/recharge/subscriptions/:id/activate', async (req, res) => {
   try {
-    const r    = await fetch(RECHARGE_BASE + '/subscriptions/' + req.params.id + '/activate', {
+    const r    = await fetchR(RECHARGE_BASE + '/subscriptions/' + req.params.id + '/activate', {
       method: 'POST', headers: rcHeaders(), body: JSON.stringify({})
     });
     const data = await r.json();
@@ -131,7 +167,7 @@ app.post('/recharge/subscriptions/:id/skip', async (req, res) => {
   try {
     const chargeId = req.body.chargeId;
     if (!chargeId) return res.status(400).json({ error: 'chargeId required' });
-    const r    = await fetch(RECHARGE_BASE + '/charges/' + chargeId + '/skip', {
+    const r    = await fetchR(RECHARGE_BASE + '/charges/' + chargeId + '/skip', {
       method: 'POST', headers: rcHeaders(), body: JSON.stringify({ subscription_id: req.params.id })
     });
     const data = await r.json();
@@ -144,7 +180,7 @@ app.post('/recharge/subscriptions/:id/skip', async (req, res) => {
    Klaviyo helper
 ═══════════════════════════════════════════════ */
 async function sendKlaviyoEvent(email, eventName, properties) {
-  const response = await fetch('https://a.klaviyo.com/api/events/', {
+  const response = await fetchR('https://a.klaviyo.com/api/events/', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Klaviyo-API-Key ' + KLAVIYO_API_KEY, 'revision': '2024-10-15' },
     body: JSON.stringify({ data: { type: 'event', attributes: { metric: { data: { type: 'metric', attributes: { name: eventName } } }, profile: { data: { type: 'profile', attributes: { email } } }, properties: properties || {} } } })
@@ -201,7 +237,7 @@ async function handleCCWebhook(req, res) {
         clubId: CC_CLUB_ID, loginId: CC_LOGIN_ID, password: CC_API_PASS,
         emailAddress: email, startDate: '01/01/2016', endDate: endDate, resultsPerPage: 200
       });
-      var memberRes  = await fetch('https://api.checkoutchamp.com/members/query/?' + memberParams.toString(), { method: 'POST' });
+      var memberRes  = await fetchR('https://api.checkoutchamp.com/members/query/?' + memberParams.toString(), { method: 'POST' });
       var memberData = await memberRes.json();
 
       if (memberData.result === 'SUCCESS' && memberData.message && memberData.message.data && memberData.message.data.length > 0) {
@@ -282,7 +318,7 @@ app.post('/magic-login/request', async function(req, res) {
 
     /* ── 1. Check Recharge ── */
     try {
-      var rcRes  = await fetch(RECHARGE_BASE + '/customers?email=' + encodeURIComponent(email), { headers: rcHeaders() });
+      var rcRes  = await fetchR(RECHARGE_BASE + '/customers?email=' + encodeURIComponent(email), { headers: rcHeaders() });
       var rcData = await rcRes.json();
       if (rcData.customers && rcData.customers.length > 0) foundIn.push('recharge');
     } catch (e) { console.error('Recharge lookup error:', e.message); }
@@ -299,7 +335,7 @@ app.post('/magic-login/request', async function(req, res) {
         clubId: CC_CLUB_ID, loginId: CC_LOGIN_ID, password: CC_API_PASS,
         emailAddress: email, startDate: '01/01/2016', endDate: endDate, resultsPerPage: 200
       });
-      var qRes  = await fetch(CC_BASE + '/members/query/?' + params.toString(), { method: 'POST' });
+      var qRes  = await fetchR(CC_BASE + '/members/query/?' + params.toString(), { method: 'POST' });
       var qData = await qRes.json();
 
       if (qData.result === 'SUCCESS' && qData.message && qData.message.data && qData.message.data.length > 0) {
@@ -386,7 +422,7 @@ app.get('/magic-login/test', async function(req, res) {
   try {
     var today   = new Date();
     var endDate = (today.getMonth()+1).toString().padStart(2,'0')+'/'+today.getDate().toString().padStart(2,'0')+'/'+today.getFullYear();
-    var qRes  = await fetch(CC_BASE + '/members/query/?' + ccParams({
+    var qRes  = await fetchR(CC_BASE + '/members/query/?' + ccParams({
       emailAddress: email, startDate: '01/01/2016', endDate, resultsPerPage: 200
     }), { method: 'POST' });
     var qData = await qRes.json();
@@ -463,7 +499,7 @@ app.get('/cc/customer', async function(req, res) {
 
     var today   = new Date();
     var endDate = (today.getMonth()+1).toString().padStart(2,'0')+'/'+today.getDate().toString().padStart(2,'0')+'/'+today.getFullYear();
-    var r = await fetch(CC_BASE + '/customer/query/?' + ccParams({
+    var r = await fetchR(CC_BASE + '/customer/query/?' + ccParams({
       emailAddress: email, startDate: '01/01/2016', endDate, resultsPerPage: 1, sortDir: -1
     }), { method: 'POST' });
     var d = await r.json();
@@ -483,7 +519,7 @@ app.get('/cc/orders', async function(req, res) {
 
     var today   = new Date();
     var endDate = (today.getMonth()+1).toString().padStart(2,'0')+'/'+today.getDate().toString().padStart(2,'0')+'/'+today.getFullYear();
-    var r = await fetch(CC_BASE + '/order/query/?' + ccParams({
+    var r = await fetchR(CC_BASE + '/order/query/?' + ccParams({
       emailAddress: email, startDate: '01/01/2016', endDate, resultsPerPage: 200, sortDir: -1
     }), { method: 'POST' });
     var d = await r.json();
@@ -525,7 +561,7 @@ app.get('/cc/order', async function(req, res) {
     if (!orderId) return res.status(400).json({ error: 'orderId required' });
     var today   = new Date();
     var endDate = (today.getMonth()+1).toString().padStart(2,'0')+'/'+today.getDate().toString().padStart(2,'0')+'/'+today.getFullYear();
-    var r = await fetch(CC_BASE + '/order/query/?' + ccParams({
+    var r = await fetchR(CC_BASE + '/order/query/?' + ccParams({
       orderId, startDate: '01/01/2016', endDate, resultsPerPage: 1
     }), { method: 'POST' });
     var text = await r.text();
@@ -578,7 +614,7 @@ app.get('/cc/subscriptions', async function(req, res) {
     var purchases = [];
     var page = 1, perPage = 200;
     while (true) {
-      var pr = await fetch(CC_BASE + '/purchase/query/?' + ccParams({
+      var pr = await fetchR(CC_BASE + '/purchase/query/?' + ccParams({
         emailAddress:   email,
         startDate:      '01/01/2016',
         endDate:        endDate,
@@ -631,7 +667,7 @@ app.get('/cc/shipments', async function(req, res) {
 
     var today   = new Date();
     var endDate = (today.getMonth()+1).toString().padStart(2,'0')+'/'+today.getDate().toString().padStart(2,'0')+'/'+today.getFullYear();
-    var r = await fetch(CC_BASE + '/order/query/?' + ccParams({
+    var r = await fetchR(CC_BASE + '/order/query/?' + ccParams({
       emailAddress: email, startDate: '01/01/2016', endDate, resultsPerPage: 200
     }), { method: 'POST' });
     var text = await r.text();
@@ -687,7 +723,7 @@ app.post('/cc/order/cancel', async function(req, res) {
   try {
     var orderId = req.body.orderId;
     if (!orderId) return res.status(400).json({ error: 'orderId required' });
-    var r = await fetch(CC_BASE + '/order/cancel/?' + ccParams({ orderId, cancelReason: req.body.reason || 'Customer requested cancellation' }), { method: 'POST' });
+    var r = await fetchR(CC_BASE + '/order/cancel/?' + ccParams({ orderId, cancelReason: req.body.reason || 'Customer requested cancellation' }), { method: 'POST' });
     var text = await r.text();
     var d;
     try { d = JSON.parse(text); } catch(e) {
@@ -704,7 +740,7 @@ app.post('/cc/subscription/cancel', async function(req, res) {
     var purchaseId = req.body.purchaseId;
     var reason     = req.body.reason || req.body.cancelReason || 'Customer requested';
     if (!purchaseId) return res.status(400).json({ error: 'purchaseId required' });
-    var r    = await fetch(CC_BASE + '/purchase/cancel/?' + ccParams({
+    var r    = await fetchR(CC_BASE + '/purchase/cancel/?' + ccParams({
       purchaseId:    purchaseId,
       cancelReason:  reason,
       cancelFulfillment: true
@@ -732,7 +768,7 @@ app.post('/cc/subscription/pause', async function(req, res) {
                     d30.getDate().toString().padStart(2,'0') + '/' +
                     d30.getFullYear().toString().slice(-2);
     }
-    var r    = await fetch(CC_BASE + '/purchase/pause/?' + ccParams({
+    var r    = await fetchR(CC_BASE + '/purchase/pause/?' + ccParams({
       purchaseId:  purchaseId,
       restartDate: restartDate
     }), { method: 'POST' });
@@ -752,7 +788,7 @@ app.post('/cc/subscription/restart', async function(req, res) {
   try {
     var purchaseId = req.body.purchaseId;
     if (!purchaseId) return res.status(400).json({ error: 'purchaseId required' });
-    var r    = await fetch(CC_BASE + '/purchase/update/?' + ccParams({
+    var r    = await fetchR(CC_BASE + '/purchase/update/?' + ccParams({
       purchaseId: purchaseId,
       reactivate: true
     }), { method: 'POST' });
@@ -790,7 +826,7 @@ app.post('/cc/profile/update', async function(req, res) {
       shipCountry:  b.shipCountry  || '',
       shipPostalCode: b.shipPostalCode || ''
     });
-    var r = await fetch(CC_BASE + '/customer/update/?' + params, { method: 'POST' });
+    var r = await fetchR(CC_BASE + '/customer/update/?' + params, { method: 'POST' });
     var d = await r.json();
     if (d.result !== 'SUCCESS') return res.status(400).json({ error: d.message || 'Update failed' });
     res.json({ success: true });
@@ -806,7 +842,7 @@ app.get('/recharge/customer', async function(req, res) {
     var email = (req.query.email || '').trim().toLowerCase();
     if (!email) return res.status(400).json({ error: 'email required' });
 
-    var rcRes  = await fetch(RECHARGE_BASE + '/customers?email=' + encodeURIComponent(email), { headers: rcHeaders() });
+    var rcRes  = await fetchR(RECHARGE_BASE + '/customers?email=' + encodeURIComponent(email), { headers: rcHeaders() });
     var rcData = await rcRes.json();
 
     if (!rcData.customers || !rcData.customers.length) {
@@ -845,7 +881,7 @@ app.post('/recharge/customer/update', async function(req, res) {
     var email = (req.body.email || '').trim().toLowerCase();
     if (!email) return res.status(400).json({ error: 'email required' });
 
-    var rcRes  = await fetch(RECHARGE_BASE + '/customers?email=' + encodeURIComponent(email), { headers: rcHeaders() });
+    var rcRes  = await fetchR(RECHARGE_BASE + '/customers?email=' + encodeURIComponent(email), { headers: rcHeaders() });
     var rcData = await rcRes.json();
     if (!rcData.customers || !rcData.customers.length) {
       return res.status(404).json({ error: 'Customer not found' });
@@ -878,7 +914,7 @@ app.post('/recharge/customer/update', async function(req, res) {
       if (s.zip)      payload.shipping_address.zip      = s.zip;
     }
 
-    var updateRes  = await fetch(RECHARGE_BASE + '/customers/' + customerId, {
+    var updateRes  = await fetchR(RECHARGE_BASE + '/customers/' + customerId, {
       method:  'PUT',
       headers: rcHeaders(),
       body:    JSON.stringify(payload)
@@ -899,7 +935,7 @@ app.get('/recharge-portal/test', async function(req, res) {
   if (!email) return res.status(400).json({ error: 'email required' });
 
   try {
-    var rcRes  = await fetch(RECHARGE_BASE + '/customers?email=' + encodeURIComponent(email), { headers: rcHeaders() });
+    var rcRes  = await fetchR(RECHARGE_BASE + '/customers?email=' + encodeURIComponent(email), { headers: rcHeaders() });
     var rcData = await rcRes.json();
     if (!rcData.customers || rcData.customers.length === 0) {
       return res.status(404).json({ error: 'No Recharge subscription found for this email.' });
@@ -921,7 +957,7 @@ app.post('/recharge-portal/verify', async function(req, res) {
   if (!data) return res.status(401).json({ error: 'Invalid or expired token' });
 
   try {
-    var rcRes  = await fetch(RECHARGE_BASE + '/customers?email=' + encodeURIComponent(data.email), { headers: rcHeaders() });
+    var rcRes  = await fetchR(RECHARGE_BASE + '/customers?email=' + encodeURIComponent(data.email), { headers: rcHeaders() });
     var rcData = await rcRes.json();
     if (!rcData.customers || rcData.customers.length === 0) {
       console.log('Recharge portal verify failed — no Recharge customer for:', data.email);
