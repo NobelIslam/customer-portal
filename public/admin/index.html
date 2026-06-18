@@ -2298,7 +2298,13 @@ async function loadMrrSummary() {
     var col = document.getElementById('kpi-mrr-collected');
     if (col) col.textContent = $m(d.collected_mtd_cents || 0);
     var colSub = document.getElementById('kpi-mrr-collected-sub');
-    if (colSub) { colSub.textContent = (d.month || '') + ' to date'; colSub.style.color = 'var(--muted2)'; }
+    if (colSub) {
+      var asOf = d.collected_through
+        ? new Date(d.collected_through + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        : '';
+      colSub.textContent = asOf ? ('as of ' + asOf) : ((d.month || '') + ' MTD');
+      colSub.style.color = 'var(--muted2)';
+    }
     var pen = document.getElementById('kpi-mrr-pending');
     if (pen) pen.textContent = $m(d.pending_mtd_cents || 0);
     var penSub = document.getElementById('kpi-mrr-pending-sub');

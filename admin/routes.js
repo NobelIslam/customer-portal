@@ -2021,14 +2021,16 @@ router.get('/api/today-revenue', async function(req, res) {
    pending_mtd:    MRR value still SCHEDULED to bill before month-end (active subs, DB).
    Loaded separately from /overview so the heavier month-pagination doesn't block the
    first dashboard paint. Cached 5 min — Whop's month sum is ~115 paginated calls.    */
-var _mrrSummaryCache = { ts: 0, data: null };
+var _mrrSummaryCache = { day: null, data: null };
 router.get('/api/mrr-summary', async function(req, res) {
   try {
-    if (_mrrSummaryCache.data && (Date.now() - _mrrSummaryCache.ts) < 5 * 60 * 1000) {
-      return res.json(_mrrSummaryCache.data);
-    }
     const now        = new Date();
     const todayAms   = amsDateStr(now);
+    /* Collection figure covers the month UP TO END OF YESTERDAY and only changes once
+       per calendar day — serve the cached value for the rest of today. */
+    if (_mrrSummaryCache.data && _mrrSummaryCache.day === todayAms) {
+      return res.json(_mrrSummaryCache.data);
+    }
     const ty   = parseInt(todayAms.slice(0, 4), 10);
     const tmo  = parseInt(todayAms.slice(5, 7), 10);
     const monthStartAms = ty + '-' + String(tmo).padStart(2, '0') + '-01';
@@ -2036,13 +2038,15 @@ router.get('/api/mrr-summary', async function(req, res) {
     const monthEndAms   = nextYr + '-' + String(nextMo).padStart(2, '0') + '-01';
     const monthStart = amsMidnightUTC(new Date(monthStartAms + 'T12:00:00Z'));
     const monthEnd   = amsMidnightUTC(new Date(monthEndAms   + 'T12:00:00Z'));
-    /* Recharge date filter is by billing day, date_max EXCLUSIVE → use tomorrow to include today */
-    const tomorrowAms = amsDateStr(new Date(amsMidnightUTC(now).getTime() + 24 * 3600 * 1000));
+    /* Collection window upper bound = start of TODAY (= end of yesterday). Everything
+       captured strictly before today counts; today's in-progress billings are excluded. */
+    const todayStart   = amsMidnightUTC(now);
+    const yesterdayAms = amsDateStr(new Date(todayStart.getTime() - 1000));
 
     const NO_PAYPAL = `AND NOT (source = 'cc' AND raw->>'merchant' ILIKE '%paypal%')
       AND NOT (source = 'cc' AND COALESCE(NULLIF(TRIM(raw->>'merchant'), ''), '') = '')`;
 
-    /* CC date strings (MM/DD/YYYY) for the month window */
+    /* CC date strings (MM/DD/YYYY) — month-start through today; today excluded client-side */
     const [my, mm, md] = monthStartAms.split('-');
     const [ey, em, ed] = todayAms.split('-');
     const ccMonthStart = mm + '/' + md + '/' + my;
@@ -2059,12 +2063,15 @@ router.get('/api/mrr-summary', async function(req, res) {
         try {
           while (page <= 60) {
             var url = RC_API_BASE + '/charges?limit=250&page=' + page +
-                      '&status=success&date_min=' + monthStartAms + '&date_max=' + tomorrowAms;
+                      '&status=success&date_min=' + monthStartAms + '&date_max=' + todayAms;
             var r = await fetch(url, { headers });
             var d = await r.json();
             var charges = d.charges || [];
             charges.forEach(function(c) {
               if (c.type !== 'RECURRING') return;
+              /* Count only what was CAPTURED before today (through end of yesterday) */
+              var p = amsParseLocal(c.processed_at);
+              if (p && p >= todayStart) return;
               cents += Math.round(parseFloat(c.total_price || 0) * 100);
             });
             if (charges.length < 250) break;
@@ -2096,7 +2103,7 @@ router.get('/api/mrr-summary', async function(req, res) {
               var ts = p.created_at ? new Date(p.created_at * 1000) : null;
               if (!ts) return;
               if (ts < monthStart) { sawOlder = true; return; }
-              if (ts >= monthEnd) return;
+              if (ts >= todayStart) return;   /* exclude today — through yesterday only */
               cents += Math.round(parseFloat(p.final_amount || p.total || 0) * 100);
             });
             if (sawOlder) break;
@@ -2123,7 +2130,7 @@ router.get('/api/mrr-summary', async function(req, res) {
             var txns = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
             txns.forEach(function(t) {
               var ts = ccParseDate(t.dateCreated || '');
-              if (!ts || ts < monthStart || ts >= monthEnd) return;
+              if (!ts || ts < monthStart || ts >= todayStart) return;   /* through yesterday */
               cents += Math.round(parseFloat(t.amount || t.totalAmount || 0) * 100);
             });
             if (txns.length < 200) break;
@@ -2149,12 +2156,13 @@ router.get('/api/mrr-summary', async function(req, res) {
       month:               monthStartAms.slice(0, 7),
       mrr_cents:           Number(mrrRow.cents),
       collected_mtd_cents: collected,
+      collected_through:   yesterdayAms,        /* collection is as-of end of yesterday */
       collected_breakdown: { cc: ccCollected, recharge: rcCollected, whop: whCollected },
       pending_mtd_cents:   Number(pendingRow.cents),
       pending_mtd_count:   pendingRow.n,
       generated_at:        now.toISOString()
     };
-    _mrrSummaryCache = { ts: Date.now(), data: payload };
+    _mrrSummaryCache = { day: todayAms, data: payload };
     res.json(payload);
   } catch (err) {
     console.error('[admin/api/mrr-summary]', err);
