@@ -119,10 +119,12 @@ async function syncCC(opts) {
   console.log('[sync:cc] window:', startDate, '→', endDate, '| full:', isFull);
 
   /* ── 1a. Purchases (subscriptions) — date-windowed ── */
+  /* perPage kept small (50): a 200-row response is ~508 KB and drops mid-transfer
+     on Render → "Premature close". 50 rows ≈ 122 KB transfers reliably. */
   let subsTouched = 0;
   let page = 1;
-  const perPage = 200;
-  while (page <= 50) {
+  const perPage = 50;
+  while (page <= 200) {
     let d;
     try {
       const r = await fetchR(CC_BASE + '/purchase/query/?' + ccParams({
@@ -153,7 +155,7 @@ async function syncCC(opts) {
   if (!isFull) {
     let activePage = 1;
     let activeTouched = 0;
-    while (activePage <= 50) {
+    while (activePage <= 100) {
       let d;
       try {
         const r = await fetchR(CC_BASE + '/purchase/query/?' + ccParams({
@@ -185,7 +187,7 @@ async function syncCC(opts) {
      they show up correctly in the Recent Cancellations panel.           */
   if (!isFull) {
     let rfPage = 1, rfTouched = 0;
-    while (rfPage <= 50) {
+    while (rfPage <= 100) {
       let d;
       try {
         const r = await fetchR(CC_BASE + '/purchase/query/?' + ccParams({
@@ -213,7 +215,7 @@ async function syncCC(opts) {
   /* ── 2. Orders ── */
   let ordersTouched = 0;
   page = 1;
-  while (page <= 50) {
+  while (page <= 300) {
     let d;
     try {
       const r = await fetchR(CC_BASE + '/order/query/?' + ccParams({
