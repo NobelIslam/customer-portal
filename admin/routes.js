@@ -2026,9 +2026,11 @@ router.get('/api/mrr-summary', async function(req, res) {
   try {
     const now        = new Date();
     const todayAms   = amsDateStr(now);
-    /* Collection figure covers the month UP TO END OF YESTERDAY and only changes once
-       per calendar day — serve the cached value for the rest of today. */
-    if (_mrrSummaryCache.data && _mrrSummaryCache.day === todayAms) {
+    /* Serve cache when: a COMPLETE result was computed today (stable all day), OR a
+       partial result is still fresh (<10 min) so failed sources retry soon. */
+    if (_mrrSummaryCache.data && (
+          _mrrSummaryCache.day === todayAms ||
+          (Date.now() - (_mrrSummaryCache.ts || 0)) < 10 * 60 * 1000)) {
       return res.json(_mrrSummaryCache.data);
     }
     const ty   = parseInt(todayAms.slice(0, 4), 10);
@@ -2052,49 +2054,46 @@ router.get('/api/mrr-summary', async function(req, res) {
     const ccMonthStart = mm + '/' + md + '/' + my;
     const ccMonthEnd   = em + '/' + ed + '/' + ey;
 
-    const [rcCollected, whCollected, ccCollected, pendingRow, mrrRow] = await Promise.all([
+    const [rc, wh, cc, pendingRow, mrrRow] = await Promise.all([
 
-      /* Recharge: SUCCESS recurring charges captured this month */
+      /* Recharge: SUCCESS recurring charges captured this month (through yesterday) */
       (async function() {
         var key = process.env.RECHARGE_API_KEY;
-        if (!key) return 0;
+        if (!key) return { cents: 0, ok: false };
         var headers = { 'X-Recharge-Access-Token': key, 'Content-Type': 'application/json' };
-        var cents = 0, page = 1;
+        var cents = 0, page = 1, ok = true;
         try {
           while (page <= 60) {
             var url = RC_API_BASE + '/charges?limit=250&page=' + page +
                       '&status=success&date_min=' + monthStartAms + '&date_max=' + todayAms;
             var r = await fetch(url, { headers });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
             var d = await r.json();
             var charges = d.charges || [];
             charges.forEach(function(c) {
               if (c.type !== 'RECURRING') return;
-              /* Count only what was CAPTURED before today (through end of yesterday) */
               var p = amsParseLocal(c.processed_at);
-              if (p && p >= todayStart) return;
+              if (p && p >= todayStart) return;   /* exclude today's captures */
               cents += Math.round(parseFloat(c.total_price || 0) * 100);
             });
             if (charges.length < 250) break;
             page++;
           }
-        } catch (e) { console.error('[mrr-summary] RC collected failed:', e.message); }
-        return cents;
+        } catch (e) { ok = false; console.error('[mrr-summary] RC collected failed:', e.message); }
+        return { cents: cents, ok: ok };
       })(),
 
-      /* Whop: subscription_cycle paid payments this month */
+      /* Whop: subscription_cycle paid payments this month (through yesterday) */
       (async function() {
         var key = await getWhopKey();
-        if (!key) return 0;
+        if (!key) return { cents: 0, ok: false };
         var headers = { 'Authorization': 'Bearer ' + key, 'accept': 'application/json' };
-        var cents = 0, page = 1, MAX_PAGES = 200;
+        var cents = 0, page = 1, ok = true, MAX_PAGES = 200;
         try {
-          /* Whop ignores date filters but honours status + billing_reason server-side
-             and returns newest-first, so paginate filtered renewals until we pass
-             month-start. (~10 rows/page → ~115 pages for a full month; cached upstream.) */
           while (page <= MAX_PAGES) {
             var r = await fetch(WHOP_API_BASE +
               '/payments?per_page=50&status=paid&billing_reason=subscription_cycle&page=' + page, { headers });
-            if (!r.ok) break;
+            if (!r.ok) throw new Error('HTTP ' + r.status);
             var d = await r.json();
             var items = d.data || [];
             if (!items.length) break;
@@ -2109,14 +2108,14 @@ router.get('/api/mrr-summary', async function(req, res) {
             if (sawOlder) break;
             page++;
           }
-        } catch (e) { console.error('[mrr-summary] Whop collected failed:', e.message); }
-        return cents;
+        } catch (e) { ok = false; console.error('[mrr-summary] Whop collected failed:', e.message); }
+        return { cents: cents, ok: ok };
       })(),
 
-      /* CheckoutChamp: RECURRING SALE SUCCESS transactions this month */
+      /* CheckoutChamp: RECURRING SALE SUCCESS transactions this month (through yesterday) */
       (async function() {
-        if (!process.env.CC_LOGIN_ID || !process.env.CC_API_PASSWORD) return 0;
-        var cents = 0, page = 1;
+        if (!process.env.CC_LOGIN_ID || !process.env.CC_API_PASSWORD) return { cents: 0, ok: false };
+        var cents = 0, page = 1, ok = true;
         try {
           while (page <= 30) {
             var p = new URLSearchParams({
@@ -2126,8 +2125,10 @@ router.get('/api/mrr-summary', async function(req, res) {
               resultsPerPage: 200, page: page
             });
             var r = await fetch(CC_API_BASE + '/transactions/query/?' + p.toString(), { method: 'POST' });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
             var d = await r.json();
-            var txns = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
+            if (d.result !== 'SUCCESS') throw new Error('CC result ' + d.result);
+            var txns = (d.message && d.message.data) ? d.message.data : [];
             txns.forEach(function(t) {
               var ts = ccParseDate(t.dateCreated || '');
               if (!ts || ts < monthStart || ts >= todayStart) return;   /* through yesterday */
@@ -2136,8 +2137,8 @@ router.get('/api/mrr-summary', async function(req, res) {
             if (txns.length < 200) break;
             page++;
           }
-        } catch (e) { console.error('[mrr-summary] CC collected failed:', e.message); }
-        return cents;
+        } catch (e) { ok = false; console.error('[mrr-summary] CC collected failed:', e.message); }
+        return { cents: cents, ok: ok };
       })(),
 
       /* Pending: MRR scheduled to bill from now through month-end (DB) */
@@ -2151,18 +2152,23 @@ router.get('/api/mrr-summary', async function(req, res) {
               FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW() ${NO_PAYPAL}`)
     ]);
 
+    const rcCollected = rc.cents, whCollected = wh.cents, ccCollected = cc.cents;
     const collected = rcCollected + whCollected + ccCollected;
+    const allOk = rc.ok && wh.ok && cc.ok;
     const payload = {
       month:               monthStartAms.slice(0, 7),
       mrr_cents:           Number(mrrRow.cents),
       collected_mtd_cents: collected,
       collected_through:   yesterdayAms,        /* collection is as-of end of yesterday */
       collected_breakdown: { cc: ccCollected, recharge: rcCollected, whop: whCollected },
+      sources_ok:          { cc: cc.ok, recharge: rc.ok, whop: wh.ok },
       pending_mtd_cents:   Number(pendingRow.cents),
       pending_mtd_count:   pendingRow.n,
       generated_at:        now.toISOString()
     };
-    _mrrSummaryCache = { day: todayAms, data: payload };
+    /* Cache for the whole day ONLY when every source succeeded — otherwise keep a
+       short TTL so a transient CC/Whop failure can't poison the figure all day. */
+    _mrrSummaryCache = { day: allOk ? todayAms : null, ts: Date.now(), data: payload };
     res.json(payload);
   } catch (err) {
     console.error('[admin/api/mrr-summary]', err);
