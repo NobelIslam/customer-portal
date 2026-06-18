@@ -123,16 +123,17 @@ async function syncCC(opts) {
   let page = 1;
   const perPage = 200;
   while (page <= 50) {
-    const r = await fetchR(CC_BASE + '/purchase/query/?' + ccParams({
-      startDate:      startDate,
-      endDate:        endDate,
-      resultsPerPage: perPage,
-      page:           page
-    }), { method: 'POST' });
-    const text = await r.text();
     let d;
-    try { d = JSON.parse(text); } catch (e) {
-      console.error('[sync:cc] non-JSON response page', page, ':', text.substring(0, 200));
+    try {
+      const r = await fetchR(CC_BASE + '/purchase/query/?' + ccParams({
+        startDate:      startDate,
+        endDate:        endDate,
+        resultsPerPage: perPage,
+        page:           page
+      }), { method: 'POST' });
+      d = JSON.parse(await r.text());
+    } catch (e) {
+      console.error('[sync:cc] purchases page', page, 'failed —', e.message);
       break;
     }
     const data = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
@@ -153,17 +154,18 @@ async function syncCC(opts) {
     let activePage = 1;
     let activeTouched = 0;
     while (activePage <= 50) {
-      const r = await fetchR(CC_BASE + '/purchase/query/?' + ccParams({
-        startDate:      '01/01/2015',
-        endDate:        endDate,
-        status:         'ACTIVE',
-        resultsPerPage: perPage,
-        page:           activePage
-      }), { method: 'POST' });
-      const text = await r.text();
       let d;
-      try { d = JSON.parse(text); } catch (e) {
-        console.error('[sync:cc] non-JSON active-refresh page', activePage, ':', text.substring(0, 200));
+      try {
+        const r = await fetchR(CC_BASE + '/purchase/query/?' + ccParams({
+          startDate:      '01/01/2015',
+          endDate:        endDate,
+          status:         'ACTIVE',
+          resultsPerPage: perPage,
+          page:           activePage
+        }), { method: 'POST' });
+        d = JSON.parse(await r.text());
+      } catch (e) {
+        console.error('[sync:cc] active-refresh page', activePage, 'failed —', e.message);
         break;
       }
       const data = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
@@ -184,17 +186,18 @@ async function syncCC(opts) {
   if (!isFull) {
     let rfPage = 1, rfTouched = 0;
     while (rfPage <= 50) {
-      const r = await fetchR(CC_BASE + '/purchase/query/?' + ccParams({
-        startDate:      '01/01/2015',
-        endDate:        endDate,
-        status:         'RECYCLE_FAILED',
-        resultsPerPage: perPage,
-        page:           rfPage
-      }), { method: 'POST' });
-      const text = await r.text();
       let d;
-      try { d = JSON.parse(text); } catch (e) {
-        console.error('[sync:cc] non-JSON recycle-failed page', rfPage, ':', text.substring(0, 200));
+      try {
+        const r = await fetchR(CC_BASE + '/purchase/query/?' + ccParams({
+          startDate:      '01/01/2015',
+          endDate:        endDate,
+          status:         'RECYCLE_FAILED',
+          resultsPerPage: perPage,
+          page:           rfPage
+        }), { method: 'POST' });
+        d = JSON.parse(await r.text());
+      } catch (e) {
+        console.error('[sync:cc] recycle-failed page', rfPage, 'failed —', e.message);
         break;
       }
       const data = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
@@ -211,16 +214,17 @@ async function syncCC(opts) {
   let ordersTouched = 0;
   page = 1;
   while (page <= 50) {
-    const r = await fetchR(CC_BASE + '/order/query/?' + ccParams({
-      startDate:      startDate,
-      endDate:        endDate,
-      resultsPerPage: perPage,
-      page:           page
-    }), { method: 'POST' });
-    const text = await r.text();
     let d;
-    try { d = JSON.parse(text); } catch (e) {
-      console.error('[sync:cc] non-JSON orders response page', page, ':', text.substring(0, 200));
+    try {
+      const r = await fetchR(CC_BASE + '/order/query/?' + ccParams({
+        startDate:      startDate,
+        endDate:        endDate,
+        resultsPerPage: perPage,
+        page:           page
+      }), { method: 'POST' });
+      d = JSON.parse(await r.text());
+    } catch (e) {
+      console.error('[sync:cc] orders page', page, 'failed —', e.message);
       break;
     }
     const data = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
@@ -572,7 +576,9 @@ async function syncWhop(opts) {
   const productMap = {};
   let pPage = 1, totalPPages = 1;
   do {
-    const d = await whopFetch(WHOP_BASE + '/products?per_page=10&page=' + pPage);
+    let d;
+    try { d = await whopFetch(WHOP_BASE + '/products?per_page=10&page=' + pPage); }
+    catch (e) { console.warn('[sync:whop] product page', pPage, 'failed —', e.message); break; }
     (d.data || []).forEach(function(p) { productMap[p.id] = p.title || p.name || p.id; });
     totalPPages = (d.pagination && d.pagination.total_page) || 1;
     pPage++;
@@ -603,9 +609,13 @@ async function syncWhop(opts) {
   let touched = 0;
   let page = 1, totalPages = 1;
   do {
-    const d = await whopFetch(
-      WHOP_BASE + '/memberships?per_page=10&page=' + page + '&status=active'
-    );
+    let d;
+    try {
+      d = await whopFetch(WHOP_BASE + '/memberships?per_page=10&page=' + page + '&status=active');
+    } catch (e) {
+      console.warn('[sync:whop] active membership page', page, 'failed —', e.message);
+      break;   /* keep what we synced; next cycle catches the rest */
+    }
     const items = d.data || [];
     totalPages = (d.pagination && d.pagination.total_page) || 1;
 
@@ -627,9 +637,13 @@ async function syncWhop(opts) {
     for (const cs of cancelStatuses) {
       let cPage = 1, cTotalPages = 1;
       do {
-        const d = await whopFetch(
-          WHOP_BASE + '/memberships?per_page=10&page=' + cPage + '&status=' + cs
-        );
+        let d;
+        try {
+          d = await whopFetch(WHOP_BASE + '/memberships?per_page=10&page=' + cPage + '&status=' + cs);
+        } catch (e) {
+          console.warn('[sync:whop]', cs, 'page', cPage, 'failed —', e.message);
+          break;
+        }
         const items = d.data || [];
         cTotalPages = (d.pagination && d.pagination.total_page) || 1;
 
