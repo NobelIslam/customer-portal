@@ -256,7 +256,20 @@ router.get('/api/overview', async function(req, res) {
     const todayStart = amsMidnightUTC(now);
     const todayEnd   = new Date(todayStart.getTime() + 24 * 3600 * 1000);
     const periodDays = Math.min(Math.max(parseInt(req.query.days || '30', 10), 1), 365);
-    const periodAgo  = new Date(todayStart); periodAgo.setUTCDate(periodAgo.getUTCDate() - periodDays);
+    let periodAgo, periodEnd;
+    const startDateParam = req.query.startDate; // YYYY-MM-DD Amsterdam date (optional)
+    const endDateParam   = req.query.endDate;
+    if (startDateParam && /^\d{4}-\d{2}-\d{2}$/.test(startDateParam)) {
+      periodAgo = amsMidnightUTC(new Date(startDateParam + 'T12:00:00Z'));
+    } else {
+      periodAgo = new Date(todayStart); periodAgo.setUTCDate(periodAgo.getUTCDate() - periodDays);
+    }
+    if (endDateParam && /^\d{4}-\d{2}-\d{2}$/.test(endDateParam)) {
+      periodEnd = amsMidnightUTC(new Date(endDateParam + 'T12:00:00Z'));
+      periodEnd.setUTCDate(periodEnd.getUTCDate() + 1); // exclusive: start of next day
+    } else {
+      periodEnd = todayEnd; // end of today (exclusive)
+    }
     const tomorrowEnd   = new Date(todayStart); tomorrowEnd.setUTCDate(tomorrowEnd.getUTCDate() + 2);
     const tomorrowStart = new Date(todayStart); tomorrowStart.setUTCDate(tomorrowStart.getUTCDate() + 1);
     const weekStart    = new Date(todayStart); weekStart.setUTCDate(weekStart.getUTCDate() - 7);
@@ -310,23 +323,23 @@ router.get('/api/overview', async function(req, res) {
       db.many(`SELECT source, COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS mrr_cents
                FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW() ${NO_PAYPAL} GROUP BY source ORDER BY n DESC`),
       db.many(`SELECT TO_CHAR(DATE(created_at), 'YYYY-MM-DD') AS day, COALESCE(SUM(amount_cents),0)::bigint AS cents
-               FROM orders WHERE created_at >= $1
-               GROUP BY TO_CHAR(DATE(created_at), 'YYYY-MM-DD') ORDER BY day ASC`, [periodAgo]),
+               FROM orders WHERE created_at >= $1 AND created_at < $2
+               GROUP BY TO_CHAR(DATE(created_at), 'YYYY-MM-DD') ORDER BY day ASC`, [periodAgo, periodEnd]),
       db.many(`SELECT TO_CHAR(DATE(next_bill_at), 'YYYY-MM-DD') AS day, COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS cents
                FROM subscriptions
                WHERE status = 'ACTIVE' AND next_bill_at >= $1 AND next_bill_at < $2 ${NO_PAYPAL}
                GROUP BY TO_CHAR(DATE(next_bill_at), 'YYYY-MM-DD') ORDER BY day ASC`,
               [todayStart, new Date(todayStart.getTime() + 8 * 24 * 60 * 60 * 1000)]),
       db.many(`SELECT TO_CHAR(DATE(started_at), 'YYYY-MM-DD') AS day, source, COUNT(*)::int AS n
-               FROM subscriptions WHERE started_at >= $1 ${NO_PAYPAL}
-               GROUP BY TO_CHAR(DATE(started_at), 'YYYY-MM-DD'), source ORDER BY day ASC`, [periodAgo]),
+               FROM subscriptions WHERE started_at >= $1 AND started_at < $2 ${NO_PAYPAL}
+               GROUP BY TO_CHAR(DATE(started_at), 'YYYY-MM-DD'), source ORDER BY day ASC`, [periodAgo, periodEnd]),
       db.many(`SELECT TO_CHAR(DATE(cancelled_at), 'YYYY-MM-DD') AS day, source, COUNT(*)::int AS n
-               FROM subscriptions WHERE cancelled_at >= $1 ${NO_PAYPAL}
-               GROUP BY TO_CHAR(DATE(cancelled_at), 'YYYY-MM-DD'), source ORDER BY day ASC`, [periodAgo]),
+               FROM subscriptions WHERE cancelled_at >= $1 AND cancelled_at < $2 ${NO_PAYPAL}
+               GROUP BY TO_CHAR(DATE(cancelled_at), 'YYYY-MM-DD'), source ORDER BY day ASC`, [periodAgo, periodEnd]),
       db.many(`SELECT id, customer_email, product, source, price_cents, cancelled_at,
                COALESCE(cancel_reason, CASE WHEN status = 'RECYCLE_FAILED' THEN 'Payment failed' END) AS cancel_reason
-               FROM subscriptions WHERE cancelled_at >= $1 ${NO_PAYPAL}
-               ORDER BY cancelled_at DESC LIMIT 2000`, [periodAgo]),
+               FROM subscriptions WHERE cancelled_at >= $1 AND cancelled_at < $2 ${NO_PAYPAL}
+               ORDER BY cancelled_at DESC LIMIT 2000`, [periodAgo, periodEnd]),
       Promise.resolve([]),  /* recentEvents removed — activity feed has its own live endpoint */
       db.many(`SELECT product, source, COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS mrr_cents
                FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW() AND product IS NOT NULL ${NO_PAYPAL}

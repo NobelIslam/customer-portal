@@ -70,18 +70,105 @@
     .search-clear.visible { display: block; }
 
     /* Date pills */
-    .date-range {
-      display: flex; gap: 2px;
+    /* ── Date picker trigger badge ── */
+    .date-badge-btn {
+      display: inline-flex; align-items: center; gap: 5px;
       background: var(--bg3); border: 1px solid var(--border);
-      border-radius: 7px; padding: 3px;
+      border-radius: 7px; padding: 4px 10px;
+      font-size: 11px; color: var(--muted); cursor: pointer;
+      transition: all 0.12s; white-space: nowrap; user-select: none;
     }
-    .dr-pill {
-      font-size: 11px; padding: 4px 9px;
-      border-radius: 5px; color: var(--muted);
-      cursor: pointer; white-space: nowrap; transition: all 0.12s;
+    .date-badge-btn:hover { color: var(--text); border-color: var(--accent); }
+    .date-badge-btn svg { flex-shrink: 0; }
+
+    /* ── Date picker overlay + modal ── */
+    .picker-overlay {
+      position: fixed; inset: 0; z-index: 500;
+      background: rgba(0,0,0,.55);
+      display: none; align-items: flex-start; justify-content: flex-end;
+      padding-top: 52px; padding-right: 16px;
     }
-    .dr-pill:hover { color: var(--text); }
-    .dr-pill.on { background: var(--accent); color: #fff; font-weight: 500; }
+    .picker-overlay.open { display: flex; }
+    .picker-modal {
+      background: #12141a; border-radius: 12px; border: 1px solid #2a2d36;
+      box-shadow: 0 24px 64px rgba(0,0,0,.65);
+      display: flex; overflow: hidden;
+      animation: pickerIn .15s ease-out;
+      max-width: calc(100vw - 32px);
+    }
+    @keyframes pickerIn { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:none; } }
+    .picker-presets {
+      width: 160px; background: #0e1014; border-right: 1px solid #2a2d36;
+      padding: 10px 0; flex-shrink: 0; overflow-y: auto;
+    }
+    .picker-preset {
+      padding: 9px 16px; font-size: 12.5px; color: #9ca3af; cursor: pointer;
+      transition: background .1s, color .1s;
+    }
+    .picker-preset:hover { background: #1c2028; color: #fff; }
+    .picker-preset.on { background: #1c2028; color: #fff; font-weight: 600; }
+    .picker-body {
+      flex: 1; display: flex; flex-direction: column; padding: 16px 18px 14px;
+      min-width: 0;
+    }
+    .picker-inputs { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+    .picker-input {
+      flex: 1; background: #1c2028; border: 1px solid #2a2d36; border-radius: 6px;
+      padding: 7px 10px; font-size: 12px; color: #fff; font-family: var(--font);
+      outline: none; min-width: 0;
+    }
+    .picker-input:focus { border-color: var(--accent); }
+    .picker-arrow { color: #555; font-size: 13px; flex-shrink: 0; }
+    .picker-calendars { display: flex; gap: 20px; }
+    .picker-cal { flex: 1; min-width: 0; }
+    .picker-cal-head {
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;
+    }
+    .picker-cal-title { font-size: 12.5px; font-weight: 600; color: #fff; }
+    .picker-nav {
+      background: none; border: none; color: #666; cursor: pointer;
+      font-size: 15px; padding: 2px 5px; border-radius: 4px; line-height: 1;
+      transition: color .1s, background .1s;
+    }
+    .picker-nav:hover { color: #fff; background: #2a2d36; }
+    .picker-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; }
+    .picker-dow {
+      font-size: 9.5px; font-weight: 600; color: #484d5a; text-align: center;
+      padding-bottom: 7px; text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .picker-day {
+      aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+      font-size: 11.5px; color: #9ca3af; cursor: pointer; border-radius: 50%;
+      transition: background .1s, color .1s; position: relative; user-select: none;
+    }
+    .picker-day:hover:not(.p-empty):not(.p-outside) { background: #2a2d36; color: #fff; }
+    .picker-day.p-outside { color: #333; pointer-events: none; }
+    .picker-day.p-empty { pointer-events: none; }
+    .picker-day.p-in-range {
+      background: rgba(240,78,0,.18); color: #fff; border-radius: 0;
+    }
+    .picker-day.p-range-start, .picker-day.p-range-end {
+      background: var(--accent) !important; color: #fff !important;
+      border-radius: 50% !important; font-weight: 700;
+    }
+    .picker-day.p-range-start.p-in-range { border-radius: 50% 0 0 50% !important; }
+    .picker-day.p-range-end.p-in-range { border-radius: 0 50% 50% 0 !important; }
+    .picker-day.p-today::after {
+      content: ''; position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%);
+      width: 3px; height: 3px; border-radius: 50%; background: var(--accent);
+    }
+    .picker-footer {
+      display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px;
+      padding-top: 12px; border-top: 1px solid #2a2d36;
+    }
+    .picker-btn {
+      padding: 7px 18px; border-radius: 6px; font-size: 12.5px; font-weight: 500;
+      cursor: pointer; border: none; font-family: var(--font); transition: all .1s;
+    }
+    .picker-btn.p-cancel { background: #1c2028; color: #9ca3af; }
+    .picker-btn.p-cancel:hover { color: #fff; }
+    .picker-btn.p-apply { background: var(--accent); color: #fff; }
+    .picker-btn.p-apply:hover { filter: brightness(1.1); }
 
     /* Right controls */
     .topbar-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
@@ -541,17 +628,10 @@
       .sidebar.open { transform: translateX(0); }
       .sidebar-overlay.show { display: block; }
 
-      /* Date filter → sticky bottom bar (app style) */
-      .date-range {
-        position: fixed; left: 0; right: 0; bottom: 0; z-index: 150;
-        border: none; border-top: 1px solid var(--border); border-radius: 0;
-        background: var(--bg2); padding: 9px 12px; gap: 6px;
-        justify-content: center; overflow-x: auto;
-        box-shadow: 0 -2px 14px rgba(0,0,0,.07);
-        padding-bottom: calc(9px + env(safe-area-inset-bottom, 0px));
-      }
-      .dr-pill { padding: 8px 16px; font-size: 13px; }
-      .main { padding-bottom: 70px; }  /* clear the bottom bar */
+      /* picker responsive */
+      .picker-calendars { flex-direction: column; gap: 14px; }
+      .picker-modal { max-height: 92vh; overflow-y: auto; }
+      .picker-presets { width: 100%; border-right: none; border-bottom: 1px solid #2a2d36; padding: 6px 0; display: flex; flex-wrap: wrap; }
     }
 
     @media (max-width: 640px) {
@@ -568,8 +648,7 @@
       .nav-item { padding: 10px 12px; font-size: 13px; }
       .nav-section { font-size: 10px; margin: 16px 12px 6px; }
 
-      /* Main content full-width, tighter (keep bottom room for the sticky bar) */
-      .main { padding: 12px 12px 80px; }
+      .main { padding: 12px 12px 24px; }
       .welcome-wrap { padding: 14px 0 10px; }
       .welcome-greeting { font-size: 24px; }
       .page-head { flex-direction: column; gap: 10px; }
@@ -632,13 +711,10 @@
     <span class="search-clear" id="search-clear" onclick="clearSearch()">✕</span>
   </div>
 
-  <!-- Date range -->
-  <div class="date-range" id="date-range">
-    <span class="dr-pill" data-days="1">Today</span>
-    <span class="dr-pill" data-days="7">7d</span>
-    <span class="dr-pill on" data-days="30">30d</span>
-    <span class="dr-pill" data-days="90">90d</span>
-    <span class="dr-pill" data-days="ytd">YTD</span>
+  <!-- Date range picker trigger -->
+  <div class="date-badge-btn" id="date-range-btn" onclick="openPicker()" title="Select date range">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+    <span id="topbar-date-label">Last 30 days</span>
   </div>
 
   <div class="topbar-right">
@@ -693,7 +769,7 @@
           <div class="welcome-sub" id="greeting-sub"></div>
         </div>
         <div class="welcome-right">
-          <div class="date-badge">
+          <div class="date-badge" onclick="openPicker()" style="cursor:pointer" title="Select date range">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
             <span id="header-date">Jun 15, 2026</span>
           </div>
@@ -953,7 +1029,17 @@ function dayDelta(cur, prev) {
 }
 
 /* ── Date range state ── */
-var currentDays = 30;
+var currentDays      = 30;
+var currentStartDate = null;   /* YYYY-MM-DD sent to API */
+var currentEndDate   = null;
+
+/* ── Picker state (declared early so IIFE below can reference them) ── */
+var pickerStart     = null;
+var pickerEnd       = null;
+var pickerHover     = null;
+var pickerSelecting = false;
+var pickerViewYear  = new Date().getFullYear();
+var pickerViewMonth = new Date().getMonth();
 
 function getYTDDays() {
   var now = new Date(), jan1 = new Date(now.getFullYear(), 0, 1);
@@ -969,15 +1055,23 @@ function lastNDays() {
   return days;
 }
 
-/* Date pill click handler */
-document.getElementById('date-range').addEventListener('click', function(e) {
-  var pill = e.target.closest('.dr-pill');
-  if (!pill) return;
-  var dVal = pill.dataset.days;
-  currentDays = dVal === 'ytd' ? getYTDDays() : parseInt(dVal, 10);
-  document.querySelectorAll('.dr-pill').forEach(function(p) { p.classList.toggle('on', p === pill); });
-  loadData();
+/* Set default picker range to Last 30 days on page load.
+   Called after picker functions are available (DOMContentLoaded fires after script parse). */
+document.addEventListener('DOMContentLoaded', function() {
+  pickerInitDefault();
 });
+function pickerInitDefault() {
+  /* Index 3 = "Last 30 days" in PICKER_PRESETS */
+  var range = PICKER_PRESETS[3].fn();
+  pickerStart = range[0]; pickerEnd = range[1];
+  currentStartDate = pickerIso(pickerStart);
+  currentEndDate   = pickerIso(pickerEnd);
+  var ms = pickerEnd - pickerStart;
+  currentDays = Math.max(1, Math.round(ms / 86400000) + 1);
+  pickerViewYear = pickerStart.getFullYear(); pickerViewMonth = pickerStart.getMonth();
+  var top = document.getElementById('topbar-date-label');
+  if (top) top.textContent = 'Last 30 days';
+}
 
 /* ── Search state ── */
 var searchTerm = '';
@@ -1662,8 +1756,8 @@ function gatewayPage(p) {
 function updateSubtitle() {
   var now = new Date(), from = new Date(now);
   from.setDate(from.getDate() - currentDays);
-  var activePill = document.querySelector('.dr-pill.on');
-  var label = activePill ? activePill.textContent : currentDays + 'd';
+  var topLabel = document.getElementById('topbar-date-label');
+  var label = topLabel ? topLabel.textContent : currentDays + 'd';
   var psubEl = document.getElementById('page-sub');
   if (psubEl) psubEl.textContent =
     'All sources · ' + label + ' · ' +
@@ -1744,6 +1838,8 @@ async function runWhopSync() {
 async function loadData() {
   try {
     var url = '/admin/api/overview?days=' + currentDays;
+    if (currentStartDate) url += '&startDate=' + currentStartDate;
+    if (currentEndDate)   url += '&endDate='   + currentEndDate;
     var r = await fetch(url, { headers: H });
     if (r.status === 401) { logout(); return; }
     if (!r.ok) throw new Error('Failed to load data');
@@ -2424,14 +2520,247 @@ function renderGreeting() {
     sub.textContent = days[now.getDay()] + ', ' + months[now.getMonth()] + ' ' + now.getDate() + ' · TGP™ · Europe/Amsterdam';
   }
 
-  var hd = document.getElementById('header-date');
-  if (hd) {
+  updateDateBadge();
+}
+
+function updateDateBadge() {
+  var label;
+  if (pickerStart && pickerEnd && pickerStart.getTime() !== pickerEnd.getTime()) {
+    label = pickerFmt(pickerStart) + ' – ' + pickerFmt(pickerEnd);
+  } else if (pickerStart) {
+    label = pickerFmt(pickerStart);
+  } else {
     var n = new Date();
-    hd.textContent = n.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    label = n.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   }
+  var hd  = document.getElementById('header-date');
+  var top = document.getElementById('topbar-date-label');
+  if (hd)  hd.textContent  = label;
+  if (top) top.textContent = label;
 }
 
 
+/* ════════════════════════════════════════════════
+   DATE RANGE PICKER  (vars declared earlier near currentDays)
+   ════════════════════════════════════════════════ */
+
+var PICKER_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+var PICKER_DOWS   = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+
+var PICKER_PRESETS = [
+  { label: 'Today',        fn: function() { var d = pickerToday(); return [d, new Date(d)]; } },
+  { label: 'Yesterday',    fn: function() { var d = pickerToday(); d.setDate(d.getDate()-1); return [d, new Date(d)]; } },
+  { label: 'Last 7 days',  fn: function() { var e = pickerToday(), s = new Date(e); s.setDate(s.getDate()-6); return [s, e]; } },
+  { label: 'Last 30 days', fn: function() { var e = pickerToday(), s = new Date(e); s.setDate(s.getDate()-29); return [s, e]; } },
+  { label: 'Last 90 days', fn: function() { var e = pickerToday(), s = new Date(e); s.setDate(s.getDate()-89); return [s, e]; } },
+  { label: 'This month',   fn: function() { var e = pickerToday(), s = new Date(e.getFullYear(), e.getMonth(), 1); return [s, e]; } },
+  { label: 'Last month',   fn: function() { var t = pickerToday(), s = new Date(t.getFullYear(), t.getMonth()-1, 1), e = new Date(t.getFullYear(), t.getMonth(), 0); return [s, e]; } },
+  { label: 'This quarter', fn: function() { var t = pickerToday(), q = Math.floor(t.getMonth()/3), s = new Date(t.getFullYear(), q*3, 1); return [s, t]; } },
+  { label: 'Year to date', fn: function() { var e = pickerToday(), s = new Date(e.getFullYear(), 0, 1); return [s, e]; } },
+  { label: 'Lifetime',     fn: function() { return [new Date(2020, 0, 1), pickerToday()]; } },
+];
+
+function pickerToday() {
+  var iso = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Amsterdam' }).format(new Date());
+  var p   = iso.split('-').map(Number);
+  return new Date(p[0], p[1]-1, p[2]);
+}
+
+function pickerFmt(d) {
+  if (!d) return '';
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function pickerIso(d) {
+  if (!d) return null;
+  var m = String(d.getMonth()+1).padStart(2,'0'), dd = String(d.getDate()).padStart(2,'0');
+  return d.getFullYear() + '-' + m + '-' + dd;
+}
+
+function openPicker() {
+  var ov = document.getElementById('picker-overlay');
+  if (!ov) return;
+  if (!pickerStart) {
+    var t = pickerToday(); pickerViewYear = t.getFullYear(); pickerViewMonth = t.getMonth();
+  } else {
+    pickerViewYear = pickerStart.getFullYear(); pickerViewMonth = pickerStart.getMonth();
+  }
+  pickerSelecting = false; pickerHover = null;
+  renderPicker();
+  ov.classList.add('open');
+}
+
+function closePicker() {
+  var ov = document.getElementById('picker-overlay');
+  if (ov) ov.classList.remove('open');
+}
+
+function pickerOverlayClick(e) {
+  if (e.target === document.getElementById('picker-overlay')) closePicker();
+}
+
+function applyPicker() {
+  if (!pickerStart) { closePicker(); return; }
+  var end = pickerEnd || new Date(pickerStart);
+  if (end < pickerStart) { var tmp = pickerStart; pickerStart = end; end = tmp; }
+  pickerEnd = end;
+
+  currentStartDate = pickerIso(pickerStart);
+  currentEndDate   = pickerIso(pickerEnd);
+
+  /* Calculate days span for compat display */
+  var ms   = pickerEnd - pickerStart;
+  var days = Math.max(1, Math.round(ms / 86400000) + 1);
+  currentDays = days;
+
+  updateDateBadge();
+  closePicker();
+  loadData();
+}
+
+function renderPicker() {
+  renderPickerPresets();
+  renderPickerInputs();
+  var lY = pickerViewYear, lM = pickerViewMonth;
+  var rM = lM === 11 ? 0  : lM + 1;
+  var rY = lM === 11 ? lY + 1 : lY;
+  renderPickerCal('picker-cal-left',  lY, lM, false);
+  renderPickerCal('picker-cal-right', rY, rM, true);
+}
+
+function renderPickerPresets() {
+  var el = document.getElementById('picker-presets-list');
+  if (!el) return;
+  el.innerHTML = PICKER_PRESETS.map(function(p, i) {
+    return '<div class="picker-preset" id="pp-' + i + '" onclick="applyPreset(' + i + ')">' + p.label + '</div>';
+  }).join('');
+}
+
+function renderPickerInputs() {
+  var si = document.getElementById('picker-start-input');
+  var ei = document.getElementById('picker-end-input');
+  if (si) si.value = pickerFmt(pickerStart);
+  if (ei) ei.value = pickerFmt(pickerEnd);
+}
+
+function renderPickerCal(id, year, month, hideLeftNav) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  var today    = pickerToday();
+  var todayIso = pickerIso(today);
+  var startIso = pickerIso(pickerStart);
+  var endIso   = pickerIso(pickerEnd || pickerStart);
+  var hoverIso = pickerIso(pickerHover);
+  var rangeEnd = (pickerSelecting && hoverIso) ? hoverIso : endIso;
+
+  var firstDay    = new Date(year, month, 1).getDay();
+  var daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  var navL = hideLeftNav ? '<span style="width:24px"></span>' : '<button class="picker-nav" onclick="pickerNav(-1)">&#8249;</button>';
+  var navR = hideLeftNav ? '<button class="picker-nav" onclick="pickerNav(1)">&#8250;</button>' : '<span style="width:24px"></span>';
+
+  var html = '<div class="picker-cal-head">' + navL +
+    '<span class="picker-cal-title">' + PICKER_MONTHS[month] + ' ' + year + '</span>' + navR + '</div>';
+  html += '<div class="picker-grid">';
+  PICKER_DOWS.forEach(function(d) { html += '<div class="picker-dow">' + d + '</div>'; });
+
+  for (var i = 0; i < firstDay; i++) html += '<div class="picker-day p-empty"></div>';
+
+  for (var day = 1; day <= daysInMonth; day++) {
+    var m  = String(month+1).padStart(2,'0'), dd = String(day).padStart(2,'0');
+    var iso = year + '-' + m + '-' + dd;
+    var cls = 'picker-day';
+    if (iso === todayIso) cls += ' p-today';
+
+    if (startIso && rangeEnd) {
+      var lo = startIso <= rangeEnd ? startIso : rangeEnd;
+      var hi = startIso <= rangeEnd ? rangeEnd : startIso;
+      if (iso > lo && iso < hi) cls += ' p-in-range';
+      if (iso === lo && lo !== hi) cls += ' p-range-start p-in-range';
+      if (iso === hi && lo !== hi) cls += ' p-range-end p-in-range';
+      if (iso === lo && lo === hi) cls += ' p-range-start';
+    }
+
+    html += '<div class="' + cls + '" onclick="pickerDayClick(\'' + iso + '\')" onmouseenter="pickerDayHover(\'' + iso + '\')">' + day + '</div>';
+  }
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+function pickerNav(dir) {
+  pickerViewMonth += dir;
+  if (pickerViewMonth > 11) { pickerViewMonth = 0; pickerViewYear++; }
+  if (pickerViewMonth < 0)  { pickerViewMonth = 11; pickerViewYear--; }
+  renderPicker();
+}
+
+function pickerDayClick(iso) {
+  var p = iso.split('-').map(Number), d = new Date(p[0], p[1]-1, p[2]);
+  if (!pickerSelecting || !pickerStart) {
+    pickerStart = d; pickerEnd = null; pickerSelecting = true;
+  } else {
+    if (d < pickerStart) { pickerEnd = pickerStart; pickerStart = d; }
+    else { pickerEnd = d; }
+    pickerSelecting = false; pickerHover = null;
+  }
+  renderPickerInputs();
+  var lY = pickerViewYear, lM = pickerViewMonth;
+  var rM = lM === 11 ? 0  : lM + 1;
+  var rY = lM === 11 ? lY + 1 : lY;
+  renderPickerCal('picker-cal-left',  lY, lM, false);
+  renderPickerCal('picker-cal-right', rY, rM, true);
+}
+
+function pickerDayHover(iso) {
+  if (!pickerSelecting) return;
+  var p = iso.split('-').map(Number);
+  pickerHover = new Date(p[0], p[1]-1, p[2]);
+  var lY = pickerViewYear, lM = pickerViewMonth;
+  var rM = lM === 11 ? 0  : lM + 1;
+  var rY = lM === 11 ? lY + 1 : lY;
+  renderPickerCal('picker-cal-left',  lY, lM, false);
+  renderPickerCal('picker-cal-right', rY, rM, true);
+}
+
+function applyPreset(i) {
+  var range = PICKER_PRESETS[i].fn();
+  pickerStart = range[0]; pickerEnd = range[1]; pickerSelecting = false; pickerHover = null;
+  pickerViewYear = pickerStart.getFullYear(); pickerViewMonth = pickerStart.getMonth();
+  /* Mark active preset */
+  document.querySelectorAll('.picker-preset').forEach(function(el, idx) {
+    el.classList.toggle('on', idx === i);
+  });
+  renderPickerInputs();
+  var lY = pickerViewYear, lM = pickerViewMonth;
+  var rM = lM === 11 ? 0  : lM + 1;
+  var rY = lM === 11 ? lY + 1 : lY;
+  renderPickerCal('picker-cal-left',  lY, lM, false);
+  renderPickerCal('picker-cal-right', rY, rM, true);
+}
+
 </script>
+
+<!-- ── Date range picker modal ── -->
+<div class="picker-overlay" id="picker-overlay" onclick="pickerOverlayClick(event)">
+  <div class="picker-modal">
+    <div class="picker-presets" id="picker-presets-list"></div>
+    <div class="picker-body">
+      <div class="picker-inputs">
+        <input class="picker-input" id="picker-start-input" placeholder="Start date" readonly/>
+        <span class="picker-arrow">&#8594;</span>
+        <input class="picker-input" id="picker-end-input" placeholder="End date" readonly/>
+      </div>
+      <div class="picker-calendars">
+        <div class="picker-cal" id="picker-cal-left"></div>
+        <div class="picker-cal" id="picker-cal-right"></div>
+      </div>
+      <div class="picker-footer">
+        <button class="picker-btn p-cancel" onclick="closePicker()">Cancel</button>
+        <button class="picker-btn p-apply" onclick="applyPicker()">Apply</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
