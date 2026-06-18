@@ -77,6 +77,31 @@ function amsParseLocal(s) {
   return new Date(iso + sign + pad + ':00');
 }
 
+function delay(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
+
+/* Resilient JSON fetch for flaky upstream APIs. CheckoutChamp / Whop / Shopify
+   intermittently reset the connection on Render, which makes node-fetch throw
+   "Invalid response body" — a single drop would otherwise zero out a whole source.
+   Retries the full fetch+body-read with backoff. Reads via text() so a partial
+   body surfaces as a retryable error, and tolerates non-JSON bodies.            */
+async function apiJSON(url, opts, tries) {
+  tries = tries || 3;
+  var lastErr;
+  for (var i = 0; i < tries; i++) {
+    try {
+      var r   = await fetch(url, opts);
+      var txt = await r.text();
+      var json = null;
+      if (txt) { try { json = JSON.parse(txt); } catch (e) { json = null; } }
+      return { ok: r.ok, status: r.status, json: json };
+    } catch (e) {
+      lastErr = e;
+      if (i < tries - 1) await delay(350 * (i + 1));
+    }
+  }
+  throw lastErr;
+}
+
 function adminCreateToken(payload) {
   payload.expires = Date.now() + 24 * 60 * 60 * 1000;
   var data = Buffer.from(JSON.stringify(payload)).toString('base64url');
@@ -1035,9 +1060,9 @@ async function fetchWhopRebillsToday(todayStart, todayEnd) {
   var billed = [], failed = [], page = 1, MAX_PAGES = 8;
   try {
     while (page <= MAX_PAGES) {
-      var r = await fetch(WHOP_API_BASE + '/payments?per_page=50&page=' + page, { headers });
-      if (!r.ok) break;
-      var d = await r.json();
+      var resp = await apiJSON(WHOP_API_BASE + '/payments?per_page=50&page=' + page, { headers });
+      if (!resp.ok || !resp.json) break;
+      var d = resp.json;
       var items = d.data || [];
       if (!items.length) break;
       var sawOlder = false;
@@ -1107,8 +1132,8 @@ router.get('/api/today-orders', async function(req, res) {
               billType: 'RECURRING', txnType: 'SALE', responseType: 'SUCCESS',
               resultsPerPage: 200, page: page
             });
-            const r = await fetch(CC_API_BASE + '/transactions/query/?' + p.toString(), { method: 'POST' });
-            const d = await r.json();
+            const resp = await apiJSON(CC_API_BASE + '/transactions/query/?' + p.toString(), { method: 'POST' });
+            const d = resp.json || {};
             const txns = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
             txns.forEach(function(t) {
               /* Keep only transactions within the CEST today window */
@@ -1160,8 +1185,8 @@ router.get('/api/today-orders', async function(req, res) {
               startDate: ccStart90, endDate: ccTodayStr,
               status: 'ACTIVE', resultsPerPage: 200, page: page
             });
-            const r = await fetch(CC_API_BASE + '/purchase/query/?' + p.toString(), { method: 'POST' });
-            const d = await r.json();
+            const resp = await apiJSON(CC_API_BASE + '/purchase/query/?' + p.toString(), { method: 'POST' });
+            const d = resp.json || {};
             const subs = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
             subs.forEach(function(s) {
               if (s.nextBillDate !== todayUTC) return;
@@ -1310,8 +1335,8 @@ router.get('/api/activity-feed', auth.requireAdmin, async function(req, res) {
             txnType: 'SALE', responseType: 'SUCCESS',
             resultsPerPage: 200, page: page
           });
-          const r = await fetch(CC_API_BASE + '/transactions/query/?' + p.toString(), { method: 'POST' });
-          const d = await r.json();
+          const resp = await apiJSON(CC_API_BASE + '/transactions/query/?' + p.toString(), { method: 'POST' });
+          const d = resp.json || {};
           const txns = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
           txns.forEach(function(t) {
             var ts = ccParseDate(t.dateCreated || '');
@@ -1345,8 +1370,8 @@ router.get('/api/activity-feed', auth.requireAdmin, async function(req, res) {
             txnType: 'SALE', responseType: 'DECLINE',
             resultsPerPage: 200, page: page
           });
-          const r = await fetch(CC_API_BASE + '/transactions/query/?' + p.toString(), { method: 'POST' });
-          const d = await r.json();
+          const resp = await apiJSON(CC_API_BASE + '/transactions/query/?' + p.toString(), { method: 'POST' });
+          const d = resp.json || {};
           const txns = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
           txns.forEach(function(t) {
             var ts = ccParseDate(t.dateCreated || '');
@@ -1860,8 +1885,8 @@ router.get('/api/today-revenue', async function(req, res) {
               billType: 'RECURRING', txnType: 'SALE', responseType: responseType,
               resultsPerPage: 200, page: page
             });
-            const r = await fetch(CC_API_BASE + '/transactions/query/?' + p.toString(), { method: 'POST' });
-            const d = await r.json();
+            const resp = await apiJSON(CC_API_BASE + '/transactions/query/?' + p.toString(), { method: 'POST' });
+            const d = resp.json || {};
             const txns = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
             txns.forEach(function(t) {
               var ts = ccParseDate(t.dateCreated || '');
@@ -2066,9 +2091,9 @@ router.get('/api/mrr-summary', async function(req, res) {
           while (page <= 60) {
             var url = RC_API_BASE + '/charges?limit=250&page=' + page +
                       '&status=success&date_min=' + monthStartAms + '&date_max=' + todayAms;
-            var r = await fetch(url, { headers });
-            if (!r.ok) throw new Error('HTTP ' + r.status);
-            var d = await r.json();
+            var resp = await apiJSON(url, { headers });
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            var d = resp.json || {};
             var charges = d.charges || [];
             charges.forEach(function(c) {
               if (c.type !== 'RECURRING') return;
@@ -2091,10 +2116,10 @@ router.get('/api/mrr-summary', async function(req, res) {
         var cents = 0, page = 1, ok = true, MAX_PAGES = 200;
         try {
           while (page <= MAX_PAGES) {
-            var r = await fetch(WHOP_API_BASE +
+            var resp = await apiJSON(WHOP_API_BASE +
               '/payments?per_page=50&status=paid&billing_reason=subscription_cycle&page=' + page, { headers });
-            if (!r.ok) throw new Error('HTTP ' + r.status);
-            var d = await r.json();
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            var d = resp.json || {};
             var items = d.data || [];
             if (!items.length) break;
             var sawOlder = false;
@@ -2124,9 +2149,9 @@ router.get('/api/mrr-summary', async function(req, res) {
               billType: 'RECURRING', txnType: 'SALE', responseType: 'SUCCESS',
               resultsPerPage: 200, page: page
             });
-            var r = await fetch(CC_API_BASE + '/transactions/query/?' + p.toString(), { method: 'POST' });
-            if (!r.ok) throw new Error('HTTP ' + r.status);
-            var d = await r.json();
+            var resp = await apiJSON(CC_API_BASE + '/transactions/query/?' + p.toString(), { method: 'POST' });
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            var d = resp.json || {};
             if (d.result !== 'SUCCESS') throw new Error('CC result ' + d.result);
             var txns = (d.message && d.message.data) ? d.message.data : [];
             txns.forEach(function(t) {
