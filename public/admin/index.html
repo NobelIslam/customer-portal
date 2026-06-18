@@ -1853,54 +1853,66 @@ function buildDbOrderStatus(lastBilledAt, nextBillAt) {
   return '<span class="ship-badge ship-pending">Scheduled</span>';
 }
 
-var shopifyTrackingCache = {};
+var shopifyTrackingCache   = {}; /* email → final html (null = in-flight) */
+var shopifyTrackingPending = {}; /* email → [idx, idx, ...] waiting for result */
+
+function applyShopifyHtml(email, html) {
+  shopifyTrackingCache[email] = html;
+  (shopifyTrackingPending[email] || []).forEach(function(i) {
+    var c = document.getElementById('ship-cell-' + i);
+    if (c) c.innerHTML = html;
+  });
+  shopifyTrackingPending[email] = [];
+}
+
+function buildShopifyStatusHtml(d) {
+  if (!d || d.error) return '<span class="ship-badge ship-pending">Scheduled</span>';
+  if (d.tracking) {
+    var s = (d.tracking.status || '').toLowerCase();
+    return s === 'delivered'                                  ? '<span class="ship-badge ship-delivered">Delivered</span>'
+         : (s === 'in_transit' || s === 'out_for_delivery')   ? '<span class="ship-badge ship-shipped">In Transit</span>'
+         : (s === 'attempted_delivery')                       ? '<span class="ship-badge ship-processing">Attempted</span>'
+         : (s === 'confirmed' || s === 'label_printed'
+            || s === 'label_purchased' || s === 'ready_for_pickup'
+            || s === 'picked_up')                             ? '<span class="ship-badge ship-shipped">Shipped</span>'
+         : (s === 'failure' || s === 'error')                 ? '<span class="ship-badge ship-failed">Failed</span>'
+         :                                                      '<span class="ship-badge ship-shipped">Shipped</span>';
+  }
+  if (d.exported_today) {
+    return '<span class="ship-badge ship-shopify">Exported to ' +
+      '<img src="https://cdn.shopify.com/s/files/1/0726/1975/3811/files/Shopify_logo_2018-cropped.svg?v=1780937805" class="shopify-logo" alt="Shopify"/>' +
+    '</span>';
+  }
+  return '<span class="ship-badge ship-pending">Scheduled</span>';
+}
 
 function autoCheckShopifyTracking(idx, email) {
   var cell = document.getElementById('ship-cell-' + idx);
   if (!cell) return;
 
-  if (Object.prototype.hasOwnProperty.call(shopifyTrackingCache, email)) {
-    cell.innerHTML = shopifyTrackingCache[email];
+  var cached = shopifyTrackingCache[email];
+
+  /* Result already available — apply immediately */
+  if (cached !== undefined && cached !== null) {
+    cell.innerHTML = cached;
     return;
   }
 
-  shopifyTrackingCache[email] = cell.innerHTML; /* keep current while loading */
+  /* Request already in-flight — queue this idx to be updated when it resolves */
+  if (cached === null) {
+    shopifyTrackingPending[email] = shopifyTrackingPending[email] || [];
+    shopifyTrackingPending[email].push(idx);
+    return;
+  }
+
+  /* First request for this email — mark in-flight and fire */
+  shopifyTrackingCache[email]   = null;
+  shopifyTrackingPending[email] = [idx];
 
   fetch('/admin/api/shopify/tracking?email=' + encodeURIComponent(email), { headers: H })
-    .then(function(r) {
-      if (!r.ok) { shopifyTrackingCache[email] = cell.innerHTML; return null; }
-      return r.json();
-    })
-    .then(function(d) {
-      if (!d) return;
-      var html;
-      if (d.error) {
-        html = '<span class="ship-badge ship-pending">Scheduled</span>';
-      } else if (d.tracking) {
-        var t = d.tracking;
-        var s = (t.status || '').toLowerCase();
-        html =
-          s === 'delivered'                                  ? '<span class="ship-badge ship-delivered">Delivered</span>'
-        : (s === 'in_transit' || s === 'out_for_delivery')   ? '<span class="ship-badge ship-shipped">In Transit</span>'
-        : (s === 'attempted_delivery')                       ? '<span class="ship-badge ship-processing">Attempted</span>'
-        : (s === 'confirmed' || s === 'label_printed'
-           || s === 'label_purchased' || s === 'ready_for_pickup'
-           || s === 'picked_up')                             ? '<span class="ship-badge ship-shipped">Shipped</span>'
-        : (s === 'failure' || s === 'error')                 ? '<span class="ship-badge ship-failed">Failed</span>'
-        :                                                      '<span class="ship-badge ship-shipped">Shipped</span>';
-      } else if (d.exported_today) {
-        /* Order exists in Shopify today but not yet shipped — show exported badge */
-        html = '<span class="ship-badge ship-shopify">Exported to ' +
-          '<img src="https://cdn.shopify.com/s/files/1/0726/1975/3811/files/Shopify_logo_2018-cropped.svg?v=1780937805" class="shopify-logo" alt="Shopify"/>' +
-        '</span>';
-      } else {
-        html = '<span class="ship-badge ship-pending">Scheduled</span>';
-      }
-      shopifyTrackingCache[email] = html;
-      var c = document.getElementById('ship-cell-' + idx);
-      if (c) c.innerHTML = html;
-    })
-    .catch(function() { /* leave current badge as-is */ });
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(d) { applyShopifyHtml(email, buildShopifyStatusHtml(d)); })
+    .catch(function()  { applyShopifyHtml(email, '<span class="ship-badge ship-pending">Scheduled</span>'); });
 }
 
 function buildShippingHtml(orders) {
