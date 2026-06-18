@@ -854,6 +854,12 @@ async function runSyncCycle(opts) {
   const results = {};
   const sources = ['whop', 'cc', 'recharge'];
 
+  /* Optimistically clear stored errors at the start of every cycle so a stale
+     last_error (e.g. left over from a previous deploy's code) can never linger.
+     If a source actually fails this run, its error is re-set in the catch below. */
+  try { await db.query("UPDATE sync_state SET last_error = NULL, last_error_at = NULL"); }
+  catch (e) { console.error('[sync] could not clear stale errors:', e.message); }
+
   for (const source of sources) {
     const start = Date.now();
     try {
