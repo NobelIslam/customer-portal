@@ -349,6 +349,31 @@
     .down { color: var(--red); }
     .neutral { color: var(--muted); }
 
+    /* ── Skeleton shimmer ── */
+    @keyframes shimmer {
+      0%   { background-position: -600px 0; }
+      100% { background-position:  600px 0; }
+    }
+    .skel {
+      display: inline-block; border-radius: 5px; color: transparent !important;
+      background: linear-gradient(90deg, var(--border) 25%, #e9e4dd 50%, var(--border) 75%);
+      background-size: 600px 100%;
+      animation: shimmer 1.4s infinite linear;
+      pointer-events: none; user-select: none;
+    }
+    .skel-block {
+      border-radius: 7px; width: 100%; height: 14px; margin: 5px 0;
+      background: linear-gradient(90deg, var(--border) 25%, #e9e4dd 50%, var(--border) 75%);
+      background-size: 600px 100%;
+      animation: shimmer 1.4s infinite linear;
+    }
+    .skel-chart {
+      width: 100%; height: 100%; border-radius: 8px;
+      background: linear-gradient(90deg, #f0ece6 25%, #e6e0d8 50%, #f0ece6 75%);
+      background-size: 800px 100%;
+      animation: shimmer 1.6s infinite linear;
+    }
+
     /* ── Source cards ── */
     .src-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
     .src-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
@@ -681,7 +706,13 @@
       </div>
 
       <!-- KPI row 1 — dark style -->
-      <div class="grid-4" id="kpi-row1" style="margin-bottom:12px"></div>
+      <div class="grid-5" id="kpi-row1" style="margin-bottom:12px">
+        <div class="dkpi"><div class="dkpi-period">30D</div><div class="dkpi-label">MRR</div><div class="dkpi-value"><span class="skel" style="min-width:100px">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></div></div>
+        <div class="dkpi"><div class="dkpi-period">30D</div><div class="dkpi-label">Total MRR collection</div><div class="dkpi-value"><span class="skel" style="min-width:100px">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></div></div>
+        <div class="dkpi"><div class="dkpi-period">30D</div><div class="dkpi-label">Pending MRR collection</div><div class="dkpi-value"><span class="skel" style="min-width:100px">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></div></div>
+        <div class="dkpi"><div class="dkpi-period">30D</div><div class="dkpi-label">Total active subscriptions</div><div class="dkpi-value"><span class="skel" style="min-width:60px">&nbsp;&nbsp;&nbsp;</span></div></div>
+        <div class="dkpi"><div class="dkpi-period">30D</div><div class="dkpi-label">Tomorrow expected rebill</div><div class="dkpi-value"><span class="skel" style="min-width:80px">&nbsp;&nbsp;&nbsp;&nbsp;</span></div></div>
+      </div>
 
       <!-- Intraday chart + breakdown -->
       <div class="intraday-wrap" id="s-revenue">
@@ -691,8 +722,8 @@
             <div>
               <div class="intraday-label" id="intraday-label">Revenue <span class="sep">·</span> Today</div>
               <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
-                <div class="intraday-big" id="intraday-big">—</div>
-                <div class="intraday-delta" id="intraday-delta">—</div>
+                <div class="intraday-big" id="intraday-big"><span class="skel" style="min-width:90px">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></div>
+                <div class="intraday-delta" id="intraday-delta" style="opacity:.4">···</div>
               </div>
             </div>
             <div class="chart-tabs">
@@ -700,17 +731,34 @@
               <button class="chart-tab on" id="tab-orders" onclick="setIntradayTab('orders')">Orders</button>
             </div>
           </div>
-          <div class="intraday-chart-wrap"><canvas id="intraday-chart"></canvas></div>
+          <div class="intraday-chart-wrap">
+            <div class="skel-chart" id="intraday-skel"></div>
+            <canvas id="intraday-chart" style="display:none"></canvas>
+          </div>
         </div>
         <!-- Right: invoice breakdown + key metrics -->
         <div class="dark-panel">
           <div class="bk-label">Sales Receipt</div>
-          <div class="bk-total" id="bk-total">—</div>
-          <div class="inv-date" id="inv-date">—</div>
-          <div id="bk-rows"></div>
-          <div id="bk-stats" class="inv-footer"></div>
+          <div class="bk-total" id="bk-total"><span class="skel" style="min-width:110px">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></div>
+          <div class="inv-date" id="inv-date"><span class="skel" style="min-width:80px;height:11px">&nbsp;&nbsp;&nbsp;&nbsp;</span></div>
+          <div id="bk-rows">
+            <div class="skel-block" style="width:100%;height:36px;margin:4px 0"></div>
+            <div class="skel-block" style="width:100%;height:36px;margin:4px 0"></div>
+            <div class="skel-block" style="width:100%;height:36px;margin:4px 0"></div>
+            <div class="skel-block" style="width:100%;height:48px;margin:10px 0 0;border-radius:9px"></div>
+          </div>
+          <div id="bk-stats" class="inv-footer">
+            <div class="inv-footer-stat"><div class="skel-block" style="height:16px;margin:2px 4px"></div></div>
+            <div class="inv-footer-stat"><div class="skel-block" style="height:16px;margin:2px 4px"></div></div>
+            <div class="inv-footer-stat"><div class="skel-block" style="height:16px;margin:2px 4px"></div></div>
+            <div class="inv-footer-stat"><div class="skel-block" style="height:16px;margin:2px 4px"></div></div>
+          </div>
           <!-- Key metrics — under the sales receipt -->
-          <div class="metric-grid" id="metric-subs" style="margin-top:16px"></div>
+          <div class="metric-grid" id="metric-subs" style="margin-top:16px">
+            <div class="skel-block" style="height:60px;border-radius:9px"></div>
+            <div class="skel-block" style="height:60px;border-radius:9px"></div>
+            <div class="skel-block" style="height:60px;border-radius:9px"></div>
+          </div>
         </div>
       </div>
 
@@ -824,7 +872,11 @@
 
       <!-- Source breakdown — CC / Recharge / Whop -->
       <div class="section-label" id="s-sources">Active subscriptions by source</div>
-      <div class="grid-3 mb10" id="src-grid"></div>
+      <div class="grid-3 mb10" id="src-grid">
+        <div class="skel-block" style="height:90px;border-radius:12px"></div>
+        <div class="skel-block" style="height:90px;border-radius:12px"></div>
+        <div class="skel-block" style="height:90px;border-radius:12px"></div>
+      </div>
 
       <!-- Gateway breakdown — full width -->
       <div class="section-label" id="s-gateway">Active subscriptions by gateway</div>
@@ -2226,6 +2278,11 @@ function renderIntradayChart(d) {
       c.restore();
     }
   };
+
+  /* Reveal canvas, hide skeleton */
+  canvas.style.display = '';
+  var skelEl = document.getElementById('intraday-skel');
+  if (skelEl) skelEl.style.display = 'none';
 
   if (intradayChart) intradayChart.destroy();
   intradayChart = new Chart(canvas, {
