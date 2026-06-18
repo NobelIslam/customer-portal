@@ -83,68 +83,8 @@
     .dr-pill:hover { color: var(--text); }
     .dr-pill.on { background: var(--accent); color: #fff; font-weight: 500; }
 
-    /* ── Flip clock ── */
-    .flip-clock {
-      display: flex; align-items: center; gap: 2px;
-      font-family: 'Oswald', 'Inter', sans-serif; flex-shrink: 0;
-    }
-    .flip-sep {
-      font-size: 13px; font-weight: 700; color: #666; margin: 0 1px;
-      line-height: 1; padding-bottom: 2px;
-    }
-    .flip-card {
-      position: relative; width: 20px; height: 28px;
-      perspective: 150px; flex-shrink: 0;
-    }
-    .flip-face {
-      position: absolute; width: 100%; height: 50%;
-      overflow: hidden; background: #1e2025;
-    }
-    .flip-face-top {
-      top: 0; border-radius: 3px 3px 0 0;
-      border-bottom: 1px solid #111;
-      display: flex; align-items: flex-end; justify-content: center;
-    }
-    .flip-face-bottom {
-      bottom: 0; border-radius: 0 0 3px 3px;
-      display: flex; align-items: flex-start; justify-content: center;
-    }
-    .flip-face span {
-      font-size: 16px; font-weight: 700; color: #fff; line-height: 1;
-      display: block; height: 20px; overflow: hidden;
-    }
-    .flip-face-bottom span { transform: translateY(-50%); }
-
-    /* Folding animation */
-    .flip-fold-top {
-      position: absolute; top: 0; width: 100%; height: 50%;
-      overflow: hidden; border-radius: 3px 3px 0 0;
-      transform-origin: bottom center; backface-visibility: hidden;
-      background: #1e2025;
-      display: flex; align-items: flex-end; justify-content: center;
-    }
-    .flip-fold-top span {
-      font-size: 16px; font-weight: 700; color: #fff; line-height: 1;
-      display: block; height: 20px; overflow: hidden;
-    }
-    .flip-fold-bottom {
-      position: absolute; bottom: 0; width: 100%; height: 50%;
-      overflow: hidden; border-radius: 0 0 3px 3px;
-      transform-origin: top center; backface-visibility: hidden;
-      background: #272a30;
-      display: flex; align-items: flex-start; justify-content: center;
-    }
-    .flip-fold-bottom span {
-      font-size: 16px; font-weight: 700; color: #ddd; line-height: 1;
-      display: block; height: 20px; overflow: hidden; transform: translateY(-50%);
-    }
-    @keyframes flipTop    { from { transform: rotateX(0deg); }   to { transform: rotateX(-90deg); } }
-    @keyframes flipBottom { from { transform: rotateX(90deg); }  to { transform: rotateX(0deg); } }
-    .flip-fold-top.flipping    { animation: flipTop    0.22s ease-in  forwards; }
-    .flip-fold-bottom.flipping { animation: flipBottom 0.22s ease-out 0.22s forwards; }
-
     /* Right controls */
-    .topbar-right { display: flex; align-items: center; gap: 8px; }
+    .topbar-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
     .live-pill {
       display: inline-flex; align-items: center; gap: 4px;
       background: rgba(34,197,94,.12); color: var(--green);
@@ -621,7 +561,6 @@
       .search-wrap { display: none; }
       .sync-info { display: none; }
       .live-pill { display: none; }
-      .flip-clock { display: none; }
       .topbar-right { gap: 6px; }
       .topbar-right .btn { padding: 6px 9px; font-size: 11px; }
 
@@ -700,15 +639,6 @@
     <span class="dr-pill on" data-days="30">30d</span>
     <span class="dr-pill" data-days="90">90d</span>
     <span class="dr-pill" data-days="ytd">YTD</span>
-  </div>
-
-  <!-- Flip clock — Amsterdam time -->
-  <div class="flip-clock" id="flip-clock" title="Europe/Amsterdam time">
-    <div class="flip-card" id="fc-h1"></div>
-    <div class="flip-card" id="fc-h2"></div>
-    <div class="flip-sep">:</div>
-    <div class="flip-card" id="fc-m1"></div>
-    <div class="flip-card" id="fc-m2"></div>
   </div>
 
   <div class="topbar-right">
@@ -970,78 +900,6 @@
 var SESSION = localStorage.getItem('tgp_admin_session');
 var H = { 'Authorization': 'Bearer ' + SESSION, 'Cache-Control': 'no-cache, no-store', 'Pragma': 'no-cache' };
 function logout() { localStorage.removeItem('tgp_admin_session'); location.href = '/admin/login'; }
-
-/* ── Flip clock — Amsterdam time ── */
-(function() {
-  var IDS = ['fc-h1','fc-h2','fc-m1','fc-m2'];
-  var prev = {};
-
-  function makeCard(id) {
-    var el = document.getElementById(id);
-    if (!el) return;
-    el.innerHTML =
-      '<div class="flip-face flip-face-top"><span id="' + id + '-st">0</span></div>' +
-      '<div class="flip-face flip-face-bottom"><span id="' + id + '-sb">0</span></div>' +
-      '<div class="flip-fold-top" id="' + id + '-ft"><span id="' + id + '-fts">0</span></div>' +
-      '<div class="flip-fold-bottom" id="' + id + '-fb"><span id="' + id + '-fbs">0</span></div>';
-  }
-
-  function setStatic(id, digit) {
-    var st = document.getElementById(id + '-st');
-    var sb = document.getElementById(id + '-sb');
-    if (st) st.textContent = digit;
-    if (sb) sb.textContent = digit;
-  }
-
-  function flip(id, from, to) {
-    var fts = document.getElementById(id + '-fts'); /* fold-top shows old digit */
-    var fbs = document.getElementById(id + '-fbs'); /* fold-bottom shows new digit */
-    var ft  = document.getElementById(id + '-ft');
-    var fb  = document.getElementById(id + '-fb');
-    var st  = document.getElementById(id + '-st');
-    var sb  = document.getElementById(id + '-sb');
-    if (!ft || !fb) return;
-
-    /* Set static faces: top = old (still visible behind), bottom = new */
-    if (st) st.textContent = from;
-    if (sb) sb.textContent = to;
-    /* Flap faces */
-    if (fts) fts.textContent = from;
-    if (fbs) fbs.textContent = to;
-
-    ft.classList.remove('flipping'); fb.classList.remove('flipping');
-    void ft.offsetWidth; /* reflow to restart animation */
-    ft.classList.add('flipping'); fb.classList.add('flipping');
-
-    /* After animation update static top to new digit */
-    setTimeout(function() {
-      if (st) st.textContent = to;
-      ft.classList.remove('flipping'); fb.classList.remove('flipping');
-    }, 460);
-  }
-
-  function tick() {
-    var now  = new Date();
-    var ams  = new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Europe/Amsterdam', hour: '2-digit', minute: '2-digit', hour12: false
-    }).format(now).replace(/:/g, '');  /* "1030" */
-
-    var digits = [ams[0],ams[1],ams[2],ams[3]];
-    digits.forEach(function(d, i) {
-      var id = IDS[i];
-      if (prev[id] !== d) {
-        if (prev[id] !== undefined) flip(id, prev[id], d);
-        else setStatic(id, d);
-        prev[id] = d;
-      }
-    });
-  }
-
-  /* Init cards then start ticking */
-  IDS.forEach(makeCard);
-  tick();
-  setInterval(tick, 1000);
-})();
 
 /* ── Mobile sidebar drawer ── */
 function toggleSidebar() {
