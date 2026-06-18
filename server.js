@@ -1019,6 +1019,27 @@ const PORT = process.env.PORT || 3000;
     }, 10000);
   }
 
+  /* 3. MRR summary cache warmup — runs in background so first user gets instant data */
+  if (process.env.DATABASE_URL) {
+    /* Warm the cache 45s after boot (after initial sync has run) */
+    setTimeout(function() {
+      console.log('[boot] warming MRR summary cache…');
+      adminRouter.warmMrrCache();
+    }, 45000);
+
+    /* Refresh daily at Amsterdam midnight — run at both 22:01 and 23:01 UTC
+       to cover CEST (UTC+2, midnight = 22:00 UTC) and CET (UTC+1, midnight = 23:00 UTC) */
+    cron.schedule('1 22 * * *', function() {
+      console.log('[mrr-cron] daily refresh at 22:01 UTC');
+      adminRouter.warmMrrCache();
+    });
+    cron.schedule('1 23 * * *', function() {
+      console.log('[mrr-cron] daily refresh at 23:01 UTC');
+      adminRouter.warmMrrCache();
+    });
+    console.log('[boot] MRR cache warmup scheduled');
+  }
+
   /* 3. Start the HTTP server */
   app.listen(PORT, function() {
     console.log('Server running on port ' + PORT);

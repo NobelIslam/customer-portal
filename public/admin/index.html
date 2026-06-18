@@ -1074,8 +1074,8 @@ function renderKpis(k, sources) {
     '</span>';
   document.getElementById('kpi-row1').innerHTML = [
     { label: 'MRR',                      value: $m(k.mrrCents),  sparkId: 'sp-subs',    sparkColor: '#f04e00' },
-    { label: 'Total MRR collection',     value: '—',             sparkId: 'sp-new',     sparkColor: '#22c55e', valId: 'kpi-mrr-collected', subId: 'kpi-mrr-collected-sub' },
-    { label: 'Pending MRR collection',   value: '—',             sparkId: 'sp-cancels', sparkColor: '#3b82f6', valId: 'kpi-mrr-pending',   subId: 'kpi-mrr-pending-sub' },
+    { label: 'Total MRR collection',     value: 'Loading…',      sparkId: 'sp-new',     sparkColor: '#22c55e', valId: 'kpi-mrr-collected', subId: 'kpi-mrr-collected-sub' },
+    { label: 'Pending MRR collection',   value: 'Loading…',      sparkId: 'sp-cancels', sparkColor: '#3b82f6', valId: 'kpi-mrr-pending',   subId: 'kpi-mrr-pending-sub' },
     { label: 'Total active subscriptions', value: $n(k.activeSubs), sparkId: 'sp-active', sparkColor: '#3b82f6' },
     { label: 'Tomorrow expected rebill', value: $m(k.tomorrowForecastCents), sparkId: 'sp-tomorrow', sparkColor: '#d97706', sub: $n(k.tomorrowRebillCount) + ' subscriptions due' }
   ].map(function(c) {
@@ -2307,27 +2307,49 @@ async function loadTodayRevenue() {
   } catch(e) { console.error('[today-revenue]', e); }
 }
 
-/* ── MRR collection (top-row centre/right cards) — loaded separately; heavier call ── */
-async function loadMrrSummary() {
+/* ── MRR collection — loaded separately; retries until background cache is warm ── */
+function applyMrrData(d) {
+  var col = document.getElementById('kpi-mrr-collected');
+  if (col) col.textContent = $m(d.collected_mtd_cents || 0);
+  var colSub = document.getElementById('kpi-mrr-collected-sub');
+  if (colSub) {
+    var asOf = d.collected_through
+      ? new Date(d.collected_through + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      : '';
+    colSub.textContent = asOf ? ('as of ' + asOf) : ((d.month || '') + ' MTD');
+    colSub.style.color = 'var(--muted2)';
+  }
+  var pen = document.getElementById('kpi-mrr-pending');
+  if (pen) pen.textContent = $m(d.pending_mtd_cents || 0);
+  var penSub = document.getElementById('kpi-mrr-pending-sub');
+  if (penSub) { penSub.textContent = $n(d.pending_mtd_count || 0) + ' subs left this month'; penSub.style.color = 'var(--muted2)'; }
+}
+
+function setMrrStatus(text) {
+  ['kpi-mrr-collected', 'kpi-mrr-pending'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el && (el.textContent === '—' || el.textContent === 'Loading…' || el.textContent === 'Calculating…')) el.textContent = text;
+  });
+}
+
+async function loadMrrSummary(attempt) {
+  attempt = attempt || 1;
+  if (attempt === 1) setMrrStatus('Loading…');
   try {
     var r = await fetch('/admin/api/mrr-summary', { headers: H });
-    if (!r.ok) return;
+    if (!r.ok) throw new Error('HTTP ' + r.status);
     var d = await r.json();
-    var col = document.getElementById('kpi-mrr-collected');
-    if (col) col.textContent = $m(d.collected_mtd_cents || 0);
-    var colSub = document.getElementById('kpi-mrr-collected-sub');
-    if (colSub) {
-      var asOf = d.collected_through
-        ? new Date(d.collected_through + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-        : '';
-      colSub.textContent = asOf ? ('as of ' + asOf) : ((d.month || '') + ' MTD');
-      colSub.style.color = 'var(--muted2)';
+    applyMrrData(d);
+  } catch(e) {
+    console.warn('[mrr-summary] attempt ' + attempt + ' failed:', e.message);
+    if (attempt < 5) {
+      /* Retry with backoff (15s → 30s → 60s → 120s) while background cache warms */
+      setMrrStatus('Calculating…');
+      setTimeout(function() { loadMrrSummary(attempt + 1); }, Math.min(15000 * attempt, 120000));
+    } else {
+      setMrrStatus('—');
     }
-    var pen = document.getElementById('kpi-mrr-pending');
-    if (pen) pen.textContent = $m(d.pending_mtd_cents || 0);
-    var penSub = document.getElementById('kpi-mrr-pending-sub');
-    if (penSub) { penSub.textContent = $n(d.pending_mtd_count || 0) + ' subs left this month'; penSub.style.color = 'var(--muted2)'; }
-  } catch(e) { console.error('[mrr-summary]', e); }
+  }
 }
 
 /* ── Greeting ── */
