@@ -79,6 +79,20 @@ function amsParseLocal(s) {
 
 function delay(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
 
+/* Force a fresh connection per request. Node 19+ defaults the global HTTP agent to
+   keepAlive:true, so node-fetch reuses pooled sockets. CheckoutChamp/Whop drop idle
+   keep-alive sockets server-side; the next request on a dead pooled socket throws
+   "Premature close" (and a retry just grabs another stale socket). A non-keepAlive
+   agent sidesteps this entirely. Local one-shot scripts never hit it; a long-running
+   server like Render does. */
+const _https = require('https');
+const _http  = require('http');
+const _agentHttps = new _https.Agent({ keepAlive: false });
+const _agentHttp  = new _http.Agent({ keepAlive: false });
+function _agentFor(parsedURL) {
+  return (parsedURL && parsedURL.protocol === 'http:') ? _agentHttp : _agentHttps;
+}
+
 /* Resilient fetch for flaky upstream APIs. CheckoutChamp / Whop / Shopify / Recharge
    intermittently reset the connection on Render, which node-fetch surfaces as
    "Invalid response body" / "Premature close". A single drop would otherwise blow up
@@ -88,10 +102,12 @@ function delay(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
    Drop-in for `fetch` (all external calls in this file route through it).         */
 async function fetchR(url, opts, tries) {
   tries = tries || 3;
+  var o = Object.assign({}, opts || {});
+  if (!o.agent) o.agent = _agentFor;   /* fresh socket — avoids stale keep-alive resets */
   var lastErr;
   for (var i = 0; i < tries; i++) {
     try {
-      var r    = await fetch(url, opts);
+      var r    = await fetch(url, o);
       var body = await r.text();
       var ok = r.ok, status = r.status, headers = r.headers;
       return {

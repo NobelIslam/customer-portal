@@ -16,6 +16,39 @@ const WHOP_BASE     = 'https://api.whop.com/api/v2';
 
 function delay(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
 
+/* Resilient fetch — same rationale as admin/routes.js. Node 19+ defaults the global
+   agent to keepAlive:true; CheckoutChamp/Whop drop idle pooled sockets, so reused
+   sockets throw "Premature close". Force a fresh socket + retry the full fetch+read. */
+const _https = require('https');
+const _http  = require('http');
+const _agentHttps = new _https.Agent({ keepAlive: false });
+const _agentHttp  = new _http.Agent({ keepAlive: false });
+function _agentFor(parsedURL) {
+  return (parsedURL && parsedURL.protocol === 'http:') ? _agentHttp : _agentHttps;
+}
+async function fetchR(url, opts, tries) {
+  tries = tries || 3;
+  const o = Object.assign({}, opts || {});
+  if (!o.agent) o.agent = _agentFor;
+  let lastErr;
+  for (let i = 0; i < tries; i++) {
+    try {
+      const r    = await fetch(url, o);
+      const body = await r.text();
+      const ok = r.ok, status = r.status, headers = r.headers;
+      return {
+        ok: ok, status: status, headers: headers,
+        text: function() { return Promise.resolve(body); },
+        json: function() { return Promise.resolve(body ? JSON.parse(body) : null); }
+      };
+    } catch (e) {
+      lastErr = e;
+      if (i < tries - 1) await delay(350 * (i + 1));
+    }
+  }
+  throw lastErr;
+}
+
 function ccParams(extra) {
   const p = new URLSearchParams({
     loginId:  process.env.CC_LOGIN_ID  || '',
@@ -89,7 +122,7 @@ async function syncCC(opts) {
   let page = 1;
   const perPage = 200;
   while (page <= 50) {
-    const r = await fetch(CC_BASE + '/purchase/query/?' + ccParams({
+    const r = await fetchR(CC_BASE + '/purchase/query/?' + ccParams({
       startDate:      startDate,
       endDate:        endDate,
       resultsPerPage: perPage,
@@ -119,7 +152,7 @@ async function syncCC(opts) {
     let activePage = 1;
     let activeTouched = 0;
     while (activePage <= 50) {
-      const r = await fetch(CC_BASE + '/purchase/query/?' + ccParams({
+      const r = await fetchR(CC_BASE + '/purchase/query/?' + ccParams({
         startDate:      '01/01/2015',
         endDate:        endDate,
         status:         'ACTIVE',
@@ -150,7 +183,7 @@ async function syncCC(opts) {
   if (!isFull) {
     let rfPage = 1, rfTouched = 0;
     while (rfPage <= 50) {
-      const r = await fetch(CC_BASE + '/purchase/query/?' + ccParams({
+      const r = await fetchR(CC_BASE + '/purchase/query/?' + ccParams({
         startDate:      '01/01/2015',
         endDate:        endDate,
         status:         'RECYCLE_FAILED',
@@ -177,7 +210,7 @@ async function syncCC(opts) {
   let ordersTouched = 0;
   page = 1;
   while (page <= 50) {
-    const r = await fetch(CC_BASE + '/order/query/?' + ccParams({
+    const r = await fetchR(CC_BASE + '/order/query/?' + ccParams({
       startDate:      startDate,
       endDate:        endDate,
       resultsPerPage: perPage,
@@ -346,7 +379,7 @@ async function syncRecharge(opts) {
   const limit = 250;
   while (page <= 50) {
     const url = RECHARGE_BASE + '/subscriptions?limit=' + limit + '&page=' + page;
-    const r   = await fetch(url, { headers });
+    const r   = await fetchR(url, { headers });
     const d   = await r.json();
     const data = d.subscriptions || [];
     for (const s of data) await upsertRechargeSub(s);
@@ -364,7 +397,7 @@ async function syncRecharge(opts) {
   while (page <= 50) {
     const url = RECHARGE_BASE + '/charges?limit=' + limit + '&page=' + page +
                 '&created_at_min=' + since.toISOString() + '&status=success';
-    const r = await fetch(url, { headers });
+    const r = await fetchR(url, { headers });
     const d = await r.json();
     const data = d.charges || [];
     for (const c of data) await upsertRechargeCharge(c);
@@ -445,7 +478,7 @@ async function getRechargeEmail(customerId) {
   if (_rcEmailCache.has(key)) return _rcEmailCache.get(key);
 
   const rcKey = await getRechargeKey();
-  const r = await fetch(RECHARGE_BASE + '/customers/' + customerId, {
+  const r = await fetchR(RECHARGE_BASE + '/customers/' + customerId, {
     headers: { 'X-Recharge-Access-Token': rcKey }
   });
   const d = await r.json();
@@ -524,7 +557,7 @@ async function syncWhop(opts) {
 
   /* ── helper: fetch JSON and throw on HTTP error ── */
   async function whopFetch(url) {
-    const r = await fetch(url, { headers });
+    const r = await fetchR(url, { headers });
     if (!r.ok) {
       let body = '';
       try { body = JSON.stringify(await r.json()); } catch(e) { body = await r.text().catch(() => ''); }
@@ -728,7 +761,7 @@ async function syncTodayBillings() {
       page:           page,
       sortDir:        -1
     });
-    const r = await fetch(url, { method: 'POST' });
+    const r = await fetchR(url, { method: 'POST' });
     const d = await r.json();
     const orders = (d.result === 'SUCCESS' && d.message && d.message.data) ? d.message.data : [];
     allOrders = allOrders.concat(orders);
