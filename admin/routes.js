@@ -101,9 +101,10 @@ function _agentFor(parsedURL) {
    .json()/.text()/.headers read from the buffer — so callers never hit a body error.
    Drop-in for `fetch` (all external calls in this file route through it).         */
 async function fetchR(url, opts, tries) {
-  tries = tries || 3;
+  tries = tries || 4;
   var o = Object.assign({}, opts || {});
-  if (!o.agent) o.agent = _agentFor;   /* fresh socket — avoids stale keep-alive resets */
+  if (!o.agent)   o.agent   = _agentFor;   /* fresh socket — avoids stale keep-alive resets */
+  if (!o.timeout) o.timeout = 25000;       /* abort a stalled socket and retry, don't hang */
   var lastErr;
   for (var i = 0; i < tries; i++) {
     try {

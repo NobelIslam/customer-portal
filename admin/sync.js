@@ -27,9 +27,10 @@ function _agentFor(parsedURL) {
   return (parsedURL && parsedURL.protocol === 'http:') ? _agentHttp : _agentHttps;
 }
 async function fetchR(url, opts, tries) {
-  tries = tries || 3;
+  tries = tries || 4;
   const o = Object.assign({}, opts || {});
-  if (!o.agent) o.agent = _agentFor;
+  if (!o.agent)   o.agent   = _agentFor;
+  if (!o.timeout) o.timeout = 25000;
   let lastErr;
   for (let i = 0; i < tries; i++) {
     try {
