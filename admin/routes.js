@@ -932,6 +932,12 @@ router.get('/api/shopify/tracking', async function(req, res) {
     const data = await r.json();
     const orders = data.orders || [];
 
+    /* Check if any order was created today (Amsterdam time) */
+    const todayAms = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Amsterdam' });
+    const exportedToday = orders.some(function(o) {
+      return o.created_at && new Date(o.created_at).toLocaleDateString('en-CA', { timeZone: 'Europe/Amsterdam' }) === todayAms;
+    });
+
     /* Pull tracking from the most recent fulfilled order */
     let tracking = null;
     for (const order of orders) {
@@ -953,7 +959,7 @@ router.get('/api/shopify/tracking', async function(req, res) {
       if (tracking) break;
     }
 
-    res.json({ email, tracking, orders_checked: orders.length });
+    res.json({ email, tracking, orders_checked: orders.length, exported_today: exportedToday });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

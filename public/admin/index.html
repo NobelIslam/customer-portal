@@ -1785,7 +1785,8 @@ function renderTodayOrders() {
     } else if (o.source === 'cc') {
       shipCell = '<span class="ship-badge ship-pending">Scheduled</span>';
     } else {
-      shipCell = '<span id="ship-cell-' + globalIdx + '">' + buildDbOrderStatus(o.last_billed_at, o.next_bill_at) + '</span>';
+      /* Always check Shopify live for RC/Whop — DB sync lags so last_billed_at is unreliable */
+      shipCell = '<span id="ship-cell-' + globalIdx + '"><span style="opacity:.4;font-size:11px">Checking…</span></span>';
     }
     return '<tr>' +
       '<td><span class="tod-email">' + esc(o.customer_email) + '</span>' +
@@ -1823,12 +1824,12 @@ function renderTodayOrders() {
       '<tbody>' + rows + '</tbody>' +
     '</table>' + pagBar;
 
-  /* Auto-fetch shipping for charged CC rows; Shopify tracking for billed RC rows */
+  /* Auto-fetch shipping for charged CC rows; Shopify check for all RC/Whop rows */
   slice.forEach(function(o, idx) {
     var globalIdx = (pageTodayOrders - 1) * PAGE_SIZE_TODAY + idx;
     if (o.source === 'cc' && o.cc_charge_status === 'CHARGED') {
       autoCheckShipping(globalIdx, o.customer_email);
-    } else if (o.source !== 'cc' && isBilledRow(o)) {
+    } else if (o.source !== 'cc') {
       autoCheckShopifyTracking(globalIdx, o.customer_email);
     }
   });
@@ -1871,10 +1872,10 @@ function autoCheckShopifyTracking(idx, email) {
       return r.json();
     })
     .then(function(d) {
-      if (!d) return; /* non-ok response — keep badge as-is */
+      if (!d) return;
       var html;
       if (d.error) {
-        html = cell.innerHTML; /* keep billed badge, no tracking available */
+        html = '<span class="ship-badge ship-pending">Scheduled</span>';
       } else if (d.tracking) {
         var t = d.tracking;
         var s = (t.status || '').toLowerCase();
@@ -1887,8 +1888,13 @@ function autoCheckShopifyTracking(idx, email) {
            || s === 'picked_up')                             ? '<span class="ship-badge ship-shipped">Shipped</span>'
         : (s === 'failure' || s === 'error')                 ? '<span class="ship-badge ship-failed">Failed</span>'
         :                                                      '<span class="ship-badge ship-shipped">Shipped</span>';
+      } else if (d.exported_today) {
+        /* Order exists in Shopify today but not yet shipped — show exported badge */
+        html = '<span class="ship-badge ship-shopify">Exported to ' +
+          '<img src="https://cdn.shopify.com/s/files/1/0726/1975/3811/files/Shopify_logo_2018-cropped.svg?v=1780937805" class="shopify-logo" alt="Shopify"/>' +
+        '</span>';
       } else {
-        html = cell.innerHTML; /* no tracking yet, keep billed badge */
+        html = '<span class="ship-badge ship-pending">Scheduled</span>';
       }
       shopifyTrackingCache[email] = html;
       var c = document.getElementById('ship-cell-' + idx);
