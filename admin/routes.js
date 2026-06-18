@@ -226,7 +226,11 @@ router.get('/', function(req, res) {
 /* Build marker — hit /admin/build to confirm which build is live (no auth). */
 router.get('/build', function(req, res) {
   res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.json({ build: 'failed-orders-breakdown-v1', ts: new Date().toISOString() });
+  res.json({
+    build:  'sync-resilient-v4',
+    commit: process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || 'unknown',
+    ts:     new Date().toISOString()
+  });
 });
 
 router.get('/integrations', function(req, res) {
