@@ -1047,10 +1047,22 @@ function getYTDDays() {
 }
 
 function lastNDays() {
-  var n = currentDays, days = [];
-  for (var i = n - 1; i >= 0; i--) {
-    var d = new Date(); d.setDate(d.getDate() - i); d.setHours(0, 0, 0, 0);
-    days.push(d.toISOString().split('T')[0]);
+  var days = [];
+  if (currentStartDate && currentEndDate) {
+    /* Use the actual selected range */
+    var sp = currentStartDate.split('-').map(Number);
+    var ep = currentEndDate.split('-').map(Number);
+    var s  = new Date(sp[0], sp[1]-1, sp[2]);
+    var e  = new Date(ep[0], ep[1]-1, ep[2]);
+    for (var d = new Date(s); d <= e; d.setDate(d.getDate()+1)) {
+      var iso = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+      days.push(iso);
+    }
+  } else {
+    for (var i = currentDays - 1; i >= 0; i--) {
+      var dt = new Date(); dt.setDate(dt.getDate() - i); dt.setHours(0,0,0,0);
+      days.push(dt.toISOString().split('T')[0]);
+    }
   }
   return days;
 }
@@ -1754,8 +1766,8 @@ function gatewayPage(p) {
 
 /* ── Page subtitle ── */
 function updateSubtitle() {
-  var now = new Date(), from = new Date(now);
-  from.setDate(from.getDate() - currentDays);
+  var now = new Date();
+  var from = currentStartDate ? new Date(currentStartDate + 'T00:00:00') : (function(){ var d=new Date(now); d.setDate(d.getDate()-currentDays); return d; })();
   var topLabel = document.getElementById('topbar-date-label');
   var label = topLabel ? topLabel.textContent : currentDays + 'd';
   var psubEl = document.getElementById('page-sub');
