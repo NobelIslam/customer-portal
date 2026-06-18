@@ -709,9 +709,6 @@
     <div class="flip-sep">:</div>
     <div class="flip-card" id="fc-m1"></div>
     <div class="flip-card" id="fc-m2"></div>
-    <div class="flip-sep">:</div>
-    <div class="flip-card" id="fc-s1"></div>
-    <div class="flip-card" id="fc-s2"></div>
   </div>
 
   <div class="topbar-right">
@@ -976,7 +973,7 @@ function logout() { localStorage.removeItem('tgp_admin_session'); location.href 
 
 /* ── Flip clock — Amsterdam time ── */
 (function() {
-  var IDS = ['fc-h1','fc-h2','fc-m1','fc-m2','fc-s1','fc-s2'];
+  var IDS = ['fc-h1','fc-h2','fc-m1','fc-m2'];
   var prev = {};
 
   function makeCard(id) {
@@ -1026,10 +1023,10 @@ function logout() { localStorage.removeItem('tgp_admin_session'); location.href 
   function tick() {
     var now  = new Date();
     var ams  = new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Europe/Amsterdam', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
-    }).format(now).replace(/:/g, '');  /* "103045" */
+      timeZone: 'Europe/Amsterdam', hour: '2-digit', minute: '2-digit', hour12: false
+    }).format(now).replace(/:/g, '');  /* "1030" */
 
-    var digits = [ams[0],ams[1],ams[2],ams[3],ams[4],ams[5]];
+    var digits = [ams[0],ams[1],ams[2],ams[3]];
     digits.forEach(function(d, i) {
       var id = IDS[i];
       if (prev[id] !== d) {
