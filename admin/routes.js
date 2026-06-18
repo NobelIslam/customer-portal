@@ -2080,13 +2080,28 @@ router.get('/api/today-revenue', async function(req, res) {
 });
 
 /* ── GET /admin/api/mrr-summary — MRR collection picture for the current calendar month.
-   collected_mtd:  recurring revenue actually CAPTURED this month so far, summed live
-                   from each platform's billing API (the orders table is unreliable:
-                   it lags sync and mislabels Recharge rebills as 'initial').
+   collected_mtd:  recurring revenue actually CAPTURED this month so far.
    pending_mtd:    MRR value still SCHEDULED to bill before month-end (active subs, DB).
-   Loaded separately from /overview so the heavier month-pagination doesn't block the
-   first dashboard paint. Cached 5 min — Whop's month sum is ~115 paginated calls.    */
+   Result is persisted in kv_cache table so it survives server restarts.
+   Recomputed once daily by background cron; served instantly from DB cache.          */
 var _mrrSummaryCache = { day: null, data: null };
+
+/* Load today's cached result from DB into memory on startup — instant serve */
+async function loadMrrCacheFromDb() {
+  try {
+    const todayAms = amsDateStr(new Date());
+    const row = await db.oneOrNone(
+      `SELECT value FROM kv_cache WHERE key = 'mrr_summary' AND value->>'day' = $1`, [todayAms]
+    );
+    if (row) {
+      _mrrSummaryCache = { day: todayAms, ts: Date.now(), data: row.value };
+      console.log('[mrr-cache] loaded from DB — collected:', row.value.collected_mtd_cents);
+    }
+  } catch (e) {
+    console.warn('[mrr-cache] DB load failed (table may not exist yet):', e.message);
+  }
+}
+loadMrrCacheFromDb();
 /* Standalone computation — called by the route AND by the background warmup/cron */
 async function computeMrrSummary() {
   const now        = new Date();
@@ -2223,6 +2238,18 @@ async function computeMrrSummary() {
   };
   _mrrSummaryCache = { day: allOk ? todayAms : null, ts: Date.now(), data: payload };
   console.log('[mrr-summary] computed — collected:', collected, 'ok:', allOk);
+
+  /* Persist to DB so the result survives server restarts — only when all sources OK */
+  if (allOk) {
+    const payloadWithDay = Object.assign({ day: todayAms }, payload);
+    db.none(
+      `INSERT INTO kv_cache (key, value, computed_at)
+       VALUES ('mrr_summary', $1, NOW())
+       ON CONFLICT (key) DO UPDATE SET value = $1, computed_at = NOW()`,
+      [payloadWithDay]
+    ).catch(function(e) { console.warn('[mrr-cache] DB write failed:', e.message); });
+  }
+
   return payload;
 }
 
@@ -2230,12 +2257,24 @@ router.get('/api/mrr-summary', async function(req, res) {
   try {
     const now      = new Date();
     const todayAms = amsDateStr(now);
-    /* Serve cache: complete result from today, OR partial result fresher than 10 min */
-    if (_mrrSummaryCache.data && (
-          _mrrSummaryCache.day === todayAms ||
-          (Date.now() - (_mrrSummaryCache.ts || 0)) < 10 * 60 * 1000)) {
+
+    /* 1. Memory cache hit — instant */
+    if (_mrrSummaryCache.data && _mrrSummaryCache.day === todayAms) {
       return res.json(_mrrSummaryCache.data);
     }
+
+    /* 2. DB cache hit — fast (survived a server restart) */
+    try {
+      const row = await db.oneOrNone(
+        `SELECT value FROM kv_cache WHERE key = 'mrr_summary' AND value->>'day' = $1`, [todayAms]
+      );
+      if (row) {
+        _mrrSummaryCache = { day: todayAms, ts: Date.now(), data: row.value };
+        return res.json(row.value);
+      }
+    } catch (_) {}
+
+    /* 3. Nothing cached yet — compute (background warmup may still be running) */
     const data = await computeMrrSummary();
     res.json(data);
   } catch (err) {
