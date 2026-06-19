@@ -537,6 +537,21 @@
     .pt-btn.on { background: var(--accent); color: #fff; }
     .prod-note { font-size: 10px; color: var(--muted); margin: -4px 0 8px; }
 
+    /* ── Donut charts ── */
+    .donut-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 10px; }
+    .donut-wrap { display: flex; align-items: center; gap: 14px; }
+    .donut-svg { width: 124px; height: 124px; flex-shrink: 0; }
+    .dn-top { font-family: 'Oswald', sans-serif; font-size: 7px; font-weight: 600; fill: var(--text); text-anchor: middle; }
+    .dn-sub { font-size: 2.7px; fill: var(--muted); text-anchor: middle; text-transform: uppercase; letter-spacing: .08em; }
+    .dn-legend { flex: 1; min-width: 0; }
+    .dn-leg-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+    .dn-leg-row:last-child { border-bottom: none; }
+    .dn-leg-label { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dn-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .dn-leg-val { display: flex; align-items: baseline; gap: 6px; flex-shrink: 0; font-family: 'Oswald', sans-serif; font-size: 13px; color: var(--text); }
+    .dn-leg-pct { font-family: 'Inter', sans-serif; font-size: 10px; color: var(--muted); min-width: 30px; text-align: right; }
+    @media (max-width: 900px) { .donut-grid { grid-template-columns: 1fr; } }
+
     /* ── Search results badge ── */
     .search-badge { font-size: 10px; color: var(--accent); margin-bottom: 6px; display: none; }
     .search-badge.visible { display: block; }
@@ -842,12 +857,21 @@
         </div>
       </div>
 
-      <!-- Source breakdown — CC / Recharge / Whop -->
-      <div class="section-label" id="s-sources">Active subscriptions by source</div>
-      <div class="grid-3 mb10" id="src-grid">
-        <div class="skel-block" style="height:90px;border-radius:12px"></div>
-        <div class="skel-block" style="height:90px;border-radius:12px"></div>
-        <div class="skel-block" style="height:90px;border-radius:12px"></div>
+      <!-- Source breakdown — donut charts: MRR/subs by platform + MRR by gateway -->
+      <div class="section-label" id="s-sources">Subscription mix</div>
+      <div class="donut-grid mb10" id="donut-grid">
+        <div class="panel">
+          <div class="panel-head"><span class="panel-title">MRR by platform</span></div>
+          <div class="donut-wrap" id="dn-src-mrr"><div class="skel-block" style="height:120px;width:100%;border-radius:12px"></div></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><span class="panel-title">Active subs by platform</span></div>
+          <div class="donut-wrap" id="dn-src-subs"><div class="skel-block" style="height:120px;width:100%;border-radius:12px"></div></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><span class="panel-title">MRR by gateway</span><span class="panel-meta">CheckoutChamp</span></div>
+          <div class="donut-wrap" id="dn-gw-mrr"><div class="skel-block" style="height:120px;width:100%;border-radius:12px"></div></div>
+        </div>
       </div>
 
       <!-- Revenue & Forecast -->
@@ -1344,27 +1368,91 @@ function renderSparklines(newTrend, cancelTrend, revTrend) {
 }
 
 /* ── Source cards ── */
-function renderSourceCards(sources) {
-  var cfg = {
-    cc:       { label: 'CheckoutChamp', badge: 'badge-cc', color: '#3b82f6', icon: PLATFORM_ICONS.cc },
-    recharge: { label: 'Recharge',      badge: 'badge-rc', color: '#22c55e', icon: PLATFORM_ICONS.recharge },
-    whop:     { label: 'Whop',          badge: 'badge-wh', color: '#7c3aed', icon: PLATFORM_ICONS.whop }
-  };
-  var total = sources.reduce(function(a,s) { return a+s.n; }, 0);
-  var by = { cc: { n:0, mrr_cents:0 }, recharge: { n:0, mrr_cents:0 }, whop: { n:0, mrr_cents:0 } };
-  sources.forEach(function(s) { if (by[s.source]) by[s.source] = s; });
+/* Compact money for donut centers/legends: $9,243.10 -> "$9.2K" */
+function $kc(cents) {
+  var v = Math.round(Number(cents || 0)) / 100;
+  if (v >= 1000) return '$' + (v / 1000).toFixed(1) + 'K';
+  return '$' + v.toLocaleString('en-US', { maximumFractionDigits: 0 });
+}
 
-  document.getElementById('src-grid').innerHTML = ['cc','recharge','whop'].map(function(src) {
-    var s = by[src], c = cfg[src], pct = total > 0 ? Math.round(s.n / total * 100) : 0;
-    return '<div class="src-card">' +
-      '<div class="src-head"><span class="src-name" style="color:'+c.color+'"><img class="src-icon" src="'+c.icon+'" alt="" loading="lazy"/>'+c.label+'</span><span class="src-badge '+c.badge+'">'+pct+'% of total</span></div>' +
-      '<div class="src-stats">' +
-        '<div><div class="src-val">'+$n(s.n)+'</div><div class="src-lbl">Active subs</div></div>' +
-        '<div><div class="src-val">'+$m(Number(s.mrr_cents))+'</div><div class="src-lbl">MRR</div></div>' +
-      '</div>' +
-      '<div class="src-bar"><div class="src-fill" style="width:'+pct+'%;background:'+c.color+'"></div></div>' +
+/* Build an SVG donut (rotated so segments start at 12 o'clock) + render legend. */
+function renderDonut(elId, opts) {
+  var el = document.getElementById(elId);
+  if (!el) return;
+  var segs  = (opts.segments || []).filter(function(s) { return Number(s.value) > 0; });
+  var total = segs.reduce(function(a, s) { return a + Number(s.value); }, 0);
+
+  var arcs = '<circle cx="21" cy="21" r="15.915" fill="none" stroke="var(--bg3)" stroke-width="5"/>';
+  var cum = 0;
+  segs.forEach(function(s) {
+    var pct = Number(s.value) / (total || 1) * 100;
+    arcs += '<circle cx="21" cy="21" r="15.915" fill="none" stroke="' + s.color + '" stroke-width="5"' +
+            ' stroke-dasharray="' + pct.toFixed(3) + ' ' + (100 - pct).toFixed(3) + '"' +
+            ' stroke-dashoffset="' + (-cum).toFixed(3) + '"/>';
+    cum += pct;
+  });
+
+  var svg = '<svg viewBox="0 0 42 42" class="donut-svg" role="img">' +
+    '<g transform="rotate(-90 21 21)">' + arcs + '</g>' +
+    '<text x="21" y="20.6" class="dn-top">' + esc(opts.centerTop) + '</text>' +
+    '<text x="21" y="25.8" class="dn-sub">' + esc(opts.centerSub) + '</text>' +
+    '</svg>';
+
+  var legend = (opts.segments || []).map(function(s) {
+    var pct = total > 0 ? Math.round(Number(s.value) / total * 100) : 0;
+    return '<div class="dn-leg-row">' +
+      '<span class="dn-leg-label"><span class="dn-dot" style="background:' + s.color + '"></span>' + esc(s.label) + '</span>' +
+      '<span class="dn-leg-val">' + s.display + '<span class="dn-leg-pct">' + pct + '%</span></span>' +
     '</div>';
   }).join('');
+
+  el.innerHTML = svg + '<div class="dn-legend">' + (legend || '<div class="empty">No data</div>') + '</div>';
+}
+
+var SRC_CFG = {
+  cc:       { label: 'CheckoutChamp', color: '#3b82f6' },
+  recharge: { label: 'Recharge',      color: '#22c55e' },
+  whop:     { label: 'Whop',          color: '#7c3aed' }
+};
+var GW_COLORS = ['#3b82f6','#22c55e','#7c3aed','#f04e00','#eab308','#ec4899','#06b6d4','#94a3b8'];
+
+function renderSourceCards(sources, gateways) {
+  var order = ['cc','recharge','whop'];
+  var by = { cc:{ n:0, mrr_cents:0 }, recharge:{ n:0, mrr_cents:0 }, whop:{ n:0, mrr_cents:0 } };
+  (sources || []).forEach(function(s) { if (by[s.source]) by[s.source] = s; });
+
+  /* MRR by platform */
+  var mrrSegs = order.map(function(k) {
+    return { label: SRC_CFG[k].label, color: SRC_CFG[k].color, value: Number(by[k].mrr_cents || 0), display: $kc(by[k].mrr_cents) };
+  });
+  renderDonut('dn-src-mrr', {
+    centerTop: $kc(mrrSegs.reduce(function(a,s){ return a+s.value; }, 0)),
+    centerSub: 'Total MRR', segments: mrrSegs
+  });
+
+  /* Active subs by platform */
+  var subSegs = order.map(function(k) {
+    return { label: SRC_CFG[k].label, color: SRC_CFG[k].color, value: Number(by[k].n || 0), display: $n(by[k].n) };
+  });
+  renderDonut('dn-src-subs', {
+    centerTop: $n(subSegs.reduce(function(a,s){ return a+s.value; }, 0)),
+    centerSub: 'Active subs', segments: subSegs
+  });
+
+  /* MRR by gateway (CheckoutChamp) — top 6 + Other */
+  var gws  = (gateways || []).slice().sort(function(a,b){ return Number(b.mrr_cents) - Number(a.mrr_cents); });
+  var top  = gws.slice(0, 6), rest = gws.slice(6);
+  var gwSegs = top.map(function(g, i) {
+    return { label: g.gateway, color: GW_COLORS[i % GW_COLORS.length], value: Number(g.mrr_cents || 0), display: $kc(g.mrr_cents) };
+  });
+  if (rest.length) {
+    var rc = rest.reduce(function(a,g){ return a + Number(g.mrr_cents || 0); }, 0);
+    gwSegs.push({ label: 'Other (' + rest.length + ')', color: '#94a3b8', value: rc, display: $kc(rc) });
+  }
+  renderDonut('dn-gw-mrr', {
+    centerTop: $kc(gwSegs.reduce(function(a,s){ return a+s.value; }, 0)),
+    centerSub: 'CC revenue', segments: gwSegs
+  });
 }
 
 /* ── Growth charts ── */
@@ -1927,7 +2015,7 @@ async function loadData() {
     renderCancels(d.recentCancels, d.cancelTotal);
     renderTomorrowRebills(d.tomorrowRebillsList);
     renderProducts(d.productBreakdown);
-    renderSourceCards(d.sourceBreakdown || []);
+    renderSourceCards(d.sourceBreakdown || [], d.gatewayBreakdown || []);
     renderGateway(d.gatewayBreakdown);
     updateSubtitle();
 
