@@ -2137,131 +2137,55 @@ async function computeMrrSummary() {
   const ccMonthStart = mm + '/' + md + '/' + my;
   const ccMonthEnd   = em + '/' + ed + '/' + ey;
 
-  const [rc, wh, cc, pendingRow, mrrRow] = await Promise.all([
+  /* All three figures come from the SAME active-subscription base so they reconcile:
+       MRR (run-rate) = Collected (already billed this month) + Pending (due before month-end).
+     Each active sub has next_bill_at >= now (it's part of the MRR base); split by:
+        [now, monthEnd)  → PENDING   (still to bill before month-end)
+        >= monthEnd      → COLLECTED (already billed this cycle; next bill is next month)
+     Guarantees Collected <= MRR and Collected + Pending = MRR.                          */
+  const rows = await db.many(`
+    SELECT source,
+      COALESCE(SUM(price_cents) FILTER (WHERE next_bill_at >= $1), 0)::bigint                      AS mrr_cents,
+      COALESCE(SUM(price_cents) FILTER (WHERE next_bill_at >= $1 AND next_bill_at < $2), 0)::bigint AS pending_cents,
+      COALESCE(SUM(price_cents) FILTER (WHERE next_bill_at >= $2), 0)::bigint                       AS collected_cents,
+      COUNT(*) FILTER (WHERE next_bill_at >= $1 AND next_bill_at < $2)::int                         AS pending_n
+    FROM subscriptions
+    WHERE status = 'ACTIVE' ${NO_PAYPAL}
+    GROUP BY source
+  `, [now, monthEnd]);
 
-    /* Recharge: SUCCESS recurring charges captured this month (through yesterday) */
-    (async function() {
-      var key = process.env.RECHARGE_API_KEY;
-      if (!key) return { cents: 0, ok: false };
-      var headers = { 'X-Recharge-Access-Token': key, 'Content-Type': 'application/json' };
-      var cents = 0, page = 1, ok = true;
-      try {
-        while (page <= 60) {
-          var url = RC_API_BASE + '/charges?limit=250&page=' + page +
-                    '&status=success&date_min=' + monthStartAms + '&date_max=' + todayAms;
-          var resp = await apiJSON(url, { headers });
-          if (!resp.ok) throw new Error('HTTP ' + resp.status);
-          var d = resp.json || {};
-          var charges = d.charges || [];
-          charges.forEach(function(c) {
-            if (c.type !== 'RECURRING') return;
-            var p = amsParseLocal(c.processed_at);
-            if (p && p >= todayStart) return;
-            cents += Math.round(parseFloat(c.total_price || 0) * 100);
-          });
-          if (charges.length < 250) break;
-          page++;
-        }
-      } catch (e) { ok = false; console.error('[mrr-summary] RC collected failed:', e.message); }
-      return { cents: cents, ok: ok };
-    })(),
+  const bd = { cc: 0, recharge: 0, whop: 0 };
+  let mrr = 0, pending = 0, collected = 0, pendingN = 0;
+  rows.forEach(function(r) {
+    mrr       += Number(r.mrr_cents);
+    pending   += Number(r.pending_cents);
+    collected += Number(r.collected_cents);
+    pendingN  += Number(r.pending_n);
+    if (bd[r.source] !== undefined) bd[r.source] = Number(r.collected_cents);
+  });
 
-    /* Whop: subscription_cycle paid payments this month (through yesterday) */
-    (async function() {
-      var key = await getWhopKey();
-      if (!key) return { cents: 0, ok: false };
-      var headers = { 'Authorization': 'Bearer ' + key, 'accept': 'application/json' };
-      var cents = 0, page = 1, ok = true, MAX_PAGES = 200;
-      try {
-        while (page <= MAX_PAGES) {
-          var resp = await apiJSON(WHOP_API_BASE +
-            '/payments?per_page=50&status=paid&billing_reason=subscription_cycle&page=' + page, { headers });
-          if (!resp.ok) throw new Error('HTTP ' + resp.status);
-          var d = resp.json || {};
-          var items = d.data || [];
-          if (!items.length) break;
-          var sawOlder = false;
-          items.forEach(function(p) {
-            var ts = p.created_at ? new Date(p.created_at * 1000) : null;
-            if (!ts) return;
-            if (ts < monthStart) { sawOlder = true; return; }
-            if (ts >= todayStart) return;
-            cents += Math.round(parseFloat(p.final_amount || p.total || 0) * 100);
-          });
-          if (sawOlder) break;
-          page++;
-        }
-      } catch (e) { ok = false; console.error('[mrr-summary] Whop collected failed:', e.message); }
-      return { cents: cents, ok: ok };
-    })(),
-
-    /* CheckoutChamp: RECURRING SALE SUCCESS transactions this month (through yesterday) */
-    (async function() {
-      if (!process.env.CC_LOGIN_ID || !process.env.CC_API_PASSWORD) return { cents: 0, ok: false };
-      var cents = 0, page = 1, ok = true;
-      try {
-        while (page <= 30) {
-          var p = new URLSearchParams({
-            loginId: process.env.CC_LOGIN_ID, password: process.env.CC_API_PASSWORD,
-            startDate: ccMonthStart, endDate: ccMonthEnd,
-            billType: 'RECURRING', txnType: 'SALE', responseType: 'SUCCESS',
-            resultsPerPage: 200, page: page
-          });
-          var resp = await apiJSON(CC_API_BASE + '/transactions/query/?' + p.toString(), { method: 'POST' });
-          if (!resp.ok) throw new Error('HTTP ' + resp.status);
-          var d = resp.json || {};
-          if (d.result !== 'SUCCESS') throw new Error('CC result ' + d.result);
-          var txns = (d.message && d.message.data) ? d.message.data : [];
-          txns.forEach(function(t) {
-            var ts = ccParseDate(t.dateCreated || '');
-            if (!ts || ts < monthStart || ts >= todayStart) return;
-            cents += Math.round(parseFloat(t.amount || t.totalAmount || 0) * 100);
-          });
-          if (txns.length < 200) break;
-          page++;
-        }
-      } catch (e) { ok = false; console.error('[mrr-summary] CC collected failed:', e.message); }
-      return { cents: cents, ok: ok };
-    })(),
-
-    /* Pending: MRR scheduled to bill from now through month-end (DB) */
-    db.one(`SELECT COALESCE(SUM(price_cents),0)::bigint AS cents, COUNT(*)::int AS n
-            FROM subscriptions
-            WHERE status = 'ACTIVE' AND next_bill_at >= $1 AND next_bill_at < $2 ${NO_PAYPAL}`,
-           [now, monthEnd]),
-
-    /* Active MRR run-rate */
-    db.one(`SELECT COALESCE(SUM(price_cents),0)::bigint AS cents
-            FROM subscriptions WHERE status = 'ACTIVE' AND next_bill_at >= NOW() ${NO_PAYPAL}`)
-  ]);
-
-  const rcCollected = rc.cents, whCollected = wh.cents, ccCollected = cc.cents;
-  const collected = rcCollected + whCollected + ccCollected;
-  const allOk = rc.ok && wh.ok && cc.ok;
   const payload = {
     month:               monthStartAms.slice(0, 7),
-    mrr_cents:           Number(mrrRow.cents),
+    mrr_cents:           mrr,
     collected_mtd_cents: collected,
-    collected_through:   yesterdayAms,
-    collected_breakdown: { cc: ccCollected, recharge: rcCollected, whop: whCollected },
-    sources_ok:          { cc: cc.ok, recharge: rc.ok, whop: wh.ok },
-    pending_mtd_cents:   Number(pendingRow.cents),
-    pending_mtd_count:   pendingRow.n,
+    collected_through:   todayAms,
+    collected_breakdown: bd,
+    sources_ok:          { cc: true, recharge: true, whop: true },
+    pending_mtd_cents:   pending,
+    pending_mtd_count:   pendingN,
     generated_at:        now.toISOString()
   };
-  _mrrSummaryCache = { day: allOk ? todayAms : null, ts: Date.now(), data: payload };
-  console.log('[mrr-summary] computed — collected:', collected, 'ok:', allOk);
+  _mrrSummaryCache = { day: todayAms, ts: Date.now(), data: payload };
+  console.log('[mrr-summary] computed (reconciling) — mrr:', mrr, '| collected:', collected, '| pending:', pending);
 
-  /* Persist to DB so the result survives server restarts — only when all sources OK */
-  if (allOk) {
-    const payloadWithDay = Object.assign({ day: todayAms }, payload);
-    db.none(
-      `INSERT INTO kv_cache (key, value, computed_at)
-       VALUES ('mrr_summary', $1, NOW())
-       ON CONFLICT (key) DO UPDATE SET value = $1, computed_at = NOW()`,
-      [payloadWithDay]
-    ).catch(function(e) { console.warn('[mrr-cache] DB write failed:', e.message); });
-  }
+  /* Persist so the value survives restarts and loads instantly */
+  const payloadWithDay = Object.assign({ day: todayAms }, payload);
+  db.none(
+    `INSERT INTO kv_cache (key, value, computed_at)
+     VALUES ('mrr_summary', $1, NOW())
+     ON CONFLICT (key) DO UPDATE SET value = $1, computed_at = NOW()`,
+    [payloadWithDay]
+  ).catch(function(e) { console.warn('[mrr-cache] DB write failed:', e.message); });
 
   return payload;
 }
