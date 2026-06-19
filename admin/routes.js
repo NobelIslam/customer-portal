@@ -2227,28 +2227,64 @@ router.warmMrrCache = function() {
   });
 };
 
-/* ── GET /admin/api/debug/mrr-verify — DB active-subscription stats by source.
-   Lets us confirm the sync captured everything (vs the live platform APIs).        */
+/* ── GET /admin/api/debug/mrr-verify — per-platform MRR / Collected / Pending
+   breakdown (same logic & boundaries as the dashboard cards) + the CheckoutChamp
+   gateway breakdown showing exactly what's included vs excluded.                  */
 router.get('/api/debug/mrr-verify', async function(req, res) {
   try {
+    const now      = new Date();
+    const todayAms = amsDateStr(now);
+    const ty   = parseInt(todayAms.slice(0, 4), 10);
+    const tmo  = parseInt(todayAms.slice(5, 7), 10);
+    const nextMo = tmo === 12 ? 1 : tmo + 1, nextYr = tmo === 12 ? ty + 1 : ty;
+    const monthEnd = amsMidnightUTC(new Date(nextYr + '-' + String(nextMo).padStart(2, '0') + '-01T12:00:00Z'));
     const NO_PAYPAL = `AND NOT (source = 'cc' AND raw->>'merchant' ILIKE '%paypal%')
       AND NOT (source = 'cc' AND COALESCE(NULLIF(TRIM(raw->>'merchant'), ''), '') = '')`;
+
+    const cents = c => '$' + (Number(c) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    /* Per-platform MRR / Collected / Pending — exactly how the cards are computed */
     const rows = await db.many(`
       SELECT source,
-             COUNT(*)::int                                                        AS active_total,
-             COUNT(*) FILTER (WHERE next_bill_at >= NOW())::int                   AS active_future,
-             COALESCE(SUM(price_cents),0)::bigint                                 AS price_sum_cents,
-             COALESCE(SUM(price_cents) FILTER (WHERE next_bill_at >= NOW()),0)::bigint AS mrr_cents,
-             MAX(last_synced_at)                                                  AS last_synced
-      FROM subscriptions
-      WHERE status = 'ACTIVE' ${NO_PAYPAL}
+        COUNT(*) FILTER (WHERE next_bill_at >= $1)::int                                          AS active_subs,
+        COALESCE(SUM(price_cents) FILTER (WHERE next_bill_at >= $1), 0)::bigint                   AS mrr_cents,
+        COALESCE(SUM(price_cents) FILTER (WHERE next_bill_at >= $2), 0)::bigint                   AS collected_cents,
+        COALESCE(SUM(price_cents) FILTER (WHERE next_bill_at >= $1 AND next_bill_at < $2),0)::bigint AS pending_cents
+      FROM subscriptions WHERE status = 'ACTIVE' ${NO_PAYPAL}
       GROUP BY source ORDER BY source
+    `, [now, monthEnd]);
+
+    const by_platform = rows.map(r => ({
+      platform:  r.source,
+      active_subs: r.active_subs,
+      MRR:       cents(r.mrr_cents),
+      collected: cents(r.collected_cents),
+      pending:   cents(r.pending_cents)
+    }));
+    const tMrr = rows.reduce((s, r) => s + Number(r.mrr_cents), 0);
+    const tCol = rows.reduce((s, r) => s + Number(r.collected_cents), 0);
+    const tPen = rows.reduce((s, r) => s + Number(r.pending_cents), 0);
+
+    /* CheckoutChamp gateway breakdown — which merchants are included vs excluded */
+    const gwRows = await db.many(`
+      SELECT COALESCE(NULLIF(TRIM(raw->>'merchant'), ''), '(blank)') AS gateway,
+             COUNT(*) FILTER (WHERE next_bill_at >= NOW())::int AS active_subs,
+             COALESCE(SUM(price_cents) FILTER (WHERE next_bill_at >= NOW()), 0)::bigint AS mrr_cents
+      FROM subscriptions WHERE source = 'cc' AND status = 'ACTIVE'
+      GROUP BY gateway ORDER BY mrr_cents DESC
     `, []);
-    const total = await db.one(`
-      SELECT COALESCE(SUM(price_cents) FILTER (WHERE next_bill_at >= NOW()),0)::bigint AS mrr_cents,
-             COUNT(*) FILTER (WHERE next_bill_at >= NOW())::int AS active_future
-      FROM subscriptions WHERE status = 'ACTIVE' ${NO_PAYPAL}`, []);
-    res.json({ by_source: rows, total: total, as_of: new Date().toISOString() });
+    const cc_gateways = gwRows.map(g => {
+      const excluded = g.gateway === '(blank)' || /paypal/i.test(g.gateway);
+      return { gateway: g.gateway, active_subs: g.active_subs, mrr: cents(g.mrr_cents), status: excluded ? 'EXCLUDED' : 'included' };
+    });
+
+    res.json({
+      as_of: now.toISOString(),
+      by_platform: by_platform,
+      total: { MRR: cents(tMrr), collected: cents(tCol), pending: cents(tPen), reconciles: (tCol + tPen) === tMrr },
+      cc_gateway_rule: "CheckoutChamp EXCLUDES subscriptions whose merchant is PayPal or blank/empty; all other gateways are included.",
+      cc_gateways: cc_gateways
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
