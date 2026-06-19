@@ -388,8 +388,9 @@
       padding: 8px 0; border-bottom: 1px dashed var(--border);
     }
     .inv-line:last-child { border-bottom: none; }
-    .inv-line-name { font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 7px; }
+    .inv-line-name { font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 8px; }
     .inv-line-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .inv-line-icon { width: 18px; height: 18px; border-radius: 4px; object-fit: contain; flex-shrink: 0; }
     .inv-line-qty { font-size: 10px; color: var(--muted); white-space: nowrap; text-align: right; }
     .inv-line-amt { font-family: 'Oswald', sans-serif; font-size: 14px; font-weight: 500; color: var(--text); text-align: right; white-space: nowrap; }
 
@@ -464,7 +465,8 @@
     /* ── Source cards ── */
     .src-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
     .src-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-    .src-name { font-family: 'Oswald', sans-serif; font-size: 13px; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; }
+    .src-name { font-family: 'Oswald', sans-serif; font-size: 13px; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; display: flex; align-items: center; gap: 7px; }
+    .src-icon { width: 18px; height: 18px; border-radius: 4px; object-fit: contain; flex-shrink: 0; }
     .src-badge { font-size: 9px; padding: 2px 7px; border-radius: 20px; font-weight: 600; letter-spacing: 0.04em; }
     .badge-cc   { background: rgba(37,99,235,.08);  color: #1d4ed8; border: 1px solid rgba(37,99,235,.2); }
     .badge-rc   { background: rgba(22,163,74,.08);  color: #15803d; border: 1px solid rgba(22,163,74,.2); }
@@ -977,6 +979,13 @@ var SESSION = localStorage.getItem('tgp_admin_session');
 var H = { 'Authorization': 'Bearer ' + SESSION, 'Cache-Control': 'no-cache, no-store', 'Pragma': 'no-cache' };
 function logout() { localStorage.removeItem('tgp_admin_session'); location.href = '/admin/login'; }
 
+/* Platform icons (used in the Sales Receipt and source breakdowns) */
+var PLATFORM_ICONS = {
+  cc:       'https://checkoutchamp.com/assets/images/favicon.png',
+  recharge: 'https://cdn.shopify.com/s/files/1/0726/1975/3811/files/rechargecon.webp?v=1781871460',
+  whop:     'https://whop.com/favicon.ico'
+};
+
 /* ── Mobile sidebar drawer ── */
 function toggleSidebar() {
   var sb = document.getElementById('sidebar');
@@ -1326,9 +1335,9 @@ function renderSparklines(newTrend, cancelTrend, revTrend) {
 /* ── Source cards ── */
 function renderSourceCards(sources) {
   var cfg = {
-    cc:       { label: 'CheckoutChamp', badge: 'badge-cc', color: '#3b82f6' },
-    recharge: { label: 'Recharge',      badge: 'badge-rc', color: '#22c55e' },
-    whop:     { label: 'Whop',          badge: 'badge-wh', color: '#7c3aed' }
+    cc:       { label: 'CheckoutChamp', badge: 'badge-cc', color: '#3b82f6', icon: PLATFORM_ICONS.cc },
+    recharge: { label: 'Recharge',      badge: 'badge-rc', color: '#22c55e', icon: PLATFORM_ICONS.recharge },
+    whop:     { label: 'Whop',          badge: 'badge-wh', color: '#7c3aed', icon: PLATFORM_ICONS.whop }
   };
   var total = sources.reduce(function(a,s) { return a+s.n; }, 0);
   var by = { cc: { n:0, mrr_cents:0 }, recharge: { n:0, mrr_cents:0 }, whop: { n:0, mrr_cents:0 } };
@@ -1337,7 +1346,7 @@ function renderSourceCards(sources) {
   document.getElementById('src-grid').innerHTML = ['cc','recharge','whop'].map(function(src) {
     var s = by[src], c = cfg[src], pct = total > 0 ? Math.round(s.n / total * 100) : 0;
     return '<div class="src-card">' +
-      '<div class="src-head"><span class="src-name" style="color:'+c.color+'">'+c.label+'</span><span class="src-badge '+c.badge+'">'+pct+'% of total</span></div>' +
+      '<div class="src-head"><span class="src-name" style="color:'+c.color+'"><img class="src-icon" src="'+c.icon+'" alt="" loading="lazy"/>'+c.label+'</span><span class="src-badge '+c.badge+'">'+pct+'% of total</span></div>' +
       '<div class="src-stats">' +
         '<div><div class="src-val">'+$n(s.n)+'</div><div class="src-lbl">Active subs</div></div>' +
         '<div><div class="src-val">'+$m(Number(s.mrr_cents))+'</div><div class="src-lbl">MRR</div></div>' +
@@ -2270,13 +2279,13 @@ function renderIntradayChart(d) {
 
   /* Invoice line items */
   var sources = [
-    { label: 'CheckoutChamp', color: '#3b82f6', orders: totals.cc_orders, cents: totals.cc_cents },
-    { label: 'Recharge',      color: '#22c55e', orders: totals.rc_orders, cents: totals.rc_cents },
-    { label: 'Whop',          color: '#7c3aed', orders: totals.wh_orders, cents: totals.wh_cents }
+    { label: 'CheckoutChamp', icon: PLATFORM_ICONS.cc,       orders: totals.cc_orders, cents: totals.cc_cents },
+    { label: 'Recharge',      icon: PLATFORM_ICONS.recharge, orders: totals.rc_orders, cents: totals.rc_cents },
+    { label: 'Whop',          icon: PLATFORM_ICONS.whop,     orders: totals.wh_orders, cents: totals.wh_cents }
   ];
   var invLines = sources.map(function(r) {
     return '<div class="inv-line">' +
-      '<div class="inv-line-name"><span class="inv-line-dot" style="background:' + r.color + '"></span>' + r.label + '</div>' +
+      '<div class="inv-line-name"><img class="inv-line-icon" src="' + r.icon + '" alt="" loading="lazy"/>' + r.label + '</div>' +
       '<div class="inv-line-qty">' + (r.orders || 0) + ' orders</div>' +
       '<div class="inv-line-amt">' + fmtC(r.cents) + '</div>' +
     '</div>';
