@@ -2140,12 +2140,14 @@ async function computeMrrSummary() {
   const ccMonthStart = mm + '/' + md + '/' + my;
   const ccMonthEnd   = em + '/' + ed + '/' + ey;
 
-  /* All three figures come from the SAME active-subscription base so they reconcile:
+  /* All three figures come from the SAME active-subscription base so they reconcile,
+     measured AS OF THE START OF TODAY (so "Collected" = through end of yesterday and
+     only advances at the day rollover):
        MRR (run-rate) = Collected (already billed this month) + Pending (due before month-end).
-     Each active sub has next_bill_at >= now (it's part of the MRR base); split by:
-        [now, monthEnd)  → PENDING   (still to bill before month-end)
-        >= monthEnd      → COLLECTED (already billed this cycle; next bill is next month)
-     Guarantees Collected <= MRR and Collected + Pending = MRR.                          */
+     Each active sub with next_bill_at >= todayStart is split by:
+        [todayStart, monthEnd)  → PENDING   (bills today through month-end — not yet collected)
+        >= monthEnd             → COLLECTED (already billed this cycle, before today)
+     Today's billings stay in Pending until tomorrow, when they roll into Collected.   */
   const rows = await db.many(`
     SELECT source,
       COALESCE(SUM(price_cents) FILTER (WHERE next_bill_at >= $1), 0)::bigint                      AS mrr_cents,
@@ -2155,7 +2157,7 @@ async function computeMrrSummary() {
     FROM subscriptions
     WHERE status = 'ACTIVE' ${NO_PAYPAL}
     GROUP BY source
-  `, [now, monthEnd]);
+  `, [todayStart, monthEnd]);
 
   const bd = { cc: 0, recharge: 0, whop: 0 };
   let mrr = 0, pending = 0, collected = 0, pendingN = 0;
@@ -2171,7 +2173,7 @@ async function computeMrrSummary() {
     month:               monthStartAms.slice(0, 7),
     mrr_cents:           mrr,
     collected_mtd_cents: collected,
-    collected_through:   todayAms,
+    collected_through:   yesterdayAms,
     collected_breakdown: bd,
     sources_ok:          { cc: true, recharge: true, whop: true },
     pending_mtd_cents:   pending,
@@ -2237,6 +2239,7 @@ router.get('/api/debug/mrr-verify', async function(req, res) {
   try {
     const now      = new Date();
     const todayAms = amsDateStr(now);
+    const todayStart = amsMidnightUTC(now);
     const ty   = parseInt(todayAms.slice(0, 4), 10);
     const tmo  = parseInt(todayAms.slice(5, 7), 10);
     const nextMo = tmo === 12 ? 1 : tmo + 1, nextYr = tmo === 12 ? ty + 1 : ty;
@@ -2256,7 +2259,7 @@ router.get('/api/debug/mrr-verify', async function(req, res) {
         COALESCE(SUM(price_cents) FILTER (WHERE next_bill_at >= $1 AND next_bill_at < $2),0)::bigint AS pending_cents
       FROM subscriptions WHERE status = 'ACTIVE' ${NO_PAYPAL}
       GROUP BY source ORDER BY source
-    `, [now, monthEnd]);
+    `, [todayStart, monthEnd]);
 
     const by_platform = rows.map(r => ({
       platform:  r.source,
