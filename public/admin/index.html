@@ -521,13 +521,20 @@
     .cancel-right { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0; }
     .cancel-amt { color: var(--red); font-size: 13px; font-weight: 600; font-family: 'Oswald', sans-serif; }
 
-    /* ── Products table ── */
-    .prod-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); gap: 10px; }
+    /* ── Products bar ranking ── */
+    .prod-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border); }
     .prod-row:last-child { border-bottom: none; }
-    .prod-name { font-size: 12px; color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .prod-right { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
-    .prod-count { font-family: 'Oswald', sans-serif; font-size: 14px; color: var(--muted2); }
-    .prod-mrr { font-family: 'Oswald', sans-serif; font-size: 14px; color: var(--text); min-width: 68px; text-align: right; }
+    .prod-rank { flex-shrink: 0; width: 18px; text-align: right; font-family: 'Oswald', sans-serif; font-size: 12px; color: var(--muted); }
+    .prod-track { position: relative; flex: 1; min-width: 0; height: 30px; background: var(--bg3); border-radius: 6px; overflow: hidden; }
+    .prod-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 6px; opacity: .16; transition: width .4s ease; }
+    .prod-label { position: absolute; left: 10px; right: 8px; top: 0; bottom: 0; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .prod-label .src-tag-icon, .prod-label .src-icon { flex-shrink: 0; }
+    .prod-val { flex-shrink: 0; min-width: 92px; text-align: right; font-family: 'Oswald', sans-serif; font-size: 14px; color: var(--text); line-height: 1.15; }
+    .prod-val small { display: block; font-family: 'Inter', sans-serif; font-size: 10px; font-weight: 400; color: var(--muted); }
+    /* metric toggle */
+    .prod-toggle { display: inline-flex; background: var(--bg3); border: 1px solid var(--border2); border-radius: 6px; padding: 2px; }
+    .pt-btn { background: none; border: none; cursor: pointer; font-family: inherit; font-size: 11px; font-weight: 500; color: var(--muted2); padding: 3px 9px; border-radius: 4px; transition: all .15s; }
+    .pt-btn.on { background: var(--accent); color: #fff; }
 
     /* ── Search results badge ── */
     .search-badge { font-size: 10px; color: var(--accent); margin-bottom: 6px; display: none; }
@@ -1115,6 +1122,7 @@ var pageCancels  = 1;
 var pageTomorrow = 1;
 var pageProducts = 1;
 var pageGateway  = 1;
+var productMetric = 'mrr';   /* 'mrr' | 'subs' */
 
 var allTomorrow = [];
 var allProducts = [];
@@ -1689,20 +1697,47 @@ function renderProducts(products) {
   renderProductsPage();
 }
 
+function prodColor(src) {
+  return src === 'recharge' ? 'var(--rc)' : src === 'whop' ? 'var(--wh)' : 'var(--cc)';
+}
+function prodVal(p) {
+  return productMetric === 'subs' ? Number(p.n || 0) : Number(p.mrr_cents || 0);
+}
+
 function renderProductsPage() {
   var el    = document.getElementById('products-panel');
   var total = allProducts.length;
+
+  if (!total) {
+    el.innerHTML = '<div class="panel-head"><span class="panel-title">Active subscriptions by product</span></div><div class="empty">No product data yet</div>';
+    return;
+  }
+
+  // Sort by the active metric (desc) so the ranking always reflects the toggle.
+  var sorted = allProducts.slice().sort(function(a, b) { return prodVal(b) - prodVal(a); });
+  var maxVal = prodVal(sorted[0]) || 1;
+
   var pages = Math.max(1, Math.ceil(total / PAGE_SIZE_PRODUCTS));
   pageProducts = Math.min(pageProducts, pages);
-  var slice = allProducts.slice((pageProducts - 1) * PAGE_SIZE_PRODUCTS, pageProducts * PAGE_SIZE_PRODUCTS);
+  var start = (pageProducts - 1) * PAGE_SIZE_PRODUCTS;
+  var slice = sorted.slice(start, start + PAGE_SIZE_PRODUCTS);
 
-  if (!total) { el.innerHTML = '<div class="empty">No product data yet</div>'; return; }
-
-  var rows = slice.map(function(p) {
-    var src = p.source ? srcIcon(p.source) : '';
+  var rows = slice.map(function(p, i) {
+    var src   = p.source ? srcIcon(p.source) : '';
+    var pct   = Math.max(3, Math.round(prodVal(p) / maxVal * 100));
+    var color = prodColor(p.source);
+    var mrr   = $m(Number(p.mrr_cents)) + '/mo';
+    var subs  = $n(p.n) + ' subs';
+    var val   = productMetric === 'subs'
+      ? $n(p.n) + '<small>' + mrr + '</small>'
+      : $m(Number(p.mrr_cents)) + '<small>' + subs + '</small>';
     return '<div class="prod-row">' +
-      '<div class="prod-name">' + esc(p.product) + src + '</div>' +
-      '<div class="prod-right"><span class="prod-count">' + $n(p.n) + ' subs</span><span class="prod-mrr">' + $m(Number(p.mrr_cents)) + '/mo</span></div>' +
+      '<div class="prod-rank">' + (start + i + 1) + '</div>' +
+      '<div class="prod-track">' +
+        '<div class="prod-fill" style="width:' + pct + '%;background:' + color + '"></div>' +
+        '<div class="prod-label">' + esc(p.product) + src + '</div>' +
+      '</div>' +
+      '<div class="prod-val">' + val + '</div>' +
     '</div>';
   }).join('');
 
@@ -1714,8 +1749,20 @@ function renderProductsPage() {
       '</div>'
     : '';
 
-  el.innerHTML = '<div class="panel-head"><span class="panel-title">Active subscriptions by product</span><span class="pag-info">' + total + ' products</span></div>' +
+  var toggle = '<div class="prod-toggle">' +
+      '<button class="pt-btn' + (productMetric === 'mrr'  ? ' on' : '') + '" onclick="setProdMetric(\'mrr\')">$ / mo</button>' +
+      '<button class="pt-btn' + (productMetric === 'subs' ? ' on' : '') + '" onclick="setProdMetric(\'subs\')"># subs</button>' +
+    '</div>';
+
+  el.innerHTML = '<div class="panel-head"><span class="panel-title">Active subscriptions by product</span>' + toggle + '</div>' +
     '<div class="feed-scroll">' + rows + pagBar + '</div>';
+}
+
+function setProdMetric(m) {
+  if (productMetric === m) return;
+  productMetric = m;
+  pageProducts = 1;
+  renderProductsPage();
 }
 
 function productsPage(p) {
