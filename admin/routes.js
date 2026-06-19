@@ -277,6 +277,7 @@ router.get('/api/overview', async function(req, res) {
 
     /* Exclude PayPal Commerce and Unknown/Not Set gateway CC subscriptions */
     const NO_PAYPAL = `AND NOT (source = 'cc' AND raw->>'merchant' ILIKE '%paypal%')
+      AND NOT (source = 'cc' AND raw->>'merchant' ILIKE '%airwallex%')
       AND NOT (source = 'cc' AND COALESCE(NULLIF(TRIM(raw->>'merchant'), ''), '') = '')`;
 
     const [
@@ -354,6 +355,7 @@ router.get('/api/overview', async function(req, res) {
                FROM subscriptions
                WHERE source = 'cc' AND status = 'ACTIVE' AND next_bill_at >= NOW()
                AND raw->>'merchant' NOT ILIKE '%paypal%'
+               AND raw->>'merchant' NOT ILIKE '%airwallex%'
                AND COALESCE(NULLIF(TRIM(raw->>'merchant'), ''), '') != ''
                GROUP BY NULLIF(TRIM(raw->>'merchant'), '') ORDER BY n DESC`)
     ]);
@@ -1244,7 +1246,7 @@ router.get('/api/today-orders', async function(req, res) {
             subs.forEach(function(s) {
               if (s.nextBillDate !== todayUTC) return;
               var merchant = (s.merchant || '').trim();
-              if (!merchant || /paypal/i.test(merchant)) return;
+              if (!merchant || /paypal|airwallex/i.test(merchant)) return;
               var email = (s.emailAddress || '').trim().toLowerCase();
               if (!email || seenEmails.includes(email) || TEST_EMAILS.has(email)) return;
               seenEmails.push(email);
@@ -2130,6 +2132,7 @@ async function computeMrrSummary() {
   const yesterdayAms = amsDateStr(new Date(todayStart.getTime() - 1000));
 
   const NO_PAYPAL = `AND NOT (source = 'cc' AND raw->>'merchant' ILIKE '%paypal%')
+    AND NOT (source = 'cc' AND raw->>'merchant' ILIKE '%airwallex%')
     AND NOT (source = 'cc' AND COALESCE(NULLIF(TRIM(raw->>'merchant'), ''), '') = '')`;
 
   const [my, mm, md] = monthStartAms.split('-');
@@ -2239,6 +2242,7 @@ router.get('/api/debug/mrr-verify', async function(req, res) {
     const nextMo = tmo === 12 ? 1 : tmo + 1, nextYr = tmo === 12 ? ty + 1 : ty;
     const monthEnd = amsMidnightUTC(new Date(nextYr + '-' + String(nextMo).padStart(2, '0') + '-01T12:00:00Z'));
     const NO_PAYPAL = `AND NOT (source = 'cc' AND raw->>'merchant' ILIKE '%paypal%')
+      AND NOT (source = 'cc' AND raw->>'merchant' ILIKE '%airwallex%')
       AND NOT (source = 'cc' AND COALESCE(NULLIF(TRIM(raw->>'merchant'), ''), '') = '')`;
 
     const cents = c => '$' + (Number(c) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -2274,7 +2278,7 @@ router.get('/api/debug/mrr-verify', async function(req, res) {
       GROUP BY gateway ORDER BY mrr_cents DESC
     `, []);
     const cc_gateways = gwRows.map(g => {
-      const excluded = g.gateway === '(blank)' || /paypal/i.test(g.gateway);
+      const excluded = g.gateway === '(blank)' || /paypal|airwallex/i.test(g.gateway);
       return { gateway: g.gateway, active_subs: g.active_subs, mrr: cents(g.mrr_cents), status: excluded ? 'EXCLUDED' : 'included' };
     });
 
@@ -2315,6 +2319,7 @@ router.get('/api/debug/today-breakdown', async function(req, res) {
         OR (s.last_billed_at >= $1 AND s.last_billed_at < $2)
       )
       AND NOT (s.source = 'cc' AND s.raw->>'merchant' ILIKE '%paypal%')
+      AND NOT (s.source = 'cc' AND s.raw->>'merchant' ILIKE '%airwallex%')
       AND NOT (s.source = 'cc' AND COALESCE(NULLIF(TRIM(s.raw->>'merchant'), ''), '') = '')
       ORDER BY s.source, s.price_cents DESC
     `, [todayStart, todayEnd]);
