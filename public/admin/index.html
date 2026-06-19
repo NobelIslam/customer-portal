@@ -510,6 +510,7 @@
     .tag-cc   { background: rgba(37,99,235,.1);  color: #1d4ed8; }
     .tag-rc   { background: rgba(22,163,74,.1);  color: #15803d; }
     .tag-wh   { background: rgba(124,58,237,.1); color: #6d28d9; }
+    .src-tag-icon { width: 16px; height: 16px; border-radius: 3px; object-fit: contain; vertical-align: middle; margin-left: 4px; }
 
     /* ── Cancels list ── */
     .cancel-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); gap: 10px; font-size: 12px; }
@@ -982,9 +983,17 @@ function logout() { localStorage.removeItem('tgp_admin_session'); location.href 
 /* Platform icons (used in the Sales Receipt and source breakdowns) */
 var PLATFORM_ICONS = {
   cc:       'https://checkoutchamp.com/assets/images/favicon.png',
-  recharge: 'https://cdn.shopify.com/s/files/1/0726/1975/3811/files/rechargecon.webp?v=1781871460',
+  recharge: 'https://bigferverv-sp.admin.rechargeapps.com/static/images/favicon.ico',
   whop:     'https://whop.com/favicon.ico'
 };
+/* Small inline platform icon for source tags (replaces the CC / RC / WHOP text badges). */
+function srcIcon(source) {
+  var s = (source || '').toLowerCase();
+  var key = (s === 'recharge' || s === 'rc') ? 'recharge'
+          : (s === 'whop'     || s === 'wh') ? 'whop' : 'cc';
+  var label = key === 'recharge' ? 'Recharge' : key === 'whop' ? 'Whop' : 'CheckoutChamp';
+  return '<img class="src-tag-icon" src="' + PLATFORM_ICONS[key] + '" title="' + label + '" alt="' + label + '" loading="lazy"/>';
+}
 
 /* ── Mobile sidebar drawer ── */
 function toggleSidebar() {
@@ -1521,7 +1530,7 @@ function renderFeedList(events) {
   } else {
     html = slice.map(function(e) {
       var m       = KIND_META[e.kind] || { lbl: e.kind, color: '#999' };
-      var src     = e.source ? '<span class="src-tag tag-' + (e.source==='recharge'?'rc':e.source) + '">' + e.source + '</span>' : '';
+      var src     = e.source ? srcIcon(e.source) : '';
       var detail  = e.email || '';
       if (e.kind === 'rebill' && e.payload && e.payload.amount) detail = '$' + e.payload.amount + ' — ' + (e.payload.product || e.email);
       else if (e.payload && e.payload.product) detail = e.payload.product + ' — ' + (e.email || '');
@@ -1570,7 +1579,7 @@ function renderCancelsList(cancels) {
     html = '<div class="empty">No recent cancellations</div>';
   } else {
     html = slice.map(function(c) {
-      var src    = c.source ? '<span class="src-tag tag-' + (c.source==='recharge'?'rc':c.source) + '">' + c.source + '</span>' : '';
+      var src    = c.source ? srcIcon(c.source) : '';
       var when   = c.cancelled_at ? ago(c.cancelled_at) : '';
       var reasonHtml = c.cancel_reason ? '<span class="cancel-reason">' + esc(c.cancel_reason) + '</span>' : '';
       return '<div class="cancel-row">' +
@@ -1625,10 +1634,7 @@ function renderTomorrowPage() {
 
   var rows = slice.map(function(r, idx) {
     var globalIdx = (pageTomorrow - 1) * PAGE_SIZE_TOMORROW + idx;
-    var srcTag = r.source === 'cc'       ? '<span class="src-tag tag-cc">CC</span>'
-               : r.source === 'recharge' ? '<span class="src-tag tag-rc">RC</span>'
-               : r.source === 'whop'     ? '<span class="src-tag tag-wh">Whop</span>'
-               : '<span class="src-tag tag-rc">RC</span>';
+    var srcTag = srcIcon(r.source);
     var price = r.price_cents ? '$' + (r.price_cents / 100).toFixed(2) : '—';
     return '<tr>' +
       '<td><span class="tod-email">' + esc(r.customer_email || '') + '</span></td>' +
@@ -1700,7 +1706,7 @@ function renderProductsPage() {
   if (!total) { el.innerHTML = '<div class="empty">No product data yet</div>'; return; }
 
   var rows = slice.map(function(p) {
-    var src = p.source ? '<span class="src-tag tag-' + (p.source==='recharge'?'rc':p.source) + '">' + p.source + '</span>' : '';
+    var src = p.source ? srcIcon(p.source) : '';
     return '<div class="prod-row">' +
       '<div class="prod-name">' + esc(p.product) + src + '</div>' +
       '<div class="prod-right"><span class="prod-count">' + $n(p.n) + ' subs</span><span class="prod-mrr">' + $m(Number(p.mrr_cents)) + '/mo</span></div>' +
@@ -1942,10 +1948,7 @@ function renderTodayOrders() {
   var slice = allTodayOrders.slice((pageTodayOrders - 1) * PAGE_SIZE_TODAY, pageTodayOrders * PAGE_SIZE_TODAY);
 
   var rows = slice.map(function(o, idx) {
-    var srcTag = o.source === 'cc'       ? '<span class="src-tag tag-cc">CC</span>'
-               : o.source === 'recharge' ? '<span class="src-tag tag-rc">RC</span>'
-               : o.source === 'whop'     ? '<span class="src-tag tag-wh">Whop</span>'
-               : '<span class="src-tag tag-rc">RC</span>';
+    var srcTag = srcIcon(o.source);
     var name = (o.first_name || o.last_name) ? esc((o.first_name || '') + ' ' + (o.last_name || '')).trim() : '';
     var globalIdx = (pageTodayOrders - 1) * PAGE_SIZE_TODAY + idx;
     var shipCell;
