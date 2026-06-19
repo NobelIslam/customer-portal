@@ -721,9 +721,6 @@
   </div>
 
   <div class="topbar-right">
-    <span class="live-pill"><span class="live-dot"></span> Live</span>
-    <span class="sync-info"><span id="sync-dot"></span><span id="sync-text">Loading…</span></span>
-    <button class="btn primary" id="sync-btn" onclick="runSync()">↻ Sync now</button>
     <button class="btn" onclick="logout()">Sign out</button>
   </div>
 </div>
@@ -780,6 +777,8 @@
             <span class="live-dot" style="width:6px;height:6px;border-radius:50%;background:#22c55e;display:inline-block;animation:pulse 2s infinite"></span>
             <strong>LIVE</strong> · <span id="header-updated">Updated just now</span>
           </div>
+          <span class="sync-info"><span id="sync-dot"></span><span id="sync-text">Loading…</span></span>
+          <button class="btn primary" id="sync-btn" onclick="runSync()">↻ Sync now</button>
           <button class="btn" onclick="loadData()" title="Refresh" style="padding:5px 8px">↻</button>
         </div>
       </div>
