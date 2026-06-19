@@ -547,6 +547,9 @@
     .dn-leg-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
     .dn-leg-row:last-child { border-bottom: none; }
     .dn-leg-label { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dn-leg-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+    .dn-leg-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dn-leg-sub { font-size: 10px; color: var(--muted); }
     .dn-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
     .dn-leg-val { display: flex; align-items: baseline; gap: 6px; flex-shrink: 0; font-family: 'Oswald', sans-serif; font-size: 13px; color: var(--text); }
     .dn-leg-pct { font-family: 'Inter', sans-serif; font-size: 10px; color: var(--muted); min-width: 30px; text-align: right; }
@@ -868,15 +871,11 @@
           <div class="panel-head"><span class="panel-title">Active subs by platform</span></div>
           <div class="donut-wrap" id="dn-src-subs"><div class="skel-block" style="height:120px;width:100%;border-radius:12px"></div></div>
         </div>
-        <div class="panel">
-          <div class="panel-head"><span class="panel-title">MRR by gateway</span><span class="panel-meta">CheckoutChamp</span></div>
+        <div class="panel" id="s-gateway">
+          <div class="panel-head"><span class="panel-title">MRR by gateway</span><span class="panel-meta">CheckoutChamp · future bill date</span></div>
           <div class="donut-wrap" id="dn-gw-mrr"><div class="skel-block" style="height:120px;width:100%;border-radius:12px"></div></div>
         </div>
       </div>
-
-      <!-- Gateway breakdown — full-width detail, same section as the donuts -->
-      <span id="s-gateway" style="display:block;height:0"></span>
-      <div class="panel mb10" id="gateway-panel"></div>
 
       <!-- Revenue & Forecast -->
       <div class="section-label">Revenue &amp; forecast</div>
@@ -1400,8 +1399,11 @@ function renderDonut(elId, opts) {
 
   var legend = (opts.segments || []).map(function(s) {
     var pct = total > 0 ? Math.round(Number(s.value) / total * 100) : 0;
+    var nameBlock = s.sub
+      ? '<span class="dn-leg-text"><span class="dn-leg-name">' + esc(s.label) + '</span><span class="dn-leg-sub">' + esc(s.sub) + '</span></span>'
+      : esc(s.label);
     return '<div class="dn-leg-row">' +
-      '<span class="dn-leg-label"><span class="dn-dot" style="background:' + s.color + '"></span>' + esc(s.label) + '</span>' +
+      '<span class="dn-leg-label"><span class="dn-dot" style="background:' + s.color + '"></span>' + nameBlock + '</span>' +
       '<span class="dn-leg-val">' + s.display + '<span class="dn-leg-pct">' + pct + '%</span></span>' +
     '</div>';
   }).join('');
@@ -1443,11 +1445,12 @@ function renderSourceCards(sources, gateways) {
   var gws  = (gateways || []).slice().sort(function(a,b){ return Number(b.mrr_cents) - Number(a.mrr_cents); });
   var top  = gws.slice(0, 6), rest = gws.slice(6);
   var gwSegs = top.map(function(g, i) {
-    return { label: g.gateway, color: GW_COLORS[i % GW_COLORS.length], value: Number(g.mrr_cents || 0), display: $kc(g.mrr_cents) };
+    return { label: g.gateway, color: GW_COLORS[i % GW_COLORS.length], value: Number(g.mrr_cents || 0), display: $kc(g.mrr_cents), sub: $n(g.n) + ' subs' };
   });
   if (rest.length) {
     var rc = rest.reduce(function(a,g){ return a + Number(g.mrr_cents || 0); }, 0);
-    gwSegs.push({ label: 'Other (' + rest.length + ')', color: '#94a3b8', value: rc, display: $kc(rc) });
+    var rn = rest.reduce(function(a,g){ return a + Number(g.n || 0); }, 0);
+    gwSegs.push({ label: 'Other (' + rest.length + ')', color: '#94a3b8', value: rc, display: $kc(rc), sub: $n(rn) + ' subs' });
   }
   renderDonut('dn-gw-mrr', {
     centerTop: $kc(gwSegs.reduce(function(a,s){ return a+s.value; }, 0)),
@@ -2016,7 +2019,6 @@ async function loadData() {
     renderTomorrowRebills(d.tomorrowRebillsList);
     renderProducts(d.productBreakdown);
     renderSourceCards(d.sourceBreakdown || [], d.gatewayBreakdown || []);
-    renderGateway(d.gatewayBreakdown);
     updateSubtitle();
 
     document.getElementById('page-loading').style.display = 'none';
