@@ -773,11 +773,6 @@
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
             <span id="header-date">Jun 15, 2026</span>
           </div>
-          <div class="live-badge">
-            <span class="live-dot" style="width:6px;height:6px;border-radius:50%;background:#22c55e;display:inline-block;animation:pulse 2s infinite"></span>
-            <strong>LIVE</strong> · <span id="header-updated">Updated just now</span>
-          </div>
-          <span class="sync-info"><span id="sync-dot"></span><span id="sync-text">Loading…</span></span>
           <button class="btn primary" id="sync-btn" onclick="runSync()">↻ Sync now</button>
           <button class="btn" onclick="loadData()" title="Refresh" style="padding:5px 8px">↻</button>
         </div>
@@ -1802,6 +1797,7 @@ async function loadSyncState() {
     var latest = states.map(function(s){ return s.last_delta_sync_at ? new Date(s.last_delta_sync_at) : null; }).filter(Boolean).sort(function(a,b){return b-a;})[0];
     var errors = states.filter(function(s){ return s.last_error; });
     var dot = document.getElementById('sync-dot'), txt = document.getElementById('sync-text');
+    if (!dot || !txt) return;   /* status badge removed from header — nothing to update */
 
     /* Build a readable error summary */
     if (errors.length) {
