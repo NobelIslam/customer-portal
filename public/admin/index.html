@@ -535,6 +535,7 @@
     .prod-toggle { display: inline-flex; background: var(--bg3); border: 1px solid var(--border2); border-radius: 6px; padding: 2px; }
     .pt-btn { background: none; border: none; cursor: pointer; font-family: inherit; font-size: 11px; font-weight: 500; color: var(--muted2); padding: 3px 9px; border-radius: 4px; transition: all .15s; }
     .pt-btn.on { background: var(--accent); color: #fff; }
+    .prod-note { font-size: 10px; color: var(--muted); margin: -4px 0 8px; }
 
     /* ── Search results badge ── */
     .search-badge { font-size: 10px; color: var(--accent); margin-bottom: 6px; display: none; }
@@ -1726,7 +1727,7 @@ function renderProductsPage() {
     var src   = p.source ? srcIcon(p.source) : '';
     var pct   = Math.max(3, Math.round(prodVal(p) / maxVal * 100));
     var color = prodColor(p.source);
-    var mrr   = $m(Number(p.mrr_cents)) + '/mo';
+    var mrr   = $m(Number(p.mrr_cents)) + ' billed';
     var subs  = $n(p.n) + ' subs';
     var val   = productMetric === 'subs'
       ? $n(p.n) + '<small>' + mrr + '</small>'
@@ -1750,11 +1751,12 @@ function renderProductsPage() {
     : '';
 
   var toggle = '<div class="prod-toggle">' +
-      '<button class="pt-btn' + (productMetric === 'mrr'  ? ' on' : '') + '" onclick="setProdMetric(\'mrr\')">$ / mo</button>' +
+      '<button class="pt-btn' + (productMetric === 'mrr'  ? ' on' : '') + '" onclick="setProdMetric(\'mrr\')">$ billed</button>' +
       '<button class="pt-btn' + (productMetric === 'subs' ? ' on' : '') + '" onclick="setProdMetric(\'subs\')"># subs</button>' +
     '</div>';
 
   el.innerHTML = '<div class="panel-head"><span class="panel-title">Active subscriptions by product</span>' + toggle + '</div>' +
+    '<div class="prod-note">Amount billed each subscription cycle (not normalized to monthly)</div>' +
     '<div class="feed-scroll">' + rows + pagBar + '</div>';
 }
 
