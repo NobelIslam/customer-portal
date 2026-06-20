@@ -1535,24 +1535,63 @@ function renderRevChart(trend) {
   });
 }
 
-/* ── Forecast chart ── */
+/* ── Forecast chart — upcoming rebills, stacked by platform (CC + Recharge + Whop) ── */
 var fcastChart = null;
 function renderForecastChart(forecast) {
-  var labels = (forecast||[]).map(function(r){ return parseDay(r.day).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}); });
-  var data   = (forecast||[]).map(function(r){ return Number(r.cents)/100; });
+  forecast = forecast || [];
+
+  /* Pivot rows (day, source, n, cents) into one stacked column per day. */
+  var dayMap = {}, order = [];
+  forecast.forEach(function(r) {
+    if (!dayMap[r.day]) { dayMap[r.day] = { cc:0, recharge:0, whop:0, ccN:0, rcN:0, whN:0 }; order.push(r.day); }
+    var d = dayMap[r.day], amt = Number(r.cents) / 100;
+    if (r.source === 'recharge')   { d.recharge += amt; d.rcN += r.n; }
+    else if (r.source === 'whop')  { d.whop     += amt; d.whN += r.n; }
+    else                           { d.cc       += amt; d.ccN += r.n; }
+  });
+  order.sort();
+
+  var labels = order.map(function(day){ return parseDay(day).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}); });
+  var ccData = order.map(function(d){ return dayMap[d].cc; });
+  var rcData = order.map(function(d){ return dayMap[d].recharge; });
+  var whData = order.map(function(d){ return dayMap[d].whop; });
+  var ccN = order.map(function(d){ return dayMap[d].ccN; });
+  var rcN = order.map(function(d){ return dayMap[d].rcN; });
+  var whN = order.map(function(d){ return dayMap[d].whN; });
+
   if (fcastChart) fcastChart.destroy();
   fcastChart = new Chart(document.getElementById('forecast-chart'), {
     type: 'bar',
-    data: { labels: labels, datasets: [{ data: data, backgroundColor: 'rgba(240,78,0,.7)', borderRadius: 4 }]},
+    data: { labels: labels, datasets: [
+      { label: 'CheckoutChamp', data: ccData, backgroundColor: 'rgba(59,130,246,.8)', stack: 'f', borderRadius: 3 },
+      { label: 'Recharge',      data: rcData, backgroundColor: 'rgba(34,197,94,.8)',  stack: 'f', borderRadius: 3 },
+      { label: 'Whop',          data: whData, backgroundColor: 'rgba(124,58,237,.8)', stack: 'f', borderRadius: 3 }
+    ]},
     options: {
       responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false }, tooltip: Object.assign({}, TT, { callbacks: { label: function(c){
-        var r = forecast[c.dataIndex];
-        return (r ? r.n+' rebills · ' : '')+'$'+Math.round(c.parsed.y).toLocaleString();
-      }}}) },
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: true, position: 'top', align: 'end', labels: { color: TICK, boxWidth: 10, boxHeight: 10, font: { size: 11 }, usePointStyle: true, pointStyle: 'circle' } },
+        tooltip: Object.assign({}, TT, {
+          filter: function(item){ return item.parsed.y > 0; },
+          callbacks: {
+            label: function(c){
+              var n = [ccN, rcN, whN][c.datasetIndex][c.dataIndex] || 0;
+              return c.dataset.label + ': $' + Math.round(c.parsed.y).toLocaleString() + ' · ' + n + ' rebill' + (n === 1 ? '' : 's');
+            },
+            footer: function(items){
+              if (!items.length) return '';
+              var i = items[0].dataIndex;
+              var tot  = ccData[i] + rcData[i] + whData[i];
+              var totN = (ccN[i]||0) + (rcN[i]||0) + (whN[i]||0);
+              return 'Total: $' + Math.round(tot).toLocaleString() + ' · ' + totN + ' rebill' + (totN === 1 ? '' : 's');
+            }
+          }
+        })
+      },
       scales: {
-        x: { ticks: { color: TICK }, grid: { display: false } },
-        y: { ticks: { color: TICK, callback: function(v){ return '$'+(v>=1000?(v/1000).toFixed(1)+'k':v); } }, grid: { color: GRID } }
+        x: { stacked: true, ticks: { color: TICK }, grid: { display: false } },
+        y: { stacked: true, beginAtZero: true, ticks: { color: TICK, callback: function(v){ return '$'+(v>=1000?(v/1000).toFixed(1)+'k':v); } }, grid: { color: GRID } }
       }
     }
   });

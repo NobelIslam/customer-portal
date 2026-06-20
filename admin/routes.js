@@ -326,11 +326,12 @@ router.get('/api/overview', async function(req, res) {
       db.many(`SELECT TO_CHAR(DATE(created_at), 'YYYY-MM-DD') AS day, COALESCE(SUM(amount_cents),0)::bigint AS cents
                FROM orders WHERE created_at >= $1 AND created_at < $2
                GROUP BY TO_CHAR(DATE(created_at), 'YYYY-MM-DD') ORDER BY day ASC`, [periodAgo, periodEnd]),
-      db.many(`SELECT TO_CHAR(DATE(next_bill_at), 'YYYY-MM-DD') AS day, COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS cents
+      db.many(`SELECT TO_CHAR(next_bill_at AT TIME ZONE 'Europe/Amsterdam', 'YYYY-MM-DD') AS day,
+                      source, COUNT(*)::int AS n, COALESCE(SUM(price_cents),0)::bigint AS cents
                FROM subscriptions
                WHERE status = 'ACTIVE' AND next_bill_at >= $1 AND next_bill_at < $2 ${NO_PAYPAL}
-               GROUP BY TO_CHAR(DATE(next_bill_at), 'YYYY-MM-DD') ORDER BY day ASC`,
-              [todayStart, new Date(todayStart.getTime() + 8 * 24 * 60 * 60 * 1000)]),
+               GROUP BY 1, source ORDER BY day ASC`,
+              [todayStart, new Date(todayStart.getTime() + 7 * 24 * 60 * 60 * 1000)]),
       db.many(`SELECT TO_CHAR(DATE(started_at), 'YYYY-MM-DD') AS day, source, COUNT(*)::int AS n
                FROM subscriptions WHERE started_at >= $1 AND started_at < $2 ${NO_PAYPAL}
                GROUP BY TO_CHAR(DATE(started_at), 'YYYY-MM-DD'), source ORDER BY day ASC`, [periodAgo, periodEnd]),
