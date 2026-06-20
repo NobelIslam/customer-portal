@@ -555,6 +555,11 @@
     .dn-leg-pct { font-family: 'Inter', sans-serif; font-size: 10px; color: var(--muted); min-width: 30px; text-align: right; }
     @media (max-width: 900px) { .donut-grid { grid-template-columns: 1fr; } }
 
+    /* ── Compact chart legend ── */
+    .chart-legend { display: flex; flex-wrap: wrap; gap: 14px; justify-content: flex-end; margin: -2px 0 8px; }
+    .cl-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted2); }
+    .cl-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+
     /* ── Search results badge ── */
     .search-badge { font-size: 10px; color: var(--accent); margin-bottom: 6px; display: none; }
     .search-badge.visible { display: block; }
@@ -890,6 +895,12 @@
         <div class="panel">
           <div class="panel-head">
             <span class="panel-title">Upcoming rebills — next 7 days</span>
+            <span class="panel-meta" id="forecast-total"></span>
+          </div>
+          <div class="chart-legend">
+            <span class="cl-item"><span class="cl-dot" style="background:#3b82f6"></span>CheckoutChamp</span>
+            <span class="cl-item"><span class="cl-dot" style="background:#22c55e"></span>Recharge</span>
+            <span class="cl-item"><span class="cl-dot" style="background:#7c3aed"></span>Whop</span>
           </div>
           <div class="chart-wrap h200"><canvas id="forecast-chart"></canvas></div>
         </div>
@@ -1551,13 +1562,21 @@ function renderForecastChart(forecast) {
   });
   order.sort();
 
-  var labels = order.map(function(day){ return parseDay(day).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}); });
+  var labels = order.map(function(day){ return parseDay(day).toLocaleDateString('en-US',{weekday:'short',day:'numeric'}); });
   var ccData = order.map(function(d){ return dayMap[d].cc; });
   var rcData = order.map(function(d){ return dayMap[d].recharge; });
   var whData = order.map(function(d){ return dayMap[d].whop; });
   var ccN = order.map(function(d){ return dayMap[d].ccN; });
   var rcN = order.map(function(d){ return dayMap[d].rcN; });
   var whN = order.map(function(d){ return dayMap[d].whN; });
+
+  /* 7-day totals into the panel header */
+  var totEl = document.getElementById('forecast-total');
+  if (totEl) {
+    var grand  = ccData.concat(rcData, whData).reduce(function(a,v){ return a+v; }, 0);
+    var grandN = ccN.concat(rcN, whN).reduce(function(a,v){ return a+v; }, 0);
+    totEl.textContent = '$' + Math.round(grand).toLocaleString() + ' · ' + $n(grandN) + ' rebills';
+  }
 
   if (fcastChart) fcastChart.destroy();
   fcastChart = new Chart(document.getElementById('forecast-chart'), {
@@ -1571,7 +1590,7 @@ function renderForecastChart(forecast) {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { display: true, position: 'top', align: 'end', labels: { color: TICK, boxWidth: 10, boxHeight: 10, font: { size: 11 }, usePointStyle: true, pointStyle: 'circle' } },
+        legend: { display: false },
         tooltip: Object.assign({}, TT, {
           filter: function(item){ return item.parsed.y > 0; },
           callbacks: {
