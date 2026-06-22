@@ -2684,7 +2684,10 @@ function applyMrrData(d) {
     var asOf = d.collected_through
       ? new Date(d.collected_through + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
       : '';
-    colSub.textContent = asOf ? ('as of ' + asOf) : ((d.month || '') + ' MTD');
+    var n = d.collected_count || 0;
+    colSub.textContent = n
+      ? ($n(n) + ' completed rebills · as of ' + asOf)
+      : ('completed rebills · ' + (asOf || ((d.month || '') + ' MTD')));
     colSub.style.color = 'var(--muted2)';
   }
   var pen = document.getElementById('kpi-mrr-pending');

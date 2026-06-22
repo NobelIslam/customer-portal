@@ -2149,24 +2149,47 @@ async function computeMrrSummary() {
         [todayStart, monthEnd)  → PENDING   (bills today through month-end — not yet collected)
         >= monthEnd             → COLLECTED (already billed this cycle, before today)
      Today's billings stay in Pending until tomorrow, when they roll into Collected.   */
+  /* MRR (run-rate) + Pending (run-rate, due before month-end) from active subs. */
   const rows = await db.many(`
     SELECT source,
       COALESCE(SUM(price_cents) FILTER (WHERE next_bill_at >= $1), 0)::bigint                      AS mrr_cents,
       COALESCE(SUM(price_cents) FILTER (WHERE next_bill_at >= $1 AND next_bill_at < $2), 0)::bigint AS pending_cents,
-      COALESCE(SUM(price_cents) FILTER (WHERE next_bill_at >= $2), 0)::bigint                       AS collected_cents,
       COUNT(*) FILTER (WHERE next_bill_at >= $1 AND next_bill_at < $2)::int                         AS pending_n
     FROM subscriptions
     WHERE status = 'ACTIVE' ${NO_PAYPAL}
     GROUP BY source
   `, [todayStart, monthEnd]);
 
-  const bd = { cc: 0, recharge: 0, whop: 0 };
-  let mrr = 0, pending = 0, collected = 0, pendingN = 0;
+  let mrr = 0, pending = 0, pendingN = 0;
   rows.forEach(function(r) {
-    mrr       += Number(r.mrr_cents);
-    pending   += Number(r.pending_cents);
-    collected += Number(r.collected_cents);
-    pendingN  += Number(r.pending_n);
+    mrr      += Number(r.mrr_cents);
+    pending  += Number(r.pending_cents);
+    pendingN += Number(r.pending_n);
+  });
+
+  /* COLLECTED = actual completed/successful RECURRING payments captured this
+     month-to-date (the orders table — real cash, not a run-rate inference).
+     CC orders carry no gateway field, so PayPal/Airwallex are excluded by
+     joining back to the subscription that produced the rebill.               */
+  const collectedRows = await db.many(`
+    SELECT o.source,
+      COALESCE(SUM(o.amount_cents), 0)::bigint AS collected_cents,
+      COUNT(*)::int                            AS collected_n
+    FROM orders o
+    LEFT JOIN subscriptions s ON s.id = o.subscription_id
+    WHERE o.type = 'rebill'
+      AND o.created_at >= $1
+      AND UPPER(o.status) IN ('COMPLETE','SUCCESS','APPROVED','PAID')
+      AND NOT (o.source = 'cc' AND s.raw->>'merchant' ILIKE '%paypal%')
+      AND NOT (o.source = 'cc' AND s.raw->>'merchant' ILIKE '%airwallex%')
+    GROUP BY o.source
+  `, [monthStart]);
+
+  const bd = { cc: 0, recharge: 0, whop: 0 };
+  let collected = 0, collectedN = 0;
+  collectedRows.forEach(function(r) {
+    collected  += Number(r.collected_cents);
+    collectedN += Number(r.collected_n);
     if (bd[r.source] !== undefined) bd[r.source] = Number(r.collected_cents);
   });
 
@@ -2174,7 +2197,9 @@ async function computeMrrSummary() {
     month:               monthStartAms.slice(0, 7),
     mrr_cents:           mrr,
     collected_mtd_cents: collected,
-    collected_through:   yesterdayAms,
+    collected_count:     collectedN,
+    collected_basis:     'actual_recurring_orders',   /* real captured payments, not run-rate */
+    collected_through:   todayAms,                     /* includes today's completed payments */
     collected_breakdown: bd,
     sources_ok:          { cc: true, recharge: true, whop: true },
     pending_mtd_cents:   pending,
@@ -2201,15 +2226,22 @@ router.get('/api/mrr-summary', async function(req, res) {
     const now      = new Date();
     const todayAms = amsDateStr(now);
 
-    /* 1. Memory cache hit — instant */
-    if (_mrrSummaryCache.data && _mrrSummaryCache.day === todayAms) {
+    /* Collected is now actual captured rebills that grow through the day, so the
+       cache carries a short TTL (~5 min, matching the sync cycle) instead of
+       lasting until the day rollover. */
+    const TTL = 5 * 60 * 1000;
+
+    /* 1. Memory cache hit — instant (within TTL) */
+    if (_mrrSummaryCache.data && _mrrSummaryCache.day === todayAms &&
+        (Date.now() - _mrrSummaryCache.ts) < TTL) {
       return res.json(_mrrSummaryCache.data);
     }
 
-    /* 2. DB cache hit — fast (survived a server restart) */
+    /* 2. DB cache hit — fast (survived a server restart), still within TTL */
     try {
       const row = await db.oneOrNone(
-        `SELECT value FROM kv_cache WHERE key = 'mrr_summary' AND value->>'day' = $1`, [todayAms]
+        `SELECT value FROM kv_cache WHERE key = 'mrr_summary'
+           AND value->>'day' = $1 AND computed_at > NOW() - INTERVAL '5 minutes'`, [todayAms]
       );
       if (row) {
         _mrrSummaryCache = { day: todayAms, ts: Date.now(), data: row.value };

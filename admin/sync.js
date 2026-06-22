@@ -510,7 +510,7 @@ async function upsertRechargeCharge(c) {
   const subId     = (c.line_items && c.line_items[0] && c.line_items[0].subscription_id)
     ? 'rc:' + c.line_items[0].subscription_id
     : null;
-  const type      = c.type === 'recurring' ? 'rebill' : 'initial';
+  const type      = (c.type || '').toLowerCase() === 'recurring' ? 'rebill' : 'initial';
 
   const existing = await db.one('SELECT id FROM orders WHERE id = $1', [id]);
   const isNew = !existing;
@@ -662,8 +662,76 @@ async function syncWhop(opts) {
     }
   }
 
-  console.log('[sync:whop] done | active:', touched, '| cancelled:', cancelledTouched);
-  return { memberships: touched, cancelled: cancelledTouched };
+  /* ── 5. Payments → orders table ──
+     Whop memberships don't capture actual charges, so without this Whop
+     contributes $0 to any orders-based revenue/collection metric. Pull paid
+     payments (newest-first) back to a cutoff and upsert them as orders.      */
+  let payTouched = 0;
+  const payCutoff = Math.floor((Date.now() - (isFull ? 730 : 45) * 24 * 3600 * 1000) / 1000);
+  let payPage = 1, payTotal = 1, stopPay = false;
+  do {
+    let d;
+    try {
+      d = await whopFetch(WHOP_BASE + '/payments?per_page=50&page=' + payPage + '&status=paid');
+    } catch (e) {
+      console.warn('[sync:whop] payments page', payPage, 'failed —', e.message);
+      break;
+    }
+    const items = d.data || [];
+    payTotal = (d.pagination && d.pagination.total_page) || 1;
+    for (const p of items) {
+      const created = p.paid_at || p.created_at || 0;
+      if (created && created < payCutoff) { stopPay = true; continue; }
+      await upsertWhopPayment(p, productMap);
+      payTouched++;
+    }
+    console.log('[sync:whop] payments page', payPage + '/' + payTotal, '| total', payTouched);
+    if (stopPay) break;   /* newest-first: once past the cutoff we're done */
+    payPage++;
+    if (payPage <= payTotal) await delay(150);
+  } while (payPage <= payTotal && payPage <= 400);
+
+  console.log('[sync:whop] done | active:', touched, '| cancelled:', cancelledTouched, '| payments:', payTouched);
+  return { memberships: touched, cancelled: cancelledTouched, payments: payTouched };
+}
+
+/* Upsert a Whop payment into the orders table (source='whop').
+   billing_reason 'subscription_cycle'/'renewal' → rebill; everything else → initial. */
+async function upsertWhopPayment(p, productMap) {
+  if (!p || !p.id) return;
+  const id        = 'whop:pay:' + p.id;
+  const subId     = p.membership ? ('whop:' + p.membership) : null;
+  const amount    = toCents(p.final_amount != null ? p.final_amount : (p.subtotal != null ? p.subtotal : p.total));
+  const br        = (p.billing_reason || '').toLowerCase();
+  const type      = (br === 'subscription_cycle' || br === 'renewal') ? 'rebill' : 'initial';
+  const createdAt = (p.paid_at || p.created_at)
+    ? new Date((p.paid_at || p.created_at) * 1000).toISOString()
+    : new Date().toISOString();
+  const product   = (p.product && productMap[p.product]) || null;
+
+  /* Resolve customer from the membership's subscription (payments carry no email). */
+  let customerId = null, email = null;
+  if (subId) {
+    const sub = await db.one('SELECT customer_id, customer_email FROM subscriptions WHERE id = $1', [subId]);
+    if (sub) { customerId = sub.customer_id; email = sub.customer_email; }
+  }
+  if (!email) email = (p.user || p.id) + '@whop.local';
+  if (!customerId) customerId = await db.upsertCustomer({ email: email });
+
+  await db.query(`
+    INSERT INTO orders
+      (id, source, native_id, customer_id, customer_email, amount_cents, type,
+       product, status, subscription_id, created_at, raw, last_synced_at)
+    VALUES ($1,'whop',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
+    ON CONFLICT (id) DO UPDATE SET
+      amount_cents   = EXCLUDED.amount_cents,
+      status         = EXCLUDED.status,
+      raw            = EXCLUDED.raw,
+      last_synced_at = NOW()
+  `, [
+    id, String(p.id), customerId, email, amount, type,
+    product, (p.status || 'paid').toUpperCase(), subId, createdAt, p
+  ]);
 }
 
 function whopFrequency(billingDays) {
