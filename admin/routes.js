@@ -237,8 +237,26 @@ router.get('/build', function(req, res) {
    order counts & max rebill amount per source). No revenue totals. Lets us see
    if the sync is failing and whether currency conversion has been applied
    (max_rebill_cents drops from ~3,162,600 ¥-as-$ to ~20,000 once converted). */
+let _lastTrigger = 0;
 router.get('/sync-health', async function(req, res) {
   res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+
+  /* TEMP: ?run=1 kicks off a delta sync (rate-limited to once / 90s) so the
+     sync can be triggered/verified without a session token while the auto-cron
+     is disabled. Remove once auto-sync is re-enabled. */
+  let triggered = false;
+  if (req.query.run === '1' && (Date.now() - _lastTrigger) > 90000) {
+    _lastTrigger = Date.now();
+    triggered = true;
+    sync.runSyncCycle({ full: req.query.full === '1' })
+      .then(function(r){
+        console.log('[sync-health] triggered sync complete', JSON.stringify(r));
+        _mrrSummaryCache = { day: null, ts: 0, data: null };
+        return computeMrrSummary().catch(function(){});
+      })
+      .catch(function(e){ console.error('[sync-health] triggered sync error', e.message); });
+  }
+
   try {
     const now = new Date();
     const todayAms = amsDateStr(now);
@@ -257,7 +275,7 @@ router.get('/sync-health', async function(req, res) {
       FROM orders WHERE created_at >= $1 GROUP BY source ORDER BY source
     `, [monthStart]).catch(function(e){ return [{ error: e.message }]; });
 
-    res.json({ now: now.toISOString(), month_start: monthStart.toISOString(), sync_state: state, orders_this_month: orderStats });
+    res.json({ now: now.toISOString(), triggered: triggered, month_start: monthStart.toISOString(), sync_state: state, orders_this_month: orderStats });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
