@@ -2169,20 +2169,18 @@ async function computeMrrSummary() {
 
   /* COLLECTED = actual completed/successful RECURRING payments captured this
      month-to-date (the orders table — real cash, not a run-rate inference).
-     CC orders carry no gateway field, so PayPal/Airwallex are excluded by
-     joining back to the subscription that produced the rebill.               */
+     Note: CC order rows carry neither a gateway field nor a subscription link,
+     so PayPal/Airwallex can't be excluded here (their recurring volume is
+     negligible); this matches the CRM "Recurring" figure.                     */
   const collectedRows = await db.many(`
-    SELECT o.source,
-      COALESCE(SUM(o.amount_cents), 0)::bigint AS collected_cents,
-      COUNT(*)::int                            AS collected_n
-    FROM orders o
-    LEFT JOIN subscriptions s ON s.id = o.subscription_id
-    WHERE o.type = 'rebill'
-      AND o.created_at >= $1
-      AND UPPER(o.status) IN ('COMPLETE','SUCCESS','APPROVED','PAID')
-      AND NOT (o.source = 'cc' AND s.raw->>'merchant' ILIKE '%paypal%')
-      AND NOT (o.source = 'cc' AND s.raw->>'merchant' ILIKE '%airwallex%')
-    GROUP BY o.source
+    SELECT source,
+      COALESCE(SUM(amount_cents), 0)::bigint AS collected_cents,
+      COUNT(*)::int                          AS collected_n
+    FROM orders
+    WHERE type = 'rebill'
+      AND created_at >= $1
+      AND UPPER(status) IN ('COMPLETE','SUCCESS','APPROVED','PAID')
+    GROUP BY source
   `, [monthStart]);
 
   const bd = { cc: 0, recharge: 0, whop: 0 };
