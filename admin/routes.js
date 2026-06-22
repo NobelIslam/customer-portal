@@ -233,6 +233,36 @@ router.get('/build', function(req, res) {
   });
 });
 
+/* Sync health (no auth) — operational diagnostics only (sync times/errors +
+   order counts & max rebill amount per source). No revenue totals. Lets us see
+   if the sync is failing and whether currency conversion has been applied
+   (max_rebill_cents drops from ~3,162,600 ¥-as-$ to ~20,000 once converted). */
+router.get('/sync-health', async function(req, res) {
+  res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+  try {
+    const now = new Date();
+    const todayAms = amsDateStr(now);
+    const ty = parseInt(todayAms.slice(0, 4), 10), tmo = parseInt(todayAms.slice(5, 7), 10);
+    const monthStart = amsMidnightUTC(new Date(ty + '-' + String(tmo).padStart(2, '0') + '-01T12:00:00Z'));
+
+    const state = await db.many(
+      `SELECT source, last_delta_sync_at, last_full_sync_at, last_error, last_error_at
+       FROM sync_state ORDER BY source`).catch(function(e){ return [{ error: e.message }]; });
+
+    const orderStats = await db.many(`
+      SELECT source,
+        COUNT(*)::int                                   AS total_orders,
+        COUNT(*) FILTER (WHERE type='rebill')::int      AS rebill_orders,
+        MAX(amount_cents) FILTER (WHERE type='rebill')  AS max_rebill_cents
+      FROM orders WHERE created_at >= $1 GROUP BY source ORDER BY source
+    `, [monthStart]).catch(function(e){ return [{ error: e.message }]; });
+
+    res.json({ now: now.toISOString(), month_start: monthStart.toISOString(), sync_state: state, orders_this_month: orderStats });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/integrations', function(req, res) {
   res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.sendFile(path.join(__dirname, '..', 'public', 'admin', 'integrations.html'));
