@@ -2298,6 +2298,102 @@ router.get('/api/debug/mrr-verify', async function(req, res) {
   }
 });
 
+/* ── GET /admin/api/debug/collection-verify
+   Verifies the "Total MRR Collection" card. The card is a RUN-RATE INFERENCE
+   from the subscriptions table (active subs whose next bill is in a future
+   month ⇒ assumed already billed this month). This endpoint puts that figure
+   next to the ACTUAL captured orders this month (from the orders table) so the
+   two bases can be compared per platform.
+   NOTE: the orders table is fed by CheckoutChamp + Recharge only — Whop writes
+   subscriptions but no orders, so Whop has no actual-order data here.          */
+router.get('/api/debug/collection-verify', async function(req, res) {
+  try {
+    const now      = new Date();
+    const todayAms = amsDateStr(now);
+    const ty   = parseInt(todayAms.slice(0, 4), 10);
+    const tmo  = parseInt(todayAms.slice(5, 7), 10);
+    const monthStartAms = ty + '-' + String(tmo).padStart(2, '0') + '-01';
+    const nextMo = tmo === 12 ? 1 : tmo + 1, nextYr = tmo === 12 ? ty + 1 : ty;
+    const monthEndAms   = nextYr + '-' + String(nextMo).padStart(2, '0') + '-01';
+    const monthStart = amsMidnightUTC(new Date(monthStartAms + 'T12:00:00Z'));
+    const monthEnd   = amsMidnightUTC(new Date(monthEndAms   + 'T12:00:00Z'));
+    const todayStart = amsMidnightUTC(now);
+    const yesterdayAms = amsDateStr(new Date(todayStart.getTime() - 1000));
+
+    const cents = c => '$' + (Number(c) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const NO_PAYPAL = `AND NOT (source = 'cc' AND raw->>'merchant' ILIKE '%paypal%')
+      AND NOT (source = 'cc' AND raw->>'merchant' ILIKE '%airwallex%')
+      AND NOT (source = 'cc' AND COALESCE(NULLIF(TRIM(raw->>'merchant'), ''), '') = '')`;
+
+    /* ACTUAL captured orders, month-to-date "as of yesterday" → [monthStart, todayStart) */
+    const orderRows = await db.many(`
+      SELECT source,
+        COUNT(*)::int AS orders_n,
+        COALESCE(SUM(amount_cents),0)::bigint AS amount_cents,
+        COUNT(*) FILTER (WHERE type='rebill')::int                                 AS rebill_n,
+        COALESCE(SUM(amount_cents) FILTER (WHERE type='rebill'),0)::bigint          AS rebill_cents,
+        COUNT(*) FILTER (WHERE type='initial')::int                                AS initial_n,
+        COALESCE(SUM(amount_cents) FILTER (WHERE type='initial'),0)::bigint         AS initial_cents,
+        COUNT(*) FILTER (WHERE type='upsell')::int                                 AS upsell_n,
+        COALESCE(SUM(amount_cents) FILTER (WHERE type='upsell'),0)::bigint          AS upsell_cents
+      FROM orders
+      WHERE created_at >= $1 AND created_at < $2
+      GROUP BY source ORDER BY source
+    `, [monthStart, todayStart]);
+
+    /* RUN-RATE collected (the card's basis) per platform */
+    const subRows = await db.many(`
+      SELECT source,
+        COALESCE(SUM(price_cents) FILTER (WHERE next_bill_at >= $2), 0)::bigint AS collected_cents,
+        COUNT(*) FILTER (WHERE next_bill_at >= $2)::int                         AS collected_subs
+      FROM subscriptions WHERE status = 'ACTIVE' ${NO_PAYPAL}
+      GROUP BY source ORDER BY source
+    `, [todayStart, monthEnd]);
+
+    const ord = {}; orderRows.forEach(r => ord[r.source] = r);
+    const sub = {}; subRows.forEach(r => sub[r.source] = r);
+    const platforms = ['cc', 'recharge', 'whop'];
+
+    const by_platform = platforms.map(p => {
+      const o = ord[p] || {}, s = sub[p] || {};
+      return {
+        platform: p,
+        actual_orders_mtd: {
+          count:   o.orders_n || 0,
+          total:   cents(o.amount_cents || 0),
+          rebills:  { count: o.rebill_n  || 0, total: cents(o.rebill_cents  || 0) },
+          initial:  { count: o.initial_n || 0, total: cents(o.initial_cents || 0) },
+          upsell:   { count: o.upsell_n  || 0, total: cents(o.upsell_cents  || 0) }
+        },
+        runrate_collected: { subs: s.collected_subs || 0, total: cents(s.collected_cents || 0) },
+        orders_available: p !== 'whop'
+      };
+    });
+
+    const tActual = orderRows.reduce((a, r) => a + Number(r.amount_cents), 0);
+    const tRun    = subRows.reduce((a, r) => a + Number(r.collected_cents), 0);
+
+    res.json({
+      as_of: now.toISOString(),
+      month: monthStartAms.slice(0, 7),
+      window: { actual_orders: monthStartAms + ' 00:00 → ' + todayAms + ' 00:00 (Amsterdam, as of ' + yesterdayAms + ')' },
+      explanation: {
+        card_basis: "The 'Total MRR Collection' card is a RUN-RATE inference from active subscriptions (price_cents where next_bill_at >= month-end), NOT actual captured cash.",
+        actual_basis: "actual_orders_mtd is real captured transactions from the orders table this month.",
+        whop: "Whop is NOT in the orders table (it syncs subscriptions only), so Whop actual_orders = 0 by data availability, not because nothing was collected.",
+        gateway_filter: "Run-rate excludes PayPal/Airwallex/blank CC gateways; actual orders are NOT gateway-filtered (orders rows may not carry a merchant), so totals can differ on the CC side."
+      },
+      by_platform: by_platform,
+      total: {
+        actual_orders_mtd: cents(tActual),
+        runrate_collected: cents(tRun)
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* ── GET /admin/api/debug/today-breakdown
    Side-by-side comparison: DB subscriptions scheduled for today
    vs CC API recurring orders charged today.
