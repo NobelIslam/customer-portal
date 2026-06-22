@@ -435,12 +435,17 @@ async function syncRecharge(opts) {
      charge processed early this month may have been created late last month. */
   since.setDate(since.getDate() - (isFull ? 365 * 2 : 45));
   while (page <= 50) {
+    /* NB: the Recharge API's ?status=success filter returns almost nothing
+       (3 vs 168), so fetch unfiltered and keep only SUCCESS charges client-side
+       — otherwise virtually all recurring revenue is missed. */
     const url = RECHARGE_BASE + '/charges?limit=' + limit + '&page=' + page +
-                '&created_at_min=' + since.toISOString() + '&status=success';
+                '&created_at_min=' + since.toISOString();
     const r = await fetchR(url, { headers });
     const d = await r.json();
     const data = d.charges || [];
-    for (const c of data) await upsertRechargeCharge(c);
+    for (const c of data) {
+      if ((c.status || '').toUpperCase() === 'SUCCESS') await upsertRechargeCharge(c);
+    }
     ordersTouched += data.length;
     console.log('[sync:rc] charges page', page, '| got', data.length, '| total', ordersTouched);
     if (data.length < limit) break;
@@ -543,9 +548,15 @@ async function upsertRechargeCharge(c) {
      order date so "collected this month" buckets by when cash was captured. */
   const createdAt = parseDate(c.processed_at || c.created_at) || new Date().toISOString();
   /* Recharge marks subsequent charges with subscription_id; first checkout has type=checkout */
-  const subId     = (c.line_items && c.line_items[0] && c.line_items[0].subscription_id)
+  let subId       = (c.line_items && c.line_items[0] && c.line_items[0].subscription_id)
     ? 'rc:' + c.line_items[0].subscription_id
     : null;
+  /* Don't reference a subscription that hasn't been synced — the
+     orders_subscription_id_fkey foreign key would reject the insert. */
+  if (subId) {
+    const subExists = await db.one('SELECT 1 AS x FROM subscriptions WHERE id = $1', [subId]);
+    if (!subExists) subId = null;
+  }
   const type      = (c.type || '').toLowerCase() === 'recurring' ? 'rebill' : 'initial';
 
   const existing = await db.one('SELECT id FROM orders WHERE id = $1', [id]);
@@ -750,13 +761,16 @@ async function upsertWhopPayment(p, productMap) {
   const product   = (p.product && productMap[p.product]) || null;
 
   /* Resolve customer from the membership's subscription (payments carry no email). */
-  let customerId = null, email = null;
+  let customerId = null, email = null, subExists = false;
   if (subId) {
     const sub = await db.one('SELECT customer_id, customer_email FROM subscriptions WHERE id = $1', [subId]);
-    if (sub) { customerId = sub.customer_id; email = sub.customer_email; }
+    if (sub) { customerId = sub.customer_id; email = sub.customer_email; subExists = true; }
   }
   if (!email) email = (p.user || p.id) + '@whop.local';
   if (!customerId) customerId = await db.upsertCustomer({ email: email });
+  /* Only reference the subscription if it actually exists — otherwise the
+     orders_subscription_id_fkey foreign key rejects the insert and aborts sync. */
+  const orderSubId = subExists ? subId : null;
 
   await db.query(`
     INSERT INTO orders
@@ -770,7 +784,7 @@ async function upsertWhopPayment(p, productMap) {
       last_synced_at = NOW()
   `, [
     id, String(p.id), customerId, email, amount, type,
-    product, (p.status || 'paid').toUpperCase(), subId, createdAt, p
+    product, (p.status || 'paid').toUpperCase(), orderSubId, createdAt, p
   ]);
 }
 
