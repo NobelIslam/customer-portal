@@ -403,7 +403,9 @@ async function syncRecharge(opts) {
   let ordersTouched = 0;
   page = 1;
   const since = new Date();
-  since.setDate(since.getDate() - (isFull ? 365 * 2 : 30));
+  /* 45-day delta window: charges are created a few days before processing, so a
+     charge processed early this month may have been created late last month. */
+  since.setDate(since.getDate() - (isFull ? 365 * 2 : 45));
   while (page <= 50) {
     const url = RECHARGE_BASE + '/charges?limit=' + limit + '&page=' + page +
                 '&created_at_min=' + since.toISOString() + '&status=success';
@@ -508,7 +510,10 @@ async function upsertRechargeCharge(c) {
 
   const id        = 'rc:' + c.id;
   const total     = toCents(c.total_price);
-  const createdAt = parseDate(c.created_at) || new Date().toISOString();
+  /* Recharge creates charge rows when a charge is SCHEDULED, so created_at is
+     a prior-cycle date. Revenue is collected at processed_at — use that as the
+     order date so "collected this month" buckets by when cash was captured. */
+  const createdAt = parseDate(c.processed_at || c.created_at) || new Date().toISOString();
   /* Recharge marks subsequent charges with subscription_id; first checkout has type=checkout */
   const subId     = (c.line_items && c.line_items[0] && c.line_items[0].subscription_id)
     ? 'rc:' + c.line_items[0].subscription_id
