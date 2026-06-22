@@ -72,6 +72,34 @@ function toCents(price) {
   return isNaN(n) ? 0 : Math.round(n * 100);
 }
 
+/* ── Currency → USD ──────────────────────────────────────
+   Recharge (and CC/Whop) return amounts in the customer's PRESENTMENT currency
+   (USD, JPY, EUR, GBP, …). Storing them raw treats ¥31,626 as $31,626 — a ~160x
+   overcount. Convert everything to USD using live ECB rates (frankfurter.app,
+   no key), cached 6h, with a static fallback if the fetch fails. */
+let _fxCache = { ts: 0, rates: null };
+const FX_STATIC = { USD:1, EUR:0.87, GBP:0.76, JPY:161, CAD:1.42, AUD:1.43, MXN:17.3,
+  DKK:6.5, SEK:9.6, NOK:10.6, CHF:0.88, NZD:1.66, PLN:3.7, SGD:1.35, HKD:7.8, INR:84, BRL:5.4, ZAR:18.5 };
+async function getFxRates() {
+  if (_fxCache.rates && (Date.now() - _fxCache.ts) < 6 * 3600 * 1000) return _fxCache.rates;
+  try {
+    const r = await fetchR('https://api.frankfurter.app/latest?base=USD', {}, 2);
+    const d = JSON.parse(await r.text());
+    if (d && d.rates) { _fxCache = { ts: Date.now(), rates: Object.assign({ USD: 1 }, d.rates) }; return _fxCache.rates; }
+  } catch (e) { console.warn('[fx] live rates failed, using static —', e.message); }
+  _fxCache = { ts: Date.now(), rates: FX_STATIC };
+  return _fxCache.rates;
+}
+/* Convert a presentment amount to USD cents. rates = foreign units per 1 USD. */
+function toUsdCents(amount, currency, rates) {
+  const a = parseFloat(amount);
+  if (isNaN(a) || a === 0) return 0;
+  const cur  = (currency || 'USD').toUpperCase();
+  const rate = rates && rates[cur];
+  if (!rate || rate <= 0) return Math.round(a * 100);   /* unknown currency → assume already USD */
+  return Math.round((a / rate) * 100);
+}
+
 function parseDate(v) {
   if (!v) return null;
   const d = new Date(v);
@@ -254,7 +282,7 @@ async function upsertCCPurchase(p) {
 
   const id          = 'cc:' + p.purchaseId;
   const status      = (p.status || 'ACTIVE').toUpperCase();
-  const priceCents  = toCents(p.price);
+  const priceCents  = toUsdCents(p.price, p.currencyCode, await getFxRates());
   const startedAt   = parseDate(p.dateCreated);
   const nextBillAt  = parseDate(p.nextBillDate);
   const isCancelledStatus = status === 'CANCELLED' || status === 'INACTIVE' || status === 'RECYCLE_FAILED';
@@ -318,7 +346,7 @@ async function upsertCCOrder(o) {
   });
 
   const id           = 'cc:' + o.orderId;
-  const totalCents   = toCents(o.totalAmount || o.orderTotal || o.price);
+  const totalCents   = toUsdCents(o.totalAmount || o.orderTotal || o.price, o.currencyCode, await getFxRates());
   const createdAt    = parseDate(o.dateCreated) || new Date().toISOString();
   const isRebill     = o.parentOrderId || o.recurringFlag === '1' || o.orderType === 'RECURRING';
   const isUpsell     = !isRebill && (o.parentOrderId != null || o.upsellFlag === '1');
@@ -437,7 +465,7 @@ async function upsertRechargeSub(s) {
 
   const id           = 'rc:' + s.id;
   const status       = (s.status || 'ACTIVE').toUpperCase();
-  const priceCents   = toCents(s.price);
+  const priceCents   = toUsdCents(s.price, s.presentment_currency, await getFxRates());
   const startedAt    = parseDate(s.created_at);
   const nextBillAt   = parseDate(s.next_charge_scheduled_at);
   const cancelledAt  = parseDate(s.cancelled_at);
@@ -509,7 +537,7 @@ async function upsertRechargeCharge(c) {
   const customerId = await db.upsertCustomer({ email: email, recharge_id: String(c.customer_id) });
 
   const id        = 'rc:' + c.id;
-  const total     = toCents(c.total_price);
+  const total     = toUsdCents(c.total_price, c.currency, await getFxRates());
   /* Recharge creates charge rows when a charge is SCHEDULED, so created_at is
      a prior-cycle date. Revenue is collected at processed_at — use that as the
      order date so "collected this month" buckets by when cash was captured. */
@@ -713,7 +741,7 @@ async function upsertWhopPayment(p, productMap) {
   if (!p || !p.id) return;
   const id        = 'whop:pay:' + p.id;
   const subId     = p.membership ? ('whop:' + p.membership) : null;
-  const amount    = toCents(p.final_amount != null ? p.final_amount : (p.subtotal != null ? p.subtotal : p.total));
+  const amount    = toUsdCents(p.final_amount != null ? p.final_amount : (p.subtotal != null ? p.subtotal : p.total), p.currency, await getFxRates());
   const br        = (p.billing_reason || '').toLowerCase();
   const type      = (br === 'subscription_cycle' || br === 'renewal') ? 'rebill' : 'initial';
   const createdAt = (p.paid_at || p.created_at)
