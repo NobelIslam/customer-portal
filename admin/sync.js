@@ -357,13 +357,16 @@ async function upsertCCOrder(o) {
    ════════════════════════════════════════════════════ */
 
 async function getRechargeKey() {
+  /* Env var wins when set (so updating it on the host takes effect immediately);
+     fall back to the integration_credentials DB row otherwise. */
+  if (process.env.RECHARGE_API_KEY) return process.env.RECHARGE_API_KEY;
   try {
     const row = await db.one(
       "SELECT creds FROM integration_credentials WHERE name = 'recharge'"
     );
     if (row && row.creds && row.creds['RECHARGE_API_KEY']) return row.creds['RECHARGE_API_KEY'];
   } catch (e) { /* table may not exist yet */ }
-  return process.env.RECHARGE_API_KEY || '';
+  return '';
 }
 
 async function syncRecharge(opts) {
@@ -544,13 +547,17 @@ async function upsertRechargeCharge(c) {
    ════════════════════════════════════════════════════ */
 
 async function getWhopKey() {
+  /* Env var wins when set (so updating it on the host takes effect immediately);
+     fall back to the integration_credentials DB row otherwise. The DB row held a
+     stale/expired token that was 401ing the Whop sync. */
+  if (process.env.WHOP_API_KEY) return process.env.WHOP_API_KEY;
   try {
     const row = await db.one(
       "SELECT creds FROM integration_credentials WHERE name = 'whop'"
     );
     if (row && row.creds && row.creds['WHOP_API_KEY']) return row.creds['WHOP_API_KEY'];
   } catch (e) { /* table may not exist yet */ }
-  return process.env.WHOP_API_KEY || '';
+  return '';
 }
 
 async function syncWhop(opts) {
