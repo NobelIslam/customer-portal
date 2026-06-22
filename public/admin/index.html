@@ -2028,7 +2028,19 @@ async function runSync() {
   try {
     var r = await fetch('/admin/sync/run', { method: 'POST', headers: H });
     if (!r.ok) throw new Error('Sync failed');
-    setTimeout(function() { loadData(); btn.disabled=false; btn.textContent='↻ Sync now'; }, 12000);
+    /* A full delta sync (CC + Recharge + Whop, many API pages each) takes
+       SEVERAL MINUTES — the old 12s reload showed stale data and made it look
+       like the button did nothing. Poll and refresh until the sync settles. */
+    var polls = 0, maxPolls = 18;   /* 18 × 20s = 6 min */
+    var poll = setInterval(function() {
+      polls++;
+      loadData();
+      btn.textContent = 'Syncing… ' + Math.ceil(polls * 20 / 60) + 'm';
+      if (polls >= maxPolls) {
+        clearInterval(poll);
+        btn.disabled = false; btn.textContent = '↻ Sync now';
+      }
+    }, 20000);
   } catch(e) { alert(e.message); btn.disabled=false; btn.textContent='↻ Sync now'; }
 }
 

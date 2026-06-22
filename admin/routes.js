@@ -532,7 +532,14 @@ router.post('/sync/run', async function(req, res) {
     const full = req.query.full === '1' || req.body.full === true;
     /* Don't await — kick off in background and return immediately */
     sync.runSyncCycle({ full: full })
-      .then(function(r) { console.log('[admin] manual sync complete', r); })
+      .then(function(r) {
+        console.log('[admin] manual sync complete', r);
+        /* Recompute the MRR/collection summary from the freshly-synced tables so
+           the dashboard reflects it immediately instead of waiting out the cache TTL. */
+        _mrrSummaryCache = { day: null, ts: 0, data: null };
+        return computeMrrSummary().catch(function(e){ console.warn('[admin] post-sync mrr recompute failed', e.message); });
+      })
+      .then(function(){ console.log('[admin] mrr summary refreshed after sync'); })
       .catch(function(e){ console.error('[admin] manual sync error', e.message); });
     res.json({ started: true, full: full });
   } catch (err) {
